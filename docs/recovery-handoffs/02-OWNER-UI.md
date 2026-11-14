@@ -46,6 +46,8 @@ type RecoveryWorkspaceProps = {
 
 Domain types come from the frozen contract. Parent owns network/session state and handles commands. A failed command must remain visible and retryable; never optimistically show a task accepted or notice published before the server confirms.
 
+Lead integration update: the parent also renders `DraftNotices` for saved agent updates. It loads case-scoped drafts, shows their source references and stale state, and lets the owner edit text/select recipients before explicit publication. Keep your manual notice composer; no new required Workspace prop or shared-contract field is needed for the agent draft panel.
+
 ## Build sequence
 
 1. Install contract. Establish scoped tokens/classes under `.brace-recovery`; add reusable Panel, SegmentedControl, EvidenceBadge, RangeDisplay, EmptyState, and ChangedBanner components. Scope all selectors so preparation screens retain their behavior.

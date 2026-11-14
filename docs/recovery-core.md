@@ -118,6 +118,8 @@ The lead-owned viewer router exposes `GET /api/recovery/cases/{case_id}/spatial`
 
 `with_report_images` composes the registered sponsor reader with Platform's protected resident media. The local loader checks that a photo remains attached to a report in the same frozen case; source/media identities must match. The model receives bounded, sanitized JPEGs and cannot fetch a resident-supplied URL or filesystem path. A report's contents and a model's visual interpretation do not automatically verify damage or establish repair costs.
 
+Agent notices have a separate owner review bridge: `GET /api/recovery/cases/{case_id}/draft-notices` and `POST /api/recovery/cases/{case_id}/draft-notices/{draft_id}/publish`. Drafts retain their generating run/revision and server-side source references. Unknown provenance, stale inputs, or unresolved source IDs disable new publication. Owners can edit the text and select households; publication uses the existing transactional case revision check and idempotency receipt. Retrying a confirmed publication does not create another notice. The lead-owned `DraftNotices` panel is mounted by the root entry, leaving the teammate's component contract unchanged. Nothing is emailed or texted.
+
 A cache-only check of the registered Houston exercise returned 247 locations, 24 structures, 10 scans, and 13 cached images through an isolated authorized test router. The aerial was captured February 12, 2026; roof attributes date to December 3, 2023; Matterport capture dates remain unknown. These are scenario inputs, not proof of damage from Beryl in 2024. There is no established before/after capture pair for that case.
 
 ## Financial assumptions input
@@ -143,6 +145,8 @@ As background, [Fannie Mae's condition guidance](https://selling-guide.fanniemae
 ```bash
 uv run pytest
 cd frontend
+npm run test:recovery
+npm run test:resident
 npm run typecheck
 npm run build
 ```
@@ -156,3 +160,5 @@ The subsequent lead integration checkpoint passes 261 backend tests and 37 brows
 With the merged platform and local runtime, 403 backend tests pass. The integrated API test uses real SQLite, cookies, uploads, the actual RecoveryAgent with scripted model responses, and the valuation engine: a report invalidates a running assessment, a fresh draft inspects the uploaded image, and authorized publication/approval reaches only the intended household. Sponsor evidence survives the database roundtrip unchanged; schema v2 permits reuse in another case. A cold-start check through the actual enabled server confirms owner gating and the real case's 24 structures, 10 scans, and 13 available images. No paid model or external message is used by these tests. Full owner/resident browser and physical-phone validation remains pending the UI branches.
 
 Keep sponsor records, local runs/reviews, photos, keys, and resident information in ignored data paths. Commit code, synthetic tests, and these implementation notes only.
+
+The notice-review integration raises backend coverage to 416 passing tests. The workflow now publishes the agent's saved draft through owner review, retains its citations, and verifies that repeating the same publication creates only one resident notice. The completed resident branch is merged with a lifecycle fix preventing an upload sequence from continuing under a newly exchanged household session. Browser/phone validation and the owner-workspace integration remain pending.

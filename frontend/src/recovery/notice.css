@@ -1,0 +1,27 @@
+.brace-notices { margin: 24px; padding: 24px; border: 1px solid #d9dde0; border-radius: 14px; background: #fff; color: #17212b; font-family: inherit; }
+.brace-notices > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.brace-notices h2 { margin: 3px 0 0; font-size: 22px; line-height: 1.25; }
+.brace-notices p { line-height: 1.5; }
+.brace-notices-eyebrow { margin: 0; font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: #65727a; }
+.brace-notices-tag { border-radius: 99px; padding: 6px 10px; background: #eef2f4; color: #4b5b65; font-size: 11px; white-space: nowrap; }
+.brace-notices-intro, .brace-notices-muted { font-size: 13px; color: #52616b; }
+.brace-notices-draft { padding-top: 20px; margin-top: 20px; border-top: 1px solid #e0e5e8; }
+.brace-notices-draft-meta { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; font-weight: 600; color: #596972; margin-bottom: 14px; }
+.brace-notices fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.brace-notices label:not(.brace-notices-choice) { display: block; font-size: 12px; font-weight: 600; margin-bottom: 14px; }
+.brace-notices input:not([type="checkbox"]):not([type="radio"]), .brace-notices textarea { display: block; width: 100%; box-sizing: border-box; margin-top: 7px; padding: 10px 12px; color: #17212b; background: #fff; border: 1px solid #bac5cc; border-radius: 7px; font: inherit; font-weight: 400; font-size: 14px; }
+.brace-notices textarea { resize: vertical; line-height: 1.5; }
+.brace-notices input:focus-visible, .brace-notices textarea:focus-visible, .brace-notices button:focus-visible { outline: 3px solid #9bd5c5; outline-offset: 2px; }
+.brace-notices fieldset:disabled { opacity: .7; }
+.brace-notices-recipients legend { font-size: 12px; font-weight: 600; margin-bottom: 8px; }
+.brace-notices-choice { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 5px 0; }
+.brace-notices-choice input { margin: 0; accent-color: #196b59; }
+.brace-notices-households { margin: 8px 0 0 22px; display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 2px 16px; }
+.brace-notices button { padding: 10px 14px; border-radius: 7px; border: 1px solid #c7d1d7; background: #f4f6f7; color: #17212b; font: inherit; font-size: 13px; cursor: pointer; }
+.brace-notices button:disabled { cursor: not-allowed; opacity: .55; }
+.brace-notices .brace-notices-publish { background: #176853; color: #fff; border-color: #176853; font-weight: 600; }
+.brace-notices-error { color: #9c3030; background: #fff3f1; border-radius: 7px; padding: 10px 12px; font-size: 13px; }
+.brace-notices-error p { margin: 0 0 8px; }
+.brace-notices-stale { padding: 10px 12px; background: #fff7e7; color: #755b28; border-radius: 7px; font-size: 13px; }
+.brace-notices-success { padding: 10px 12px; background: #eaf5ef; color: #246044; border-radius: 7px; font-size: 13px; }
+@media (max-width: 640px) { .brace-notices { margin: 14px; padding: 18px; } .brace-notices > header { flex-direction: column; gap: 10px; } .brace-notices-draft-meta { flex-direction: column; gap: 4px; } }

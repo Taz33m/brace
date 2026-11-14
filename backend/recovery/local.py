@@ -90,6 +90,7 @@ def install_local_recovery(app: FastAPI, *, root: Path | None = None, agent_fact
     from .platform.router import build_router, make_owner_dependency
     from .platform.store import CaseStore
     from .report_images import with_report_images
+    from .notice_router import build_notice_router
 
     origins = configured_origins()
     directory = Path(root or os.environ.get("BRACE_RECOVERY_DATA_DIR") or DATA_DIR / "recovery")
@@ -138,6 +139,7 @@ def install_local_recovery(app: FastAPI, *, root: Path | None = None, agent_fact
         service = install_recovery(app, store=store, registry=registry, platform_router_factory=build_router,
             resolve_owner=legacy_owner, resolve_owner_case=owner_case, agent_factory=agent_factory,
             input_provider=with_report_images(registry.input_provider, report_image))
+        app.include_router(build_notice_router(store, owner))
         app.add_middleware(MutationOriginGate, origins=origins)
         app.router.add_event_handler("shutdown", lock.close)
         app.state.brace_recovery_store = store

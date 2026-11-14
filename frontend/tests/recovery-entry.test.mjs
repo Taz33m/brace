@@ -37,8 +37,11 @@ const clientUrl = await compile("../src/recovery/client.ts");
 const controllerUrl = await compile("../src/recovery/owner-controller.ts");
 const routesUrl = await compile("../src/recovery/routes.ts");
 const spatialUrl = await compile("../src/recovery/spatial.ts");
+const noticeClientUrl = await compile("../src/recovery/notice-client.ts", { "./client": clientUrl });
+const draftNoticesUrl = await compile("../src/recovery/DraftNotices.tsx", { "./client": clientUrl, "./notice-client": noticeClientUrl });
 const entryUrl = await compile("../src/recovery/RecoveryEntry.tsx", {
   "./client": clientUrl, "./owner-controller": controllerUrl, "./routes": routesUrl, "./spatial": spatialUrl,
+  "./DraftNotices": draftNoticesUrl,
 });
 const { ResidentBootstrap, EvidenceSlot, commandForCurrentCase } = await import(entryUrl);
 

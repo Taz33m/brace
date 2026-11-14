@@ -10,6 +10,7 @@ import { recoveryHash, residentHash } from "./routes";
 import { SpatialCaseController, currentSpatial, emptySpatial, evidenceImageUrl, permittedEvidenceImage, preferredEvidence } from "./spatial";
 import type { RecoverySpatial, SpatialState } from "./spatial";
 import "./entry.css";
+import { DraftNotices } from "./DraftNotices";
 
 type Client = ReturnType<typeof createRecoveryClient>;
 const client = createRecoveryClient();
@@ -238,6 +239,8 @@ export function RecoveryEntry({ case_id }: { case_id: string | null }) {
     <EntryBoundary key={openId ?? "cases"}><Suspense fallback={<EntryMessage title="Opening recovery workspace…" />}>
       {Workspace ? <Workspace {...props} /> : <EntryMessage title="Recovery workspace unavailable" message="This view is not available in the current build. Your case data has not been changed." retry={retry} />}
     </Suspense></EntryBoundary>
+    {snapshot && <DraftNotices key={snapshot.case.case_id} snapshot={snapshot} busy={currentView.busy}
+      on_published={retry} on_session_expired={() => setNeedsSignIn(true)} />}
     {!Workspace && <p className="brace-entry-return"><a href="#/">Back to Prepare</a></p>}
   </div>;
 }
