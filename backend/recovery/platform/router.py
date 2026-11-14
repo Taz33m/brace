@@ -1,0 +1,137 @@
+"""HTTP surface for the recovery platform (05-SHARED-CONTRACT.md, "HTTP surface").
+
+`build_router(store, assessment_launcher)` returns an APIRouter the lead mounts in
+backend/server.py. Identity comes only from HttpOnly session cookies; household and
+case come from the session, never from request JSON. All errors use the contract's
+envelope and every response is `Cache-Control: no-store`.
+"""
+from __future__ import annotations
+
+from typing import Callable, Optional
+
+from fastapi import APIRouter, Header, HTTPException, Request, Response
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from fastapi.routing import APIRoute
+
+from . import models as m
+from .auth import LOCAL_OWNER_ID, Actor, check_owner_secret
+from .errors import PlatformError, unauthenticated
+from .store import OWNER_SESSION_TTL, RESIDENT_SESSION_TTL, CaseStore
+
+OWNER_COOKIE = "brace_owner_session"
+RESIDENT_COOKIE = "brace_resident_session"
+COOKIE_PATH = "/api"
+
+AssessmentLauncher = Callable[[dict], object]
+
+
+class EnvelopeRoute(APIRoute):
+    """Turn PlatformError and validation failures into the contract envelope; never cache."""
+
+    def get_route_handler(self):
+        original = super().get_route_handler()
+
+        async def handler(request: Request) -> Response:
+            try:
+                response = await original(request)
+            except PlatformError as exc:
+                response = JSONResponse(exc.envelope(), status_code=exc.status)
+            except RequestValidationError as exc:
+                fields = sorted({".".join(str(p) for p in err.get("loc", ())[1:]) or "body"
+                                 for err in exc.errors()})
+                err = PlatformError(422, "invalid_request", "Some fields are missing or invalid: "
+                                    + ", ".join(fields)[:300])
+                response = JSONResponse(err.envelope(), status_code=422)
+            response.headers["Cache-Control"] = "no-store"
+            return response
+
+        return handler
+
+
+def _secure(request: Request) -> bool:
+    proto = request.headers.get("x-forwarded-proto", request.url.scheme)
+    return proto.split(",")[0].strip() == "https"
+
+
+def _set_cookie(response: Response, request: Request, name: str, token: str, max_age: int) -> None:
+    response.set_cookie(name, token, max_age=max_age, path=COOKIE_PATH, httponly=True,
+                        samesite="strict", secure=_secure(request))
+
+
+def _actor(store: CaseStore, request: Request, cookie: str, role: str) -> Actor:
+    actor = store.resolve_session(request.cookies.get(cookie))
+    if actor is None or actor.role != role:
+        raise unauthenticated()
+    return actor
+
+
+def make_owner_dependency(store: CaseStore):
+    """FastAPI dependency for gating existing owner endpoints (building/plan/image routes).
+
+    Usage in server.py: `dependencies=[Depends(make_owner_dependency(store))]`. Raises a
+    plain HTTPException so it works on routes outside this router.
+    """
+
+    def require_owner(request: Request) -> Actor:
+        actor = store.resolve_session(request.cookies.get(OWNER_COOKIE))
+        if actor is None or actor.role != "owner":
+            raise HTTPException(401, detail=unauthenticated().envelope()["error"])
+        return actor
+
+    return require_owner
+
+
+def build_router(store: CaseStore, assessment_launcher: Optional[AssessmentLauncher] = None) -> APIRouter:
+    router = APIRouter(route_class=EnvelopeRoute)
+
+    def owner(request: Request) -> Actor:
+        return _actor(store, request, OWNER_COOKIE, "owner")
+
+    def resident(request: Request) -> Actor:
+        return _actor(store, request, RESIDENT_COOKIE, "resident")
+
+    # ---------------------------------------------------------------- owner
+
+    @router.post("/api/recovery/session")
+    def owner_session(body: m.OwnerSessionInput, request: Request, response: Response):
+        if not check_owner_secret(body.secret):
+            raise PlatformError(401, "invalid_secret", "That owner secret is not correct.")
+        store.end_session(request.cookies.get(OWNER_COOKIE))
+        _set_cookie(response, request, OWNER_COOKIE, store.create_owner_session(LOCAL_OWNER_ID),
+                    int(OWNER_SESSION_TTL.total_seconds()))
+        return {"ok": True}
+
+    @router.get("/api/recovery/cases")
+    def list_cases(request: Request):
+        return {"cases": store.list_cases(owner(request))}
+
+    @router.get("/api/recovery/cases/{case_id}", response_model=m.OwnerCaseView)
+    def case_view(case_id: str, request: Request):
+        return store.owner_snapshot(owner(request), case_id)
+
+    @router.post("/api/recovery/cases/{case_id}/commands", response_model=m.CommandResult)
+    def command(case_id: str, body: m.OwnerCommand, request: Request,
+                idempotency_key: Optional[str] = Header(default=None)):
+        return store.apply_command(owner(request), case_id, body, idempotency_key,
+                                   launcher=assessment_launcher)
+
+    # ---------------------------------------------------------------- resident
+
+    @router.post("/api/resident/session")
+    def resident_session(body: m.ResidentSessionInput, request: Request, response: Response):
+        token = store.exchange_invitation(body.invitation_token)
+        store.end_session(request.cookies.get(RESIDENT_COOKIE))
+        _set_cookie(response, request, RESIDENT_COOKIE, token, int(RESIDENT_SESSION_TTL.total_seconds()))
+        return {"ok": True}
+
+    @router.get("/api/resident/home", response_model=m.ResidentHome)
+    def resident_home(request: Request):
+        return store.resident_home(resident(request))
+
+    @router.post("/api/resident/reports", response_model=m.ReportReceipt)
+    def resident_report(body: m.ReportInput, request: Request,
+                        idempotency_key: Optional[str] = Header(default=None)):
+        return store.append_report(resident(request), body, idempotency_key)
+
+    return router

@@ -368,6 +368,43 @@ class CaseStore:
             raise not_found("This household")
         return row
 
+    # ------------------------------------------------------------------ owner commands
+
+    def apply_command(self, actor: Actor, case_id: str, command, idempotency_key: Optional[str] = None,
+                      *, launcher=None) -> m.CommandResult:
+        """Typed dispatch of OwnerCommand. Never an arbitrary method or tool executor.
+
+        The Idempotency-Key is optional here: expected_revision already rejects a blind
+        replay. When supplied, a replay returns the original result (minus any token).
+        """
+        operation = f"command:{case_id}"
+        body_hash = hash_token(dumps(command))
+        if idempotency_key is not None:
+            key = self._check_key(idempotency_key)
+            with self._read() as conn:
+                self._owner_case(conn, actor, case_id)
+                stored = self._replay(conn, actor, operation, key, body_hash)
+            if stored is not None:
+                if command.type == "create_invitation":
+                    raise PlatformError(409, "invitation_already_issued",
+                                        "This invitation was already created. Create a new one if the link was lost.")
+                return m.CommandResult(**stored)
+        handler = getattr(self, "_cmd_" + command.type, None)
+        if handler is None:
+            raise PlatformError(422, "unsupported_command", "This command is not available yet.")
+        result: m.CommandResult = handler(actor, case_id, command, launcher=launcher)
+        if idempotency_key is not None:
+            redacted = result.model_copy(update={"invitation_token": None})
+            with self._write() as conn:
+                try:
+                    self._remember(conn, actor, operation, idempotency_key, body_hash, redacted)
+                except sqlite3.IntegrityError:
+                    pass  # a concurrent identical request recorded it first
+        return result
+
+    def _cmd_create_invitation(self, actor, case_id, command: m.CreateInvitation, **_) -> m.CommandResult:
+        return self.create_invitation(actor, case_id, command.household_id, command.expected_revision)
+
     # ------------------------------------------------------------------ idempotency
 
     @staticmethod
