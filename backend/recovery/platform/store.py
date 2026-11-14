@@ -38,7 +38,6 @@ INVITATION_TTL = timedelta(hours=72)
 RESIDENT_SESSION_TTL = timedelta(days=30)
 OWNER_SESSION_TTL = timedelta(hours=12)
 ORPHAN_MIN_AGE = timedelta(minutes=10)
-IDEMPOTENCY_RETENTION = timedelta(days=7)
 
 
 def _utc_now() -> datetime:
@@ -187,19 +186,47 @@ class CaseStore:
     def add_household(self, actor: Actor, case_id: str, unit_label: Optional[str], *,
                       unit_confirmed: bool = False, location_ids: tuple[str, ...] | list[str] = ()) -> str:
         """Lead bootstrap: register a household and the locations its resident may pick."""
-        household_id = new_id("hh")
         with self._write() as conn:
             self._owner_case(conn, actor, case_id)
-            known = {r["location_id"] for r in conn.execute(
-                "SELECT location_id FROM locations WHERE case_id = ?", (case_id,))}
-            if any(lid not in known for lid in location_ids):
-                raise invalid("A household location is not registered on this case.")
-            conn.execute("INSERT INTO households VALUES (?,?,?,?,?,?)",
-                         (household_id, case_id, unit_label, int(unit_confirmed),
-                          json.dumps(list(location_ids)), self.now()))
-            self._bump(conn, case_id)
-            self._event(conn, case_id, "household.added", entity_id=household_id)
+            return self._insert_household(conn, case_id, unit_label, unit_confirmed=unit_confirmed,
+                                          location_ids=location_ids)
+
+    def _insert_household(self, conn, case_id: str, unit_label: Optional[str], *,
+                          unit_confirmed: bool = False, location_ids=()) -> str:
+        household_id = new_id("hh")
+        known = {r["location_id"] for r in conn.execute(
+            "SELECT location_id FROM locations WHERE case_id = ?", (case_id,))}
+        if any(lid not in known for lid in location_ids):
+            raise invalid("A household location is not registered on this case.")
+        conn.execute("INSERT INTO households VALUES (?,?,?,?,?,?)",
+                     (household_id, case_id, unit_label, int(unit_confirmed),
+                      json.dumps(list(location_ids)), self.now()))
+        self._bump(conn, case_id)
+        self._event(conn, case_id, "household.added", entity_id=household_id)
         return household_id
+
+    def create_household(self, actor: Actor, case_id: str, request, idempotency_key: str):
+        """Owner HTTP onboarding: unconfirmed label only, with atomic retry receipts."""
+        from .households import CreateHouseholdInput, CreateHouseholdResult, CreatedHousehold
+
+        body = CreateHouseholdInput.model_validate(request)
+        key = self._check_key(idempotency_key)
+        operation = f"create-household:{case_id}"
+        body_hash = hash_token(dumps(body))
+        with self._write() as conn:
+            case = self._owner_case(conn, actor, case_id)
+            replay = self._replay(conn, actor, operation, key, body_hash)
+            if replay is not None:
+                return CreateHouseholdResult(**{**replay, "duplicate": True})
+            self._check_revision(case, body.expected_revision)
+            household_id = self._insert_household(conn, case_id, body.unit_label)
+            revisions = self._result(conn, case_id)
+            result = CreateHouseholdResult(case_id=case_id,
+                household=CreatedHousehold(household_id=household_id, unit_label=body.unit_label),
+                case_revision=revisions.case_revision, analysis_revision=revisions.analysis_revision,
+                duplicate=False)
+            self._remember(conn, actor, operation, key, body_hash, result)
+            return result
 
     def list_cases(self, actor: Actor) -> list[m.RecoveryCaseSummary]:
         if actor.role != "owner":
@@ -977,15 +1004,12 @@ class CaseStore:
             raise
 
     def purge_expired(self) -> None:
-        """Startup housekeeping: drop dead sessions and idempotency receipts past retention.
+        """Drop dead sessions, retaining business receipts for safe delayed retries.
 
-        A retry older than IDEMPOTENCY_RETENTION is treated as a new submission.
-        Invitations are kept for the owner's audit/revocation list.
+        Invitation audit records and idempotency receipts have no age-based purge.
         """
-        cutoff = (self.clock() - IDEMPOTENCY_RETENTION).astimezone(timezone.utc).isoformat()
         with self._write() as conn:
             conn.execute("DELETE FROM sessions WHERE expires_at <= ? OR revoked_at IS NOT NULL", (self.now(),))
-            conn.execute("DELETE FROM idempotency WHERE created_at < ?", (cutoff,))
 
     def sweep_orphan_media(self, *, min_age: timedelta = ORPHAN_MIN_AGE) -> int:
         """Delete media files with no committed row (a crash between file write and commit).

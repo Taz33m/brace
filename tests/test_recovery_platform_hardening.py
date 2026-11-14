@@ -151,9 +151,12 @@ def test_startup_sweep_removes_old_orphans_only(tmp_path):
 
 # ---------------------------------------------------------------- Task 3
 
-def test_startup_purges_expired_sessions_and_old_idempotency(tmp_path):
+def test_startup_purges_expired_sessions_but_preserves_delayed_business_retries(tmp_path):
     import sqlite3
     from datetime import datetime, timedelta, timezone
+    from io import BytesIO
+
+    from PIL import Image
 
     from tests.test_recovery_platform_support import report
 
@@ -170,19 +173,33 @@ def test_startup_purges_expired_sessions_and_old_idempotency(tmp_path):
     store.create_owner_session("owner:local")
     token = store.create_invitation(OWNER, "case_test", ha, rev(store)).invitation_token
     live_session = store.exchange_invitation(token)
-    store.append_report(res_a, report(), "report-key-1")
+    image = BytesIO()
+    Image.new("RGB", (8, 8)).save(image, "PNG")
+    upload = store.save_upload(res_a, image.getvalue(), "upload-key-1")
+    request = report(upload_ids=[upload.upload_id])
+    original = store.append_report(res_a, request, "report-key-1")
+    support_input = m.SupportInput(category="housing", description="Need a place to stay")
+    support = store.append_support_request(res_a, support_input, "support-key-1")
     clock.t += timedelta(days=8)
     store.append_report(res_a, report("newer"), "report-key-2")
 
     reopened = CaseStore(db, media, clock=clock)
-    conn = sqlite3.connect(db)
-    assert conn.execute("SELECT COUNT(*) FROM sessions WHERE role = 'owner'").fetchone()[0] == 0
+    with sqlite3.connect(db) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM sessions WHERE role = 'owner'").fetchone()[0] == 0
+        keys = {r[0] for r in conn.execute("SELECT idem_key FROM idempotency")}
+    assert keys == {"report-key-1", "report-key-2", "upload-key-1", "support-key-1"}
     assert reopened.resolve_session(live_session) is not None  # 30-day resident session survives
-    keys = [r[0] for r in conn.execute("SELECT idem_key FROM idempotency")]
-    assert keys == ["report-key-2"]
+    assert reopened.save_upload(res_a, image.getvalue(), "upload-key-1") == upload
+    retry = reopened.append_report(res_a, request, "report-key-1")
+    assert retry.duplicate and retry.report.report_id == original.report.report_id
+    assert reopened.append_support_request(res_a, support_input, "support-key-1").request_id == support.request_id
+    with sqlite3.connect(db) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM reports").fetchone()[0] == 2
+        assert conn.execute("SELECT COUNT(*) FROM media").fetchone()[0] == 1
+        assert conn.execute("SELECT COUNT(*) FROM support_requests").fetchone()[0] == 1
 
 
-def test_owner_secret_throttled_after_ten_failures(app, monkeypatch):
+def test_failed_sign_ins_are_throttled_without_locking_out_correct_secret(app, monkeypatch):
     from fastapi.testclient import TestClient
 
     from backend.recovery.platform import router as router_mod
@@ -193,11 +210,36 @@ def test_owner_secret_throttled_after_ten_failures(app, monkeypatch):
     c = TestClient(app)
     for _ in range(router_mod.OWNER_LOGIN_MAX_FAILURES):
         assert c.post("/api/recovery/session", json={"secret": "wrong"}).status_code == 401
-    blocked = c.post("/api/recovery/session", json={"secret": SECRET})
+    blocked = c.post("/api/recovery/session", json={"secret": "wrong"})
     assert blocked.status_code == 429
     assert blocked.json()["error"]["code"] == "too_many_attempts" and blocked.json()["error"]["retryable"]
-    now[0] += router_mod.OWNER_LOGIN_WINDOW_SECONDS + 1
     assert c.post("/api/recovery/session", json={"secret": SECRET}).status_code == 200
+    assert c.post("/api/recovery/session", json={"secret": "wrong"}).status_code == 429
+    now[0] += router_mod.OWNER_LOGIN_WINDOW_SECONDS + 1
+    assert c.post("/api/recovery/session", json={"secret": "wrong"}).status_code == 401
+    assert c.post("/api/recovery/session", json={"secret": SECRET}).status_code == 200
+
+
+def test_concurrent_failed_sign_ins_share_a_bounded_budget(app, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+
+    from fastapi.testclient import TestClient
+
+    from backend.recovery.platform import router as router_mod
+    from tests.test_recovery_platform_api import SECRET
+
+    monkeypatch.setattr(router_mod, "_monotonic", lambda: 1000.0)
+
+    def attempt(_):
+        with TestClient(app) as client:
+            return client.post("/api/recovery/session", json={"secret": "wrong"}).status_code
+
+    with ThreadPoolExecutor(max_workers=12) as pool:
+        statuses = list(pool.map(attempt, range(24)))
+    assert statuses.count(401) == router_mod.OWNER_LOGIN_MAX_FAILURES
+    assert statuses.count(429) == 24 - router_mod.OWNER_LOGIN_MAX_FAILURES
+    with TestClient(app) as client:
+        assert client.post("/api/recovery/session", json={"secret": SECRET}).status_code == 200
 
 
 def test_proposal_unknown_evidence_ids_dropped(store, world):

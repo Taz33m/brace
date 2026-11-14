@@ -23,6 +23,7 @@ from starlette.concurrency import run_in_threadpool
 
 from . import models as m
 from . import uploads
+from .households import CreateHouseholdInput, CreateHouseholdResult
 from .auth import LOCAL_OWNER_ID, Actor, check_owner_secret
 from .errors import PlatformError, unauthenticated
 from .store import OWNER_SESSION_TTL, RESIDENT_SESSION_TTL, CaseStore
@@ -186,22 +187,23 @@ def build_router(store: CaseStore, assessment_launcher: Optional[AssessmentLaunc
     login_failures: deque[float] = deque()
     login_lock = threading.Lock()
 
-    def throttle_owner_login() -> None:
-        # Global, not per-IP: every request arrives from the loopback proxy.
+    def throttle_failed_owner_login() -> None:
+        # The loopback proxy can hide client identities. Bound failed attempts
+        # without letting one client lock out an owner with the correct secret.
         with login_lock:
-            cutoff = _monotonic() - OWNER_LOGIN_WINDOW_SECONDS
+            now = _monotonic()
+            cutoff = now - OWNER_LOGIN_WINDOW_SECONDS
             while login_failures and login_failures[0] <= cutoff:
                 login_failures.popleft()
             if len(login_failures) >= OWNER_LOGIN_MAX_FAILURES:
                 raise PlatformError(429, "too_many_attempts",
                                     "Too many sign-in attempts. Wait a few minutes and try again.", retryable=True)
+            login_failures.append(now)
 
     @router.post("/api/recovery/session")
     def owner_session(body: m.OwnerSessionInput, request: Request, response: Response):
-        throttle_owner_login()
         if not check_owner_secret(body.secret):
-            with login_lock:
-                login_failures.append(_monotonic())
+            throttle_failed_owner_login()
             raise PlatformError(401, "invalid_secret", "That owner secret is not correct.")
         store.end_session(request.cookies.get(OWNER_COOKIE))
         _set_cookie(response, request, OWNER_COOKIE, store.create_owner_session(LOCAL_OWNER_ID),
@@ -215,6 +217,12 @@ def build_router(store: CaseStore, assessment_launcher: Optional[AssessmentLaunc
     @router.get("/api/recovery/cases/{case_id}", response_model=m.OwnerCaseView)
     def case_view(case_id: str, request: Request):
         return store.owner_snapshot(owner(request), case_id)
+
+    @router.post("/api/recovery/cases/{case_id}/households", response_model=CreateHouseholdResult,
+                 status_code=201)
+    def create_household(case_id: str, body: CreateHouseholdInput, request: Request,
+                         idempotency_key: str = Header(min_length=8, max_length=200)):
+        return store.create_household(owner(request), case_id, body, idempotency_key)
 
     @router.post("/api/recovery/cases/{case_id}/commands", response_model=m.CommandResult)
     def command(case_id: str, body: m.OwnerCommand, request: Request,
