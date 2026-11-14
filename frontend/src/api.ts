@@ -1,4 +1,4 @@
-import type { Building, ClockChange, Facing, Portfolio, SavedStep, Scenario, ScenarioMap } from "./types";
+import type { Board, Building, ClockChange, Facing, FindHit, Measured, Portfolio, ResidentReport, SavedStep, Scenario, ScenarioMap, SiteModel } from "./types";
 
 async function get<T>(path: string): Promise<T> {
   const r = await fetch(path);
@@ -25,6 +25,15 @@ export const api = {
   facing: (id: number, scenario: string, step: string | null) => get<Facing>(`/api/buildings/${id}/facing${q({ scenario, step })}`),
   savedSteps: (id: number, scenario: string) => get<{ plans: SavedStep[] }>(`/api/buildings/${id}/plans${q({ scenario })}`).then((r) => r.plans),
   clock: (id: number, scenario: string, earlier: string, later: string) => get<ClockChange>(`/api/buildings/${id}/clock${q({ scenario, earlier, later })}`),
+  siteModel: (id: number) => get<SiteModel>(`/api/buildings/${id}/site-model`),
+  board: () => get<Board>("/api/site-model/board"),
+  measured: (id: number, scenario: string, step: string | null) =>
+    get<{ actions: Record<string, Measured[]> }>(`/api/buildings/${id}/measured${q({ scenario, step })}`).then((r) => r.actions),
+  find: (id: number, query: string) => get<{ query: string; said: string; hits: FindHit[] }>(`/api/buildings/${id}/find${q({ q: query })}`),
+  report: (id: number, text: string, scan_id: string | null) =>
+    fetch(`/api/buildings/${id}/reports`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, scan_id }) })
+      .then(async (r) => { if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail ?? "could not file the report"); return r.json() as Promise<ResidentReport>; }),
+  clearReports: (id: number) => fetch(`/api/buildings/${id}/reports`, { method: "DELETE" }).then(() => undefined),
   startPlan: (id: number, scenario: string, step: string | null) =>
     fetch(`/api/buildings/${id}/plan${q({ scenario, step })}`, { method: "POST" }).then((r) => { if (!r.ok) throw new Error("start failed"); return r.json(); }),
   streamUrl: (id: number, scenario: string, step: string | null, replay: boolean, speed = 5) =>

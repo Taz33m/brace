@@ -2,6 +2,7 @@
 export type AppRoute =
   | { kind: "prepare"; scenario: string | null; step: string | null; building: number | null; vr: boolean }
   | { kind: "walk"; scenario: string; step: string | null; building: number }
+  | { kind: "model"; building: number | null }
   | { kind: "recovery"; case_id: string | null }
   | { kind: "resident"; invitation_token: string | null }
   | { kind: "invalid"; message: string };
@@ -69,12 +70,18 @@ export function parseAppRoute(hash: string): AppRoute {
     if (prefix === "recovery") {
       return parts.length <= 2 ? { kind: "recovery", case_id: parts[1] ?? null } : invalid();
     }
+    // The site model: every gathered address, or one of them.
+    if (prefix === "model") {
+      if (parts.length === 1) return { kind: "model", building: null };
+      if (parts.length !== 2 || !/^[1-9]\d*$/.test(parts[1]) || !safeBuilding(Number(parts[1]))) return invalid();
+      return { kind: "model", building: Number(parts[1]) };
+    }
     const vr = prefix === "vr";
     const walk = prefix === "walk";
     const prepare = vr || walk ? parts.slice(1) : parts;
     if (!prepare.length) return invalid();
     const scenario = prepare[0];
-    if (["resident", "recovery", "vr", "walk"].includes(scenario)) return invalid();
+    if (["resident", "recovery", "vr", "walk", "model"].includes(scenario)) return invalid();
     let step: string | null = null;
     let building: number | null = null;
     let offset = 1;
@@ -106,7 +113,7 @@ export function prepareHash(scenario: string | null, step: string | null = null,
     if (step !== null || building !== null || vr) throw new Error("A scenario is required for this route.");
     return "#/";
   }
-  if (["resident", "recovery", "vr", "walk"].includes(scenario)) throw new Error("Reserved Brace route identifier.");
+  if (["resident", "recovery", "vr", "walk", "model"].includes(scenario)) throw new Error("Reserved Brace route identifier.");
   if (step === "b" || step === "-") throw new Error("Reserved Brace step identifier.");
   if (building !== null && !safeBuilding(building)) throw new Error("A positive building ID is required.");
   return `#/${vr ? "vr/" : ""}${encodedPart(scenario)}/${step === null ? "-" : encodedPart(step)}${building === null ? "" : `/b/${building}`}`;
@@ -153,4 +160,8 @@ export function consumeResidentInvitation(locationLike: InvitationLocation,
   }
   if (route.kind === "invalid") throw new Error(route.message);
   return route.kind === "resident" ? route.invitation_token : null;
+}
+
+export function modelHash(building?: number | null): string {
+  return building == null ? "#/model" : `#/model/${building}`;
 }

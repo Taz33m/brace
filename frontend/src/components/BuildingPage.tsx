@@ -4,8 +4,8 @@ import { api } from "../api";
 import { conversation } from "../conversation";
 import { costRange, exposureLine, hours, money, num, standingLine, when } from "../format";
 import { BEARING, nearestScanView, structureAt } from "../geo";
-import type { Action, AgentEvent, Building, Direction, Facing, Lead, LonLat, Message, Plan, Scenario, Selection } from "../types";
-import { prepareHash, walkHash } from "../recovery/routes";
+import type { Action, AgentEvent, Building, Direction, Facing, Lead, LonLat, Measured, Message, Plan, Scenario, Selection } from "../types";
+import { modelHash, prepareHash, walkHash } from "../recovery/routes";
 import { ConversationPanel } from "./ConversationPanel";
 import { PlanPanel, type RunState } from "./PlanPanel";
 import { SitePane } from "./SitePane";
@@ -62,6 +62,7 @@ export function BuildingPage({ id, scenario, step, sdkKey, agentReady, voiceRead
   const [worn, setWorn] = useState<{ scan_id: string; sweep_id: string; bearing: number | null; action_id: string | null } | null>(null);
   const [approved, setApproved] = useState<string[]>([]);
   const [facing, setFacing] = useState<Facing | null>(null);
+  const [measured, setMeasured] = useState<Record<string, Measured[]> | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
   const tour = useRef<TourHandle>(null);
   const stream = useRef<EventSource | null>(null);
@@ -95,9 +96,10 @@ export function BuildingPage({ id, scenario, step, sdkKey, agentReady, voiceRead
 
   // Once there is a finished plan, measure which windows and outside doors of the nearest scan face each outside action.
   useEffect(() => {
-    if (!plan || run !== "done") { setFacing(null); return; }
+    if (!plan || run !== "done") { setFacing(null); setMeasured(null); return; }
     let current = true;
     api.facing(id, scenario.id, step).then((f) => { if (current) setFacing(f); }).catch(() => { if (current) setFacing(null); });
+    api.measured(id, scenario.id, step).then((m) => { if (current) setMeasured(m); }).catch(() => { if (current) setMeasured(null); });
     return () => { current = false; };
   }, [plan, run, id, scenario.id, step]);
 
@@ -305,6 +307,7 @@ export function BuildingPage({ id, scenario, step, sdkKey, agentReady, voiceRead
         <button className="back" onClick={onBack}>Map</button>
         <a className="recover-link" href="#/recovery">Recover</a>
         {plan && <a className="recover-link" href={walkHash(scenario.id, step, id)}>Walk-through</a>}
+        <a className="recover-link" href={modelHash(id)}>Site model</a>
         {b.scans.length > 0 && <button className="headset" onClick={openHeadset}>{worn ? "Headset connected" : "Open in headset"}</button>}
         <div className="title">
           <h1>{r.name}</h1>
@@ -349,7 +352,7 @@ export function BuildingPage({ id, scenario, step, sdkKey, agentReady, voiceRead
 
       <PlanPanel id={id} run={run} agentReady={agentReady} hasSaved={!!b.plan || (run === "done" && !!plan)}
                  events={events} leads={leads} actions={actions} messages={messages} plan={busy ? null : plan}
-                 error={runError} active={active} approved={approved} facing={facing}
+                 error={runError} active={active} approved={approved} facing={facing} measured={measured}
                  pending={pending} onApproveNow={() => settle("approve")} onHold={() => settle("hold")} onRun={start}
                  onReplay={() => listen(api.streamUrl(id, scenario.id, step, true, worn || conversation.get().on ? 2 : 5), "replaying")} onShow={show} onZoom={setZoom} />
 

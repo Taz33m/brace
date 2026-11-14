@@ -1,9 +1,12 @@
 """Make a staged room agree between two standpoints (open problem: furnish an empty room, consistently).
 
-  python -m scripts.open_reimagine_layout layout      # find the pieces in the first staged photo, anchor them, draw the check (free after the first look)
-  python -m scripts.open_reimagine_layout guide       # pick the second standpoint and draw the coloured blocks into its real photo (free)
-  python -m scripts.open_reimagine_layout stage       # one paid call: turn the blocks into the furniture
-  python -m scripts.open_reimagine_layout judge       # measure the result and make the side-by-side sheet
+  python -m scripts.open_reimagine_layout layout          # find the pieces in the first staged photo, anchor them, draw the check (free after the first look)
+  python -m scripts.open_reimagine_layout guide           # pick the second standpoint and draw the coloured blocks into its real photo (free)
+  python -m scripts.open_reimagine_layout stage --dry     # print the instruction that would be sent (free)
+  python -m scripts.open_reimagine_layout stage           # one paid call, unless this exact request was made before: turn the blocks into the furniture
+  python -m scripts.open_reimagine_layout judge FOLDER    # measure a result and make the side-by-side sheet (free); --stand and --look each add one vision call
+
+Paid image calls for this method are capped at four, and looks by the vision model at six; both are counted on disk.
 
 Everything written is an illustration or a working picture made from one. None of it is evidence about the building.
 """
@@ -50,6 +53,21 @@ def _second(layout: dict, cams: dict, sweep: str | None, hfov: float) -> tuple[s
     return best, seen[best][0], {s: v[1] for s, v in seen.items()}
 
 
+def _describe_work_folder() -> None:
+    """A record beside the working pictures, saying what each is. All of them come from generated pictures."""
+    kinds = {"layout.json": "where the furniture of the first staged photo would stand in the room, in metres",
+             "pieces_found.json": "what the vision model found in the first staged photo, in pixels",
+             "anchoring_check_A": "the first staged photo with the layout's boxes drawn back over it",
+             "guide_B": "the second standpoint's real photo with coloured blocks painted in where the furniture goes",
+             "side_by_side": "both standpoints, real above and staged below"}
+    files = {p.name: next((v for k, v in kinds.items() if p.name.startswith(k)), "working file")
+             for p in sorted(WORK.iterdir()) if p.name != "record.json"}
+    (WORK / "record.json").write_text(json.dumps({
+        "generated": True, "kind": "working pictures and measurements made from AI-generated illustrations", "label": reimagine.LABEL,
+        "note": "The room's walls, doors and standpoints are measured. The furniture is not real, so nothing here says anything about the building.",
+        "scan_id": SCAN, "first_standpoint": FIRST, "files": files, "updated_at": reimagine._now()}, indent=1))
+
+
 def cmd_layout(a) -> int:
     WORK.mkdir(parents=True, exist_ok=True)
     scan = _scan()
@@ -60,7 +78,7 @@ def cmd_layout(a) -> int:
     real = np.asarray(Image.open(FIRST_FOLDER / "real_view.jpg").convert("RGB"), dtype=np.float32)
     layout = rl.build_layout(found, cams[FIRST], FIRST_VIEW, plan, ROOM,
                              {"generated": True, "photo": str(FIRST_FOLDER / "staged_view.jpg"), "scan_id": SCAN, "sweep_id": FIRST},
-                             changed_mask=rl.changed(real, staged))
+                             changed_mask=rl.changed(real, staged), square_rug=a.square_rug)
     (WORK / "layout.json").write_text(json.dumps(layout, indent=1))
     rl.draw_outlines(staged, layout, cams[FIRST], FIRST_VIEW).save(WORK / "anchoring_check_A.jpg", quality=90)
     for p in layout["pieces"]:
@@ -69,6 +87,7 @@ def cmd_layout(a) -> int:
         print("rug", layout["rug"]["footprint"], "sides", layout["rug"]["sides_m"], json.dumps(layout["rug"].get("squared_up")), json.dumps(layout["rug"]["check"]))
     print("not anchored:", layout["not_anchored"], "| part of the building, left out:", json.dumps(layout["part_of_the_building"]))
     print("vision calls used:", rl.vision_calls())
+    _describe_work_folder()
     print("layout", WORK / "layout.json")
     print("check ", WORK / "anchoring_check_A.jpg")
     return 0
@@ -80,6 +99,7 @@ def cmd_guide(a) -> int:
     real = rv.wide_view(rv.load_cube(SCAN, sweep), view["yaw_deg"], view["pitch_deg"], view["hfov_deg"], view["width"], view["height"])
     out = WORK / f"guide_B_{sweep[:10]}{'_edges' if a.edges else ''}.jpg"
     rl.draw_guide(real, layout, cams[sweep], view, a.edges).save(out, quality=92)
+    _describe_work_folder()
     print("how each neighbour sees the layout:", json.dumps(seen))
     print("second standpoint", sweep, json.dumps(view))
     print("guide", out)
@@ -129,7 +149,17 @@ def cmd_judge(a) -> int:
         again = rl.find_pieces(folder / "staged_view_settled.jpg", folder / "pieces_found.json")
         verdict["where_it_stands"] = rl.where_it_stands(again, layout, cams[sweep], view)
     earlier = json.loads((folder / "verdict.json").read_text()) if (folder / "verdict.json").exists() else {}
-    verdict = {**{k: v for k, v in earlier.items() if k in ("seen_by_vision_model", "where_it_stands", "looked_at")}, **verdict}
+    if "seen_by_vision_model" in earlier and "seen_by_vision_model" not in verdict:
+        # An earlier look is kept (it was paid for) and set against the blocks again, in case the measure changed.
+        blocks = rl.regions(layout, cams[sweep], view, whole=True)
+        kept = earlier["seen_by_vision_model"]
+        verdict["seen_by_vision_model"] = {"note": kept["note"], "pieces": {
+            n: {"present": v["present"], **rl.box_agreement(v.get("seen_box"), blocks[n])} for n, v in kept["pieces"].items()}}
+    if a.note:
+        verdict["looked_at"] = a.note
+    elif "looked_at" in earlier:
+        verdict["looked_at"] = earlier["looked_at"]
+    _describe_work_folder()
     (folder / "verdict.json").write_text(json.dumps(verdict, indent=1))
     sheet = rl.side_by_side(FIRST_FOLDER, folder, WORK / f"side_by_side_{folder.name[-8:]}.jpg")
     print(json.dumps(verdict, indent=1))
@@ -140,7 +170,7 @@ def cmd_judge(a) -> int:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = ap.add_subparsers(dest="step", required=True)
-    sub.add_parser("layout")
+    sub.add_parser("layout").add_argument("--square-rug", action="store_true", help="replace the rug's measured corners by the nearest rectangle (and say so)")
     for name in ("guide", "stage"):
         p = sub.add_parser(name)
         p.add_argument("--sweep", help="use this standpoint instead of picking the best neighbour")
@@ -153,6 +183,7 @@ def main() -> int:
     p = sub.add_parser("judge")
     p.add_argument("folder")
     p.add_argument("--look", action="store_true", help="also ask the vision model where it sees each piece (one counted call)")
+    p.add_argument("--note", default="", help="what a person saw when looking at the result, kept in the verdict")
     p.add_argument("--stand", action="store_true", help="also find the pieces in the result and measure, in metres, where they stand (one counted call, kept)")
     a = ap.parse_args()
     return {"layout": cmd_layout, "guide": cmd_guide, "stage": cmd_stage, "judge": cmd_judge}[a.step](a)

@@ -6,6 +6,7 @@ photo is staged, and the result is laid back onto the panorama. Every view from 
 shows the same furniture in the same place, because all of them are cut from the same picture.
 
 What this does not do: agree between two standpoints. That needs the furniture to exist in 3D.
+`reimagine_layout.py` tries that, by giving each piece a place on the floor; it gets part of the way.
 
 The output is an illustration and never evidence; it follows the labelling rules in `reimagine.py`.
 """

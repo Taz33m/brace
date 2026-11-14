@@ -278,6 +278,38 @@ def test_box_agreement_between_what_was_seen_and_the_block():
     assert rl.box_agreement(None, block) == {"overlap": None, "centre_off_px": None}
 
 
+def test_where_a_piece_stands_in_the_result_is_measured_in_metres():
+    layout = two_blocks()
+
+    def found(piece, shift_e=0.0, name=None, hide_left=False):
+        """What the finder would report for this piece if the result showed it `shift_e` metres to the east."""
+        moved = {"footprint": [[e + shift_e, n] for e, n in piece["footprint"]], "height_m": piece["height_m"]}
+        f = seen_as(piece["kind"], moved["footprint"], piece["height_m"], name or piece["name"])
+        if hide_left:                                                # the finder guesses an end it cannot see
+            f["floor_left"] = list(rv.project([(0.0, 2.3, 0.2)], CAMERA, **VIEW)[0])
+        return f
+
+    near, far = layout["pieces"]
+    exact = rl.where_it_stands({"pieces": [found(near), found(far)], "rug": []}, layout, CAMERA, VIEW)
+    assert exact["pieces"]["near"]["off_m"] == 0.0 and exact["pieces"]["far"]["off_m"] == 0.0 and exact["not_in_the_layout"] == []
+    # The far piece drawn 0.3 m to the east, under another name, plus a thing the layout never had.
+    extra = {"name": "vase", "kind": "plant", "look": "", "box": [10, 10, 40, 60], "floor_left": [12, 60], "floor_right": [38, 60]}
+    moved = rl.where_it_stands({"pieces": [extra, found(far, 0.3, "big grey couch"), found(near)], "rug": []}, layout, CAMERA, VIEW)
+    assert moved["pieces"]["far"]["seen_as"] == "big grey couch" and moved["pieces"]["far"]["off_m"] == pytest.approx(0.3, abs=0.02)
+    assert moved["pieces"]["near"]["off_m"] == 0.0 and moved["not_in_the_layout"] == ["vase"]
+    # An end reported inside a nearer piece's block was guessed, not seen: it is left out and said so.
+    guessed = rl.where_it_stands({"pieces": [found(near), found(far, hide_left=True)], "rug": []}, layout, CAMERA, VIEW)
+    assert guessed["pieces"]["far"]["ends_measured"] == 1 and guessed["pieces"]["far"]["ends_left_out"] == ["behind the near"]
+    assert guessed["pieces"]["far"]["off_m"] == 0.0
+    # A piece the result does not show has no number rather than a made-up one.
+    gone = rl.where_it_stands({"pieces": [found(near)], "rug": []}, layout, CAMERA, VIEW)
+    assert gone["pieces"]["far"] == {"seen_as": None, "off_m": None, "ends_measured": 0}
+    # The rug: a corner 0.5 m off is reported as that.
+    rug_px = rv.project([(e + (0.5 if i == 0 else 0.0), n, 0.0) for i, (e, n) in enumerate(layout["rug"]["footprint"])], CAMERA, **VIEW)
+    rug = rl.where_it_stands({"pieces": [], "rug": [list(p) for p in rug_px]}, layout, CAMERA, VIEW)["rug"]
+    assert rug["worst_m"] == pytest.approx(0.5, abs=0.02) and sorted(rug["seen_corner_to_nearest_layout_corner_m"])[:3] == [0.0, 0.0, 0.0]
+
+
 def test_left_over_block_colour_is_counted():
     layout = two_blocks()
     picture = np.full((100, 100, 3), 128, dtype=np.float32)

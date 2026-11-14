@@ -11,6 +11,14 @@ given a place in the room first:
 4. ask the image service to replace each block with the piece it stands for;
 5. measure whether the furniture in the result is where the blocks were.
 
+What came of it (14 November, scan 9odpSsu2KYQ, two standpoints 1.75 m apart, two paid tries): the second
+standpoint shows the same pieces in the same arrangement and the room itself is untouched, but the image
+service treats a block as roughly where and roughly how big, not as a mould. Plants and the lamp landed
+within 0.05 m of their footprints; the sofa and the coffee table came out a tenth to a half larger than
+their blocks, which puts their feet 0.2 to 0.4 m off; the rug's corners 0.2 to 0.45 m off. Drawing the
+blocks' hidden edges and using stricter words did not tighten it. So: the same room to the eye in two
+still pictures, not the same room to a tape measure, and not good enough to walk between standpoints.
+
 Everything this writes is an illustration made from a generated picture. It is never evidence about the
 building, and it follows the labelling rules in `reimagine.py` (a record beside every generated file).
 """
@@ -363,7 +371,7 @@ def fits(footprint: list, outline, doors: list[dict], clear_m: float = 0.05) -> 
 
 
 def build_layout(found: dict, camera: dict, view: dict, plan: dict | None, room: str, source: dict,
-                 changed_mask: np.ndarray | None = None, least_changed: float = 0.2, square_rug: bool = True) -> dict:
+                 changed_mask: np.ndarray | None = None, least_changed: float = 0.2, square_rug: bool = False) -> dict:
     """Every piece found in the staged photo anchored to the floor and checked against the room. Nothing that
     fails a check is moved or dropped; the check is written beside the piece for whoever reads the layout.
 
@@ -371,8 +379,9 @@ def build_layout(found: dict, camera: dict, view: dict, plan: dict | None, room:
     changed was in the room already (a door, the fireplace): it is part of the building, not furniture, and
     is listed under `part_of_the_building` instead of being anchored.
 
-    The one thing that IS adjusted is the rug, squared up into a rectangle (`square_up`), and it says so:
-    the corners as measured stay in the layout beside the rectangle.
+    With `square_rug` the rug is the one thing that IS adjusted, into a rectangle (`square_up`), and it says
+    so: the corners as measured stay in the layout beside the rectangle. Off by default: on the one scan it
+    was tried on (14 November, with `hidden_edges`), the second standpoint came out no better placed.
     """
     outline = room_outline(plan, room) if plan else None
     doors = [o for o in (plan or {}).get("openings", []) if o["kind"] == "door" and (o.get("room") or "").lower() == room.lower()]
@@ -494,8 +503,9 @@ def draw_guide(photo: np.ndarray, layout: dict, camera: dict, view: dict, hidden
     the rug as a flat patch on the floor. This is what tells the image service where everything goes.
 
     With `hidden_edges`, the edges of every block are also drawn as thin dark lines of its own colour on top
-    of everything. Where one block stands in front of another, that is the only way to show where the
-    farther one ends: without it the image service has to guess, and guessed the sofa a fifth too wide.
+    of everything, so that a block standing behind another still shows where it ends. Off by default: tried
+    once (14 November, scan 9odpSsu2KYQ) together with stricter words, and the furniture came out no nearer
+    to its blocks. The image service treats blocks as roughly where and roughly how big, not as a mould.
     """
     im = Image.fromarray(photo.clip(0, 255).astype(np.uint8))
     draw = ImageDraw.Draw(im)
@@ -574,56 +584,76 @@ def box_agreement(seen: list[float] | None, block: np.ndarray) -> dict:
     ys, xs = np.nonzero(block)
     if seen is None or len(seen) != 4 or not len(xs):
         return {"overlap": None, "centre_off_px": None}
-    bx0, by0, bx1, by1 = xs.min(), ys.min(), xs.max(), ys.max()
-    x0, y0, x1, y1 = seen
-    iw, ih = max(0.0, min(x1, bx1) - max(x0, bx0)), max(0.0, min(y1, by1) - max(y0, by0))
-    union = (x1 - x0) * (y1 - y0) + (bx1 - bx0) * (by1 - by0) - iw * ih
-    off = math.hypot((x0 + x1) / 2 - (bx0 + bx1) / 2, (y0 + y1) / 2 - (by0 + by1) / 2)
-    return {"overlap": round(float(iw * ih / union), 3) if union > 0 else None, "centre_off_px": round(float(off)),
-            "block_box": [int(bx0), int(by0), int(bx1), int(by1)], "seen_box": [round(v) for v in seen]}
+    mine = [float(xs.min()), float(ys.min()), float(xs.max()), float(ys.max())]
+    off = math.hypot((seen[0] + seen[2]) / 2 - (mine[0] + mine[2]) / 2, (seen[1] + seen[3]) / 2 - (mine[1] + mine[3]) / 2)
+    return {"overlap": round(_box_overlap(list(seen), mine), 3), "centre_off_px": round(float(off)),
+            "block_box": [int(v) for v in mine], "seen_box": [round(v) for v in seen]}
+
+
+def _box_overlap(one: list[float], other: list[float]) -> float:
+    """How much two pixel boxes [left, top, right, bottom] share: 1 when identical, 0 when apart."""
+    iw, ih = max(0.0, min(one[2], other[2]) - max(one[0], other[0])), max(0.0, min(one[3], other[3]) - max(one[1], other[1]))
+    union = (one[2] - one[0]) * (one[3] - one[1]) + (other[2] - other[0]) * (other[3] - other[1]) - iw * ih
+    return float(iw * ih / union) if union > 0 else 0.0
 
 
 def where_it_stands(found_again: dict, layout: dict, camera: dict, view: dict) -> dict:
     """Is the furniture in the second standpoint's result standing where the layout says, in metres?
 
-    `found_again` is the same finder run on the result. Each piece's floor edge there is carried to the floor
-    from the second standpoint and set against the footprint measured from the first: `off_m` is how far the
-    worse end of that edge lies outside the footprint (0 when the piece's feet are on its footprint), and
-    `middle_off_m` how far the middle of the edge is from the footprint's middle. Pieces are paired by kind,
-    nearest first. The rug is compared corner to nearest corner.
+    `found_again` is the same finder run on the result. Each thing it found is paired with the layout piece
+    of the same kind whose block it overlaps most in the picture. The two ends of its floor edge are then
+    carried to the floor from the second standpoint and set against the footprint measured from the first:
+    `off_m` is how far the worse end lies outside that footprint (0 when the piece's feet are on it). An end
+    that lies behind a nearer piece's block was not seen but guessed, so it is left out; a piece with both
+    ends hidden has no number. The rug's corners are compared with the nearest corner of the layout's rug,
+    which leans on the vision model reading rug corners well; it often does not, so look at the picture too.
     """
     from shapely.geometry import Point, Polygon
-    seen = []
-    for f in found_again["pieces"]:
-        ends = [rv.floor_point(tuple(f[k]), camera, **view) for k in ("floor_left", "floor_right")]
-        if all(ends):
-            seen.append({"name": f["name"], "kind": f["kind"], "ends": ends})
-    out: dict = {"pieces": {}, "extra_pieces": []}
-    pairs = []
-    for piece in layout["pieces"]:
-        centre = np.mean(np.array(piece["footprint"]), axis=0)
-        for i, s in enumerate(seen):
-            if s["kind"] == piece["kind"]:
-                pairs.append((float(np.linalg.norm(np.mean(np.array(s["ends"]), axis=0) - centre)), piece["name"], i))
+    whole = regions(layout, camera, view, whole=True)
+    order = [p["name"] for p in draw_order(layout["pieces"], camera)]          # farthest first
+    boxes = {}
+    for name, mask in whole.items():
+        ys, xs = np.nonzero(mask)
+        boxes[name] = [float(xs.min()), float(ys.min()), float(xs.max()), float(ys.max())] if len(xs) else None
+
+    def hidden(pixel, name: str) -> str | None:
+        x, y = int(round(pixel[0])), int(round(pixel[1]))
+        if not (0 <= x < view["width"] and 0 <= y < view["height"]):
+            return "outside the picture"
+        for nearer in order[order.index(name) + 1:]:
+            if whole[nearer][y, x]:
+                return f"behind the {nearer}"
+        return None
+
+    pairs = [(_box_overlap(f["box"], boxes[p["name"]]), p["name"], i) for p in layout["pieces"] if boxes.get(p["name"])
+             for i, f in enumerate(found_again["pieces"]) if f["kind"] == p["kind"] and len(f["box"]) == 4]
+    out: dict = {"pieces": {}}
     used: set[int] = set()
-    for gap, name, i in sorted(pairs):
-        if name in out["pieces"] or i in used:
+    for share, name, i in sorted(pairs, reverse=True):
+        if share < 0.1 or name in out["pieces"] or i in used:
             continue
         used.add(i)
-        piece = next(p for p in layout["pieces"] if p["name"] == name)
-        shape = Polygon(piece["footprint"])
-        out["pieces"][name] = {"seen_as": seen[i]["name"], "off_m": round(max(shape.distance(Point(e)) for e in seen[i]["ends"]), 2),
-                               "middle_off_m": round(gap, 2), "floor_edge": [[round(v, 2) for v in e] for e in seen[i]["ends"]]}
+        f = found_again["pieces"][i]
+        shape = Polygon(next(p for p in layout["pieces"] if p["name"] == name)["footprint"])
+        ends, left_out = [], []
+        for k in ("floor_left", "floor_right"):
+            why = hidden(f[k], name)
+            spot = rv.floor_point(tuple(f[k]), camera, **view)
+            if why or spot is None:
+                left_out.append(why or "above the horizon")
+            else:
+                ends.append(spot)
+        out["pieces"][name] = {"seen_as": f["name"], "box_overlap": round(share, 2),
+                               "off_m": round(max(shape.distance(Point(e)) for e in ends), 2) if ends else None,
+                               "ends_measured": len(ends), "ends_left_out": left_out,
+                               "floor_edge": [[round(v, 2) for v in e] for e in ends]}
     for piece in layout["pieces"]:
-        out["pieces"].setdefault(piece["name"], {"seen_as": None, "off_m": None, "middle_off_m": None})
-    out["extra_pieces"] = [s["name"] for i, s in enumerate(seen) if i not in used]
-    rug = anchor_rug(found_again.get("rug") or [], camera, view) if layout.get("rug") else None
-    if rug:
-        gaps = [min(math.dist(c, d) for d in rug["footprint"]) for c in layout["rug"]["footprint"]]
-        out["rug"] = {"corner_off_m": [round(g, 2) for g in gaps], "worst_corner_off_m": round(max(gaps), 2),
-                      "sides_m": rug["sides_m"], "corners": rug["footprint"]}
-    elif layout.get("rug"):
-        out["rug"] = None
+        out["pieces"].setdefault(piece["name"], {"seen_as": None, "off_m": None, "ends_measured": 0})
+    out["not_in_the_layout"] = [f["name"] for i, f in enumerate(found_again["pieces"]) if i not in used]
+    if layout.get("rug"):
+        spots = [rv.floor_point(tuple(c), camera, **view) for c in found_again.get("rug") or []]
+        gaps = [round(min(math.dist(s, d) for d in layout["rug"]["footprint"]), 2) for s in spots if s]
+        out["rug"] = {"seen_corner_to_nearest_layout_corner_m": gaps, "worst_m": max(gaps)} if gaps else None
     return out
 
 

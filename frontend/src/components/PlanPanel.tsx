@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { costRange, HAZARD, TIMING } from "../format";
-import type { Action, AgentEvent, Facing, Lead, Message, Plan, Timing } from "../types";
+import type { Action, AgentEvent, Facing, Lead, Measured, Message, Plan, Timing } from "../types";
 import { FacingDiagram } from "./FacingDiagram";
 
 export type RunState = "idle" | "running" | "replaying" | "done" | "error";
@@ -22,6 +22,8 @@ interface Props {
   approved?: string[];
   /** For outside actions: what in the nearest scanned space faces them, measured from the scan. */
   facing?: Facing | null;
+  /** Per action: the site model's measurements that bear on it, each with the capture or scan it rests on. */
+  measured?: Record<string, Measured[]> | null;
   /** A notice waiting for the owner's approval. The bar only counts down to Brace asking aloud; it approves nothing. */
   pending?: { label: string; seconds: number; left: number; asked: boolean } | null;
   onApproveNow?: () => void;
@@ -125,6 +127,21 @@ export function PlanPanel(p: Props) {
                       <h4>{a.title}{p.approved?.includes(a.id) && <span className="approved">Approved</span>}</h4>
                     </div>
                     <p>{a.why}</p>
+                    {p.measured?.[a.id]?.length ? (
+                      <ul className="measured" aria-label="Measured">
+                        {p.measured[a.id].map((m, i) => (
+                          <li key={i}>
+                            <details>
+                              <summary><strong>{m.label}</strong>{m.text}</summary>
+                              <p>
+                                {m.sources.map((src) => [src.provider, src.what, src.captured ? `dated ${src.captured}` : null].filter(Boolean).join(", ")).join("; ")}.
+                                {m.limits ? ` Limit: ${m.limits}.` : ""}
+                              </p>
+                            </details>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
                     <div className="evidence">
                       {a.site?.image && <Thumb src={api.file(p.id, a.site.image)} label={`From the air${a.structure ? `, ${a.structure}` : ""}`} onZoom={p.onZoom} />}
                       {a.site?.oblique_image && <Thumb src={api.file(p.id, a.site.oblique_image)} label={(a.site.oblique_view ?? "").replace("-", " ")} onZoom={p.onZoom} />}

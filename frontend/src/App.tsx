@@ -10,6 +10,7 @@ type PrepareRoute = Extract<AppRoute, { kind: "prepare" }>;
 const BuildingPage = lazy(() => import("./components/BuildingPage").then(module => ({ default: module.BuildingPage })));
 const MapPage = lazy(() => import("./components/MapPage").then(module => ({ default: module.MapPage })));
 const VrPage = lazy(() => import("./components/VrPage").then(module => ({ default: module.VrPage })));
+const SiteModelPage = lazy(() => import("./components/SiteModelPage").then(module => ({ default: module.SiteModelPage })));
 const WalkPage = lazy(() => import("./components/WalkPage").then(module => ({ default: module.WalkPage })));
 
 /** Read and scrub invitations before any child can issue a network request. */
@@ -48,6 +49,9 @@ export function App() {
     invitation_token={route.invitation_token} on_invitation_consumed={consumed} />;
   if (route.kind === "recovery") return <RecoveryEntry case_id={route.case_id} />;
   if (route.kind === "invalid") return <div className="fatal" role="alert">{route.message}</div>;
+  if (route.kind === "model") return <Suspense fallback={<div className="fatal quiet" role="status">Loading the site model…</div>}>
+    <SiteModelPage key={route.building ?? "all"} id={route.building} />
+  </Suspense>;
   return <Suspense fallback={<div className="fatal quiet" role="status">Loading preparation tools…</div>}>
     {route.kind === "walk"
       ? <PrepareApp route={{ kind: "prepare", scenario: route.scenario, step: route.step, building: route.building, vr: false }} walk />

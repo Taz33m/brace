@@ -33,7 +33,7 @@ What you have
 - The inside: 3D scans of some spaces in the building. These are scans of individual leasable or shared spaces (a suite, an apartment unit, a leasing office, a gym, a warehouse bay), not of the whole building. There is no scan of plant rooms. Use them for what they do show: how much glass a space has and which way it faces, whether it is at ground level, what sits on or near the floor, exterior and roll-up doors. Say plainly when a risk depends on a space that was not scanned.
 
 How to work
-- Read the record, the threat and the site facts, and look at the site from above before anything else.
+- Read the record, the threat, the site facts and the measurements, and look at the site from above before anything else. When you give a height or a distance, use a measurement and say it is measured.
 - Open a lead for each specific vulnerability that this threat makes matter, then resolve every lead: add one or more actions, or close it as not a concern or as impossible to check. Let the threat pick the leads. Wind: roof coverings and edges, rooftop equipment, loose objects, trees over the building, large glass, roll-up doors, canopies and carports. Flooding: ground-level spaces and what sits on their floors, low entrances and docks, parking, drains. Wildfire: vegetation touching or near walls, debris on roofs and in gutters, combustible storage and fences against the building, vents, wood construction.
 - Look before you write. The roof analysis and the detector are pointers and they are sometimes wrong or out of date; the scan survey is a first pass. Confirm with your own eyes, from more than one angle when it is unclear.
 - Match the action to the clock. With 36 hours left nobody re-roofs a building. "before_arrival" actions must be things a crew or the on-site team can finish in the time left, allowing for crews leaving site six hours before conditions turn. Put real repairs under "after_event" (do it once this threat has passed, before the next one) or "capital" (plan and budget).
@@ -62,6 +62,7 @@ TOOLS: list[dict[str, Any]] = [
     {"name": "get_building", "description": "The building record: type, age, construction, size, manager and owner if known, and the tenants recorded as occupying it now.", "input_schema": EMPTY},
     {"name": "get_threat", "description": "The threat at this site: what is forecast here, how many hours are left, and the site's standing flood and fire zoning.", "input_schema": EMPTY},
     {"name": "get_site_facts", "description": "Machine-read facts from the aerial imagery for each structure on the site: roof material, shape and condition (1 worst to 5 best), flagged roof defects, counted rooftop objects, tree cover over the roof and close to the walls; plus site-wide tree cover and the date of the analysis.", "input_schema": EMPTY},
+    {"name": "get_measurements", "description": "Measurements of this site, each with the source it rests on: how high each roof stands and the tallest thing beside it (from the aerial surface model), which roof each scanned space is under, the windows and outside doors measured in each scan, and what is counted on the grounds. Use these numbers instead of estimating a height or a distance from a photo. A measurement says how big or how near something is, not what it is: look before calling a tall thing a tree.", "input_schema": EMPTY},
     {"name": "view_site",
      "description": "Look at the site from the air. 'overhead' is the straight-down photo with the grid and each structure outlined and labelled; zoom_cell enlarges the area around one cell. The four 'from-...' views are angled photos taken from that side (walls, glass, roof edges, equipment); structure picks which building they centre on (default the largest).",
      "input_schema": {"type": "object", "properties": {
@@ -223,6 +224,17 @@ class Planner:
                               for s in d["structures"]],
                "note": "Structure ids match the labels on the overhead photo. The roof analysis can be older than the photo."}
         return json.dumps(out, indent=1), "Reading the roof analysis", None
+
+    def t_get_measurements(self) -> tuple[Any, str, str | None]:
+        from . import site_model
+        try:
+            model = site_model.build(self.site.d["record"]["id"])
+        except KeyError:
+            return "No measurements have been assembled for this site.", "Reading the site's measurements", None
+        out = {"stages": [{"stage": s["key"], "state": s["state"], "result": s["headline"]} for s in model["stages"]],
+               "measurements": site_model.measured_notes(model),
+               "note": "Each line names its source. Where a stage has not run for this site there is no measurement; do not fill one in."}
+        return json.dumps(out, indent=1), "Reading the site's measurements", None
 
     def t_view_site(self, view: str, zoom_cell: str | None = None, structure: str | None = None) -> tuple[Any, str, str | None]:
         s = self.site

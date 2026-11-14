@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse, Response
 from PIL import Image
 from sse_starlette.sse import EventSourceResponse
 
-from . import clock, hazards, matterport, openings, portfolio as portfolio_data, rain, screen, vexcel, voice
+from . import clock, hazards, matterport, openings, portfolio as portfolio_data, rain, screen, site_model, vexcel, voice
 from .agent import VIEW_TO_OBLIQUE, Planner
 from .building import BuildingError, Site, building_dir
 from .config import MATTERPORT_SDK_KEY
@@ -372,13 +372,76 @@ def _voice_brief(building: int, scenario: str, step: str | None) -> tuple[dict, 
     return s.d["record"], threat, _plan(building, _plan_key(scenario, step_id)), s.d["scans"]
 
 
+def _measured(building: int, plan: dict | None) -> dict[str, list[dict]]:
+    """For each action of a plan, the site model's measurements that bear on it. Empty when there is no plan."""
+    if not plan:
+        return {}
+    model = _site_model(building)
+    found = {a["id"]: site_model.measured_for(model, a) for a in plan.get("actions") or []}
+    return {k: v for k, v in found.items() if v}
+
+
+def _site_model(building: int) -> dict:
+    try:
+        return site_model.build(building)
+    except KeyError:
+        raise HTTPException(404, "this building has not been gathered yet")
+
+
+@app.get("/api/site-model/board")
+def site_model_board() -> dict:
+    """Each of the six stages across every gathered building: how many sites it has run for, and its number."""
+    return site_model.board()
+
+
+@app.get("/api/buildings/{building_id}/site-model")
+def building_site_model(building_id: int) -> dict:
+    """Everything known about one address, each fact with the sources it rests on."""
+    model = _site_model(building_id)
+    return {**model, "facts": site_model.facts(model)}
+
+
+@app.get("/api/buildings/{building_id}/find")
+def building_find(building_id: int, q: str) -> dict:
+    """Find a thing in this building's scans by describing it. Answers only from what was indexed."""
+    from .openproblems import search
+    try:
+        return {"query": q, "said": search.count(building_id, q)["statement"], "hits": search.search(building_id, q, k=8)}
+    except search.SearchError:
+        return {"query": q, "said": "This building's scans have not been indexed yet.", "hits": []}
+
+
+@app.get("/api/buildings/{building_id}/measured")
+def building_measured(building_id: int, scenario: str, step: str | None = None) -> dict:
+    """The measurements that bear on each action of the saved plan, with their sources."""
+    sc = _scenario(scenario)
+    return {"actions": _measured(building_id, _plan(building_id, _plan_key(sc["id"], _step(sc, step))))}
+
+
+@app.post("/api/buildings/{building_id}/reports")
+def building_report(building_id: int, body: dict) -> dict:
+    """File what a resident reports against the scanned room it names. It is recorded as reported, not judged."""
+    _site_model(building_id)
+    try:
+        return site_model.add_report(building_id, str(body.get("text") or ""), body.get("scan_id") or None)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.delete("/api/buildings/{building_id}/reports")
+def building_reports_clear(building_id: int) -> dict:
+    site_model.clear_reports(building_id)
+    return {"ok": True}
+
+
 @app.post("/api/voice/session")
 def voice_session(building: int, scenario: str, step: str | None = None, view: str = "headset") -> dict:
     """A short-lived key for the voice, already told about this building's saved plan. `view` is headset or screen."""
     if not voice.ready():
         raise HTTPException(503, "voice is not configured on this machine")
     try:
-        return voice.mint(voice.session(*_voice_brief(building, scenario, step), view))
+        brief = _voice_brief(building, scenario, step)
+        return voice.mint(voice.session(*brief, view, measured=_measured(building, brief[2])))
     except voice.VoiceError as e:
         raise HTTPException(502, str(e))
 
@@ -386,7 +449,8 @@ def voice_session(building: int, scenario: str, step: str | None = None, view: s
 @app.get("/api/voice/notes")
 def voice_notes(building: int, scenario: str, step: str | None = None, view: str = "headset") -> dict:
     """The notes for another forecast step, so a conversation already under way can be told the plan has changed."""
-    return {"instructions": voice.instructions(*_voice_brief(building, scenario, step), view)}
+    brief = _voice_brief(building, scenario, step)
+    return {"instructions": voice.instructions(*brief, view, measured=_measured(building, brief[2]))}
 
 
 # --- plan runs -------------------------------------------------------------------

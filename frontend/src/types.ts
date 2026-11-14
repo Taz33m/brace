@@ -267,3 +267,25 @@ export interface ClockChange {
 
 /** A forecast step that has a saved plan for a building. */
 export interface SavedStep { step: string; label: string; hours_left: number | null; headline: string | null }
+
+/** One source a fact rests on: whose data, which capture or scan, and when. */
+export interface FactSource { id: string; provider?: string; what?: string; captured?: string; collection?: string; model?: string; name?: string; note?: string }
+/** A measurement or finding with where it came from. */
+export interface Measured { label: string; text: string; src: string[]; sources: FactSource[]; how?: string; limits?: string }
+export type StageKey = "join" | "classify" | "inventory" | "expose" | "surface" | "search";
+export interface Stage { key: StageKey; problem: string; job: string; state: "ready" | "partial" | "not_run"; number: number; unit: string; headline: string; limits?: string }
+export interface SiteFact extends Measured { stage: StageKey; scan_id?: string; structure?: string; report?: boolean }
+export interface ReportPlace { scan_id: string; scan_name: string; room: string | null; thing: string | null; position_id: string; bearing_deg: number | null; matched_on: string[] }
+export interface ResidentReport { id: string; at: string; text: string; scan_id: string | null; where: ReportPlace | null; status: string }
+export interface SiteModel {
+  property_id: number; name: string; address: string; assembled_at: string;
+  stages: Stage[]; facts: SiteFact[]; reports: ResidentReport[];
+  scans: { id: string; name: string }[]; structures: { id: string }[];
+  sources: Record<string, Omit<FactSource, "id">>;
+}
+export interface BoardStage { key: StageKey; problem: string; job: string; sites_ready: number; number: number; of: number; median_move_m?: number; largest_move_m?: number }
+export interface Board {
+  sites: number; stages: BoardStage[];
+  rows: { property_id: number; name: string; address: string; scans: number; structures: number; stages: Record<StageKey, { state: Stage["state"]; number: number; headline: string }> }[];
+}
+export interface FindHit { scan_id: string; scan_name: string; room: string | null; thing: string | null; where: string; direction: string | null; phrase: string }

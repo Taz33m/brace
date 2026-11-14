@@ -70,7 +70,8 @@ HOW_OUTSIDE_SHOWS = {
 }
 
 
-def instructions(record: dict, threat: dict, plan: dict | None, scans: list[dict], view: str = "headset") -> str:
+def instructions(record: dict, threat: dict, plan: dict | None, scans: list[dict], view: str = "headset",
+                 measured: dict[str, list[dict]] | None = None) -> str:
     """Everything the voice may say, and the rules for saying it. No contact details, no tenant records."""
     view = view if view in WHERE_THE_OWNER_IS else "headset"
     site = threat.get("at_this_site") or {}
@@ -134,6 +135,16 @@ def instructions(record: dict, threat: dict, plan: dict | None, scans: list[dict
     for a in plan.get("actions") or []:
         lines.append(f"- {a['id']} | {TIMING.get(a.get('timing'), a.get('timing'))} | {_where(a)} | {a['title']} | {a.get('why')} | "
                      f"{a.get('crew')}, {a.get('hours_of_work')} hours | {_money(a.get('cost_low', 0), a.get('cost_high', 0))}")
+    if measured:
+        lines += ["", "MEASURED SINCE THE PLAN WAS WRITTEN (action, what, value, where it comes from)",
+                  "- These are the only measurements you may quote. Give the number with its unit. If asked where a number comes from, "
+                  "give the source and its date as written here. Keep any limit that is stated."]
+        for action_id, facts in measured.items():
+            for f in facts:
+                source = "; ".join(" ".join(str(x) for x in (s.get("provider"), s.get("what"),
+                                                             f"dated {s['captured']}" if s.get("captured") else None) if x)
+                                   for s in f.get("sources") or [])
+                lines.append(f"- {action_id} | {f['label']} | {f['text']} | {source}" + (f" | limit: {f['limits']}" if f.get("limits") else ""))
     closed = [l for l in plan.get("leads") or [] if l.get("status") in ("not_a_concern", "cannot_check")]
     if closed:
         lines += ["", "CHECKED AND SET ASIDE"]
@@ -169,11 +180,12 @@ def tools() -> list[dict]:
     ]
 
 
-def session(record: dict, threat: dict, plan: dict | None, scans: list[dict], view: str = "headset") -> dict:
+def session(record: dict, threat: dict, plan: dict | None, scans: list[dict], view: str = "headset",
+            measured: dict[str, list[dict]] | None = None) -> dict:
     """The request body for a short-lived key. Near-field noise reduction suits a phone held at the face."""
     return {"session": {
         "type": "realtime", "model": MODEL,
-        "instructions": instructions(record, threat, plan, scans, view),
+        "instructions": instructions(record, threat, plan, scans, view, measured),
         "audio": {"input": {"turn_detection": {"type": "semantic_vad"}, "noise_reduction": {"type": "near_field"},
                             "transcription": {"model": "gpt-4o-mini-transcribe"}},
                   "output": {"voice": VOICE}},
