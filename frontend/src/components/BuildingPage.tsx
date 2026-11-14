@@ -163,6 +163,11 @@ export function BuildingPage({ id, scenario, step, sdkKey, agentReady, onBack }:
         <span className="clock">{t.hours_left != null ? `Damaging conditions here in about ${hours(t.hours_left)}` : "No arrival time for this site"}</span>
         <span>{exposureLine(t.at_this_site)}</span>
         {standing && <span>{standing}</span>}
+        {b.observed_rain && (
+          <span title={`${b.observed_rain.source}. Peak rate ${b.observed_rain.peak_mm_per_h} mm an hour${b.observed_rain.capped ? "; the data caps rates at 75 mm an hour, so the heaviest bursts are understated" : ""}.`}>
+            What then fell here: {b.observed_rain.inches} in of rain ({Math.round(b.observed_rain.mm)} mm), measured afterwards
+          </span>
+        )}
         <span className="issued">Forecast issued {when(t.forecast_issued)}</span>
       </div>
 

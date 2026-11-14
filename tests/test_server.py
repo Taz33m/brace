@@ -29,6 +29,8 @@ def client(site, threat, monkeypatch):
     monkeypatch.setattr(screen, "rank", lambda sid, step=None: [row(7, "Acme"), row(8, "Acme", "Apartment community"), row(9, "Other")])
     monkeypatch.setattr(screen, "threat_for", lambda sid, step, b: {**threat, "step_id": step})
     monkeypatch.setattr(screen, "site_facts", lambda: {})
+    monkeypatch.setattr(server.rain, "REPLAY_WINDOWS", {"test-storm": ("2024-07-07T12:00:00", "2024-07-09T00:00:00")})
+    monkeypatch.setattr(server.rain, "observed", lambda lat, lon, start, end: {"mm": 104.0, "inches": 4.1})
     monkeypatch.setattr(server.portfolio_data, "building", lambda pid: {"last_sale": {"price": 18_000_000, "basis": "Confirmed", "portfolio": False, "date": "2014-09-19"}})
     monkeypatch.setattr(server.Site, "load", classmethod(lambda cls, pid: site if pid == 7 else (_ for _ in ()).throw(server.BuildingError("unknown property"))))
     return TestClient(server.app)
@@ -57,6 +59,8 @@ def test_building_bundle_plan_and_files(client, site):
     b = client.get("/api/buildings/7?scenario=test-storm&step=t48").json()
     assert b["record"]["name"] == "Test Plaza" and b["threat"]["step_id"] == "t48" and b["plan"] is None
     assert b["last_sale"]["price"] == 18_000_000 and b["last_sale"]["basis"] == "Confirmed"
+    assert b["observed_rain"] is None                                   # an earlier forecast step: no hindsight shown
+    assert client.get("/api/buildings/7?scenario=test-storm&step=t36").json()["observed_rain"]["mm"] == 104.0
     assert "in a high-risk flood zone (AE)" in b["reasons"]
     assert client.get("/api/buildings/999?scenario=test-storm").status_code == 404
     assert client.get("/api/buildings/7/aerial.jpg").headers["content-type"] == "image/jpeg"

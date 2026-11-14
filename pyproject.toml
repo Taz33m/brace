@@ -14,6 +14,9 @@ dependencies = [
     "python-dotenv>=1.0",
     "sse-starlette>=2.1",
     "pyshp>=2.3",
+    "obstore>=0.12.1",
+    "xarray>=2026.9.0",
+    "zarr>=3.1.6",
 ]
 
 [dependency-groups]

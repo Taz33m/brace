@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse, Response
 from PIL import Image
 from sse_starlette.sse import EventSourceResponse
 
-from . import hazards, matterport, portfolio as portfolio_data, screen, vexcel
+from . import hazards, matterport, portfolio as portfolio_data, rain, screen, vexcel
 from .agent import VIEW_TO_OBLIQUE, Planner
 from .building import BuildingError, Site, building_dir
 from .config import MATTERPORT_SDK_KEY
@@ -140,7 +140,12 @@ def building(property_id: int, scenario: str, step: str | None = None) -> dict:
         raise HTTPException(502, str(e))
     facts = screen.site_facts().get(str(property_id))
     reasons = [x["text"] for x in screen.signals(sc["kind"], s.d["record"], facts, threat["standing_risk"])]
+    # Observed rainfall is hindsight in a replay, so it is offered only once the storm has arrived,
+    # as "what actually fell", and goes to neither the ranking nor the agent.
+    window = rain.REPLAY_WINDOWS.get(scenario) if sc["steps"] and step_id == sc["steps"][-1]["id"] else None
+    fell = rain.observed(s.d["record"]["lat"], s.d["record"]["lon"], *window) if window else None
     return {**s.d, "threat": threat, "reasons": reasons, "last_sale": portfolio_data.building(property_id).get("last_sale"),
+            "observed_rain": fell,
             "plan": _plan(property_id, _plan_key(scenario, step_id))}
 
 
