@@ -640,7 +640,10 @@ def building_site_model(building_id: int, request: Request) -> dict:
     # Each report carries its check against the scan. Reading the site model never pays for a look: one already made is shown.
     model["reports"] = [{**row, "check": report_check.checked(building_id, row, look=False)}
                         for row in _resident_reports(building_id, request, model["reports"])]
-    return {**model, "facts": site_model.facts(model)}
+    from . import response
+    # What residents said becomes work, and a household that cannot stay needs somewhere to go.
+    return {**model, "facts": site_model.facts(model), "responses": response.from_residents(model["reports"]),
+            "homes_available": portfolio_data.homes_available_near(building_id)}
 
 
 def _resident_reports(building_id: int, request: Request, filed: list[dict]) -> list[dict]:

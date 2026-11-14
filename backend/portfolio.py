@@ -194,6 +194,40 @@ def rent(property_id: int) -> dict | None:
     return _RENTS.get(int(property_id))
 
 
+def homes_available_near(property_id: int, within_km: float = 3.0, limit: int = 4) -> list[dict]:
+    """Where a household could go if its home cannot be lived in: apartment communities with homes listed as
+    available, this one first and then the nearest, each with its asking rents.
+
+    From the CoStar apartment listings as they stand in the kit. Availability is what the listing says, not a
+    reservation, and the rents are asking rents. Empty when the building has no position or nothing is near.
+    """
+    import math
+    try:
+        here = building(property_id)
+    except KeyError:
+        return []
+    lat, lon = here.get("lat"), here.get("lon")
+    if lat is None or lon is None:
+        return []
+    found = []
+    try:
+        with open(KIT_DIR / "data" / "apartment-listing.jsonl") as f:
+            for line in f:
+                r = json.loads(line)
+                a = r.get("address") or {}
+                if not r.get("numUnitsAvailable") or not r.get("minRent") or a.get("latitude") is None or a.get("longitude") is None:
+                    continue
+                km = math.hypot((a["latitude"] - lat) * 111.2, (a["longitude"] - lon) * 111.2 * math.cos(math.radians(lat)))
+                same = r.get("propertyId") == property_id
+                if same or km <= within_km:
+                    found.append({"property_id": r.get("propertyId"), "name": r.get("buildingName") or _address(a), "same_community": same, "km": round(km, 1),
+                                  "available": r["numUnitsAvailable"], "low": r["minRent"], "high": r.get("maxRent") or r["minRent"],
+                                  "source": "CoStar apartment listing"})
+    except OSError:
+        return []
+    return sorted(found, key=lambda h: (not h["same_community"], h["km"]))[:limit]
+
+
 def tenants(property_id: int) -> list[dict]:
     """Companies recorded as occupying the building now, largest first."""
     rows = _index()["tenants"].get(str(property_id), [])

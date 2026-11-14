@@ -286,7 +286,12 @@ export interface ReportCheck {
   before: (Record<string, unknown> & { basis?: string }) | null;
 }
 export interface ResidentReport { id: string; at: string; text: string; scan_id: string | null; where: ReportPlace | null; status: string; check?: ReportCheck | null }
+/** Work that a resident's own words added, in the order it should be done. */
+export interface ResidentResponse { id: string; report_id: string; kind: "person" | "inspect" | "call"; title: string; who: string; when: string; said: string; because?: string }
+/** A community with homes listed as available, for a household that cannot stay where it is. */
+export interface HomeAvailable { property_id: number; name: string; same_community: boolean; km: number; available: number; low: number; high: number; source: string }
 export interface SiteModel {
+  responses?: ResidentResponse[]; homes_available?: HomeAvailable[];
   property_id: number; name: string; address: string; assembled_at: string;
   stages: Stage[]; facts: SiteFact[]; reports: ResidentReport[];
   scans: { id: string; name: string }[]; structures: { id: string }[];

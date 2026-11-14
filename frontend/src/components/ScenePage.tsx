@@ -4,7 +4,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { api } from "../api";
 import { costRange } from "../format";
 import { prepareHash, sceneHash } from "../recovery/routes";
-import type { Action, Approval, Building, Measured, ResidentReport, SavedStep, Scenario, SiteScene } from "../types";
+import type { Action, Approval, Building, Measured, ResidentReport, SavedStep, Scenario, SiteScene, HomeAvailable, ResidentResponse } from "../types";
 import "./scene.css";
 
 interface Props { id: number; scenario: Scenario; step: string | null }
@@ -56,6 +56,8 @@ export function ScenePage({ id, scenario, step }: Props) {
   const [snapped, setSnapped] = useState<null | "before" | "after">(null);
   const [earlier, setEarlier] = useState<Building | null>(null);     // the last plan made before the storm, for the morning after
   const [seen, setSeen] = useState<string | null>(null);              // the resident's report that is open
+  const [responses, setResponses] = useState<ResidentResponse[]>([]);  // the work residents' words added
+  const [housing, setHousing] = useState<HomeAvailable[]>([]);         // where a household could go
 
   useEffect(() => {
     let current = true;
@@ -68,7 +70,7 @@ export function ScenePage({ id, scenario, step }: Props) {
   useEffect(() => { api.savedSteps(id, scenario.id).then(setSaved).catch(() => setSaved([])); }, [id, scenario.id]);
   useEffect(() => {
     let current = true;
-    const read = () => api.siteModel(id).then((m) => { if (current) setReports(m.reports); }).catch(() => {});
+    const read = () => api.siteModel(id).then((m) => { if (current) { setReports(m.reports); setResponses(m.responses ?? []); setHousing(m.homes_available ?? []); } }).catch(() => {});
     read();
     const t = window.setInterval(read, 5000);
     return () => { current = false; window.clearInterval(t); };
@@ -395,7 +397,8 @@ export function ScenePage({ id, scenario, step }: Props) {
   if (error) return <div className="fatal" role="alert">{error}</div>;
   const chosen = actions.find((a) => a.id === picked) ?? null;
   const notice = (!after && b?.plan?.messages.find((m) => m.kind === "notice" && chosen && m.action_ids.includes(chosen.id))) || null;
-  const shown = placed.find((r) => r.id === seen) ?? null;
+  const shown = reports.find((r) => r.id === seen) ?? null;
+  const added = responses.find((r) => r.report_id === seen) ?? null;
   // People first: what a resident has asked the property team for, whether or not it names a room.
   const asks = reports.filter((r) => /^Support request \(/.test(r.text)).map((r) => ({ id: r.id, kind: /^Support request \(([^)]*)\)/.exec(r.text)?.[1] ?? "", text: r.text.replace(/^Support request \([^)]*\):\s*/, "") }));
   const due = after ? earlier?.plan?.totals.after_event ?? null : null;
@@ -446,7 +449,7 @@ export function ScenePage({ id, scenario, step }: Props) {
         {after ? (
           <>
             <strong className="is-after">The morning after</strong>
-            <span>The storm has passed{due?.count ? `. ${due.count} jobs now due, ${costRange(due.cost_low, due.cost_high)}` : ""}</span>
+            <span>The storm has passed{due?.count ? `. ${due.count} jobs now due, ${costRange(due.cost_low, due.cost_high)}` : ""}{responses.length ? `. ${responses.length} more from what residents said` : ""}</span>
           </>
         ) : (
           <>
@@ -487,7 +490,8 @@ export function ScenePage({ id, scenario, step }: Props) {
         <aside className="scene-card scene-check">
           <p className="scene-when">A resident reports</p>
           <h2>“{shown.text.replace(/^Support request \([^)]*\):\s*/, "")}”</h2>
-          <p className="scene-who">{shown.where!.room}{shown.where!.thing ? `, at the ${shown.where!.thing}` : ""}{shown.where!.scan_name ? `. ${shown.where!.scan_name}` : ""}</p>
+          {shown.where && <p className="scene-who">{shown.where.room}{shown.where.thing ? `, at the ${shown.where.thing}` : ""}{shown.where.scan_name ? `. ${shown.where.scan_name}` : ""}</p>}
+          {added && <p className="scene-added"><strong>Added to the work</strong>{added.title}. {added.who.replace(/^./, (c) => c.toUpperCase())}, {added.when}.</p>}
           {shown.check && (
             <>
               <p className={`scene-verdict is-${shown.check.verdict}`}>{shown.check.says}</p>
@@ -503,10 +507,27 @@ export function ScenePage({ id, scenario, step }: Props) {
               {shown.check.before?.basis && <p className="scene-basis">{String(shown.check.before.basis)}</p>}
             </>
           )}
+          {added?.kind === "inspect" && housing.length > 0 && (
+            <div className="scene-housing">
+              <strong>If this home cannot be lived in</strong>
+              <ul>
+                {housing.slice(0, 3).map((h) => (
+                  <li key={h.property_id}><span>{h.same_community ? "Here" : `${h.name}, ${h.km.toFixed(1)} km`}</span><b>{h.available} homes free, {costRange(h.low, h.high)} a month</b></li>
+                ))}
+              </ul>
+              <p className="scene-basis">Homes listed as available and their asking rents, from CoStar apartment listings. Not a reservation.</p>
+            </div>
+          )}
         </aside>
       )}
 
       <nav className="scene-jobs" aria-label="The plan">
+        {responses.map((r) => (
+          <button key={r.id} className="is-resident" aria-pressed={r.report_id === seen} title="Added because a resident said so"
+                  onClick={() => { const report = reports.find((x) => x.id === r.report_id); if (!report) return; if (r.report_id === seen) setSeen(null); else if (placed.includes(report)) open(report); else { setSeen(report.id); setPicked(null); setSaid(null); } }}>
+            <b>{r.id}</b>{r.title}
+          </button>
+        ))}
         {actions.map((a) => (
           <button key={a.id} className={`is-${after ? "before_arrival" : a.timing}`} aria-pressed={a.id === picked} onClick={() => look(a.id === picked ? null : a)}>
             <b>{a.id.replace("A", "")}</b>{short(a)}
