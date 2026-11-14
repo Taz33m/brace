@@ -2,6 +2,8 @@ import { useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 import type { LocationRef } from "../../../docs/recovery-handoffs/shared-contract";
 import type { RecoverySpatial, SpatialScan } from "./spatial";
+import { interiorFloor, spatialFocusKey } from "./spatial";
+import type { InteriorChoice } from "./spatial";
 import { fitSource, geographicPoint, meanPoint, siteMetres, sourcePoint, sourceRing } from "./spatial-geometry";
 import type { Point2 } from "./spatial-geometry";
 import "./spatial-viewer.css";
@@ -65,7 +67,9 @@ function SiteView({ spatial, selected_location, on_focus }: Omit<SpatialViewerPr
   const coordinates = [...structures.flatMap(item => item.ring), ...scans.map(location => [location.longitude!, location.latitude!] as Point2)];
   const origin = meanPoint(coordinates);
   const fit = fitSource(coordinates.map(point => siteMetres(point, origin)));
-  const selected = structures.find(item => item.structure.id === selected_location?.structure_id)?.structure;
+  const selectedStructureId = selected_location && (!selected_location.scan_id || ["verified_unit", "verified_space"].includes(selected_location.binding))
+    ? selected_location.structure_id : null;
+  const selected = structures.find(item => item.structure.id === selectedStructureId)?.structure;
   const focusedGeo = geographicPoint([selected_location?.longitude, selected_location?.latitude])
     ?? geographicPoint(selected?.centroid);
   const project = (point: Point2) => fit!.project(siteMetres(point, origin));
@@ -79,7 +83,7 @@ function SiteView({ spatial, selected_location, on_focus }: Omit<SpatialViewerPr
         const center = project(sourceCenter);
         const location = spatial.locations.find(row => row.structure_id === structure.id && !row.scan_id)
           ?? fallbackLocation(`structure:${structure.id}`, `Structure ${structure.id}`, { structure_id: structure.id, longitude: sourceCenter[0], latitude: sourceCenter[1] });
-        const active = selected_location?.structure_id === structure.id;
+        const active = selectedStructureId === structure.id;
         return <g key={structure.id}>
           <polygon className={`brace-spatial-footprint${active ? " is-selected" : ""}`} points={ringString(ring.map(project))}
             tabIndex={0} role="button" aria-pressed={active} aria-label={`Select structure ${structure.id}`}
@@ -109,7 +113,7 @@ function SiteView({ spatial, selected_location, on_focus }: Omit<SpatialViewerPr
 }
 
 function InteriorView({ spatial, selected_location, on_focus }: Omit<SpatialViewerProps, "mode"> & { spatial: RecoverySpatial }) {
-  const [chosen, setChosen] = useState<{ case_id: string; scan_id: string | null; floor_id: string | null }>({ case_id: spatial.case_id, scan_id: null, floor_id: null });
+  const [chosen, setChosen] = useState<InteriorChoice>({ case_id: spatial.case_id, scan_id: null, floor_id: null, focus_key: spatialFocusKey(selected_location) });
   const scans = spatial.scans as Scan[];
   const scan = scans.find(row => row.id === selected_location?.scan_id)
     ?? scans.find(row => chosen.case_id === spatial.case_id && row.id === chosen.scan_id) ?? scans[0];
@@ -120,11 +124,7 @@ function InteriorView({ spatial, selected_location, on_focus }: Omit<SpatialView
   const allRooms = scan.rooms || [], allSweeps = (scan.sweeps || []) as Sweep[];
   const floorIds = [...new Set([...allRooms.map(room => room.floor_id ?? null), ...allSweeps.map(sweep => sweep.floor_id ?? null)])];
   if (floorIds.length === 0) floorIds.push(null);
-  const selectedFloor = selected_location?.scan_id === scan.id
-    ? allSweeps.find(row => row.id === selected_location.sweep_id)?.floor_id ?? allRooms.find(row => row.id === selected_location.room_id)?.floor_id : undefined;
-  const chosenFloor = chosen.case_id === spatial.case_id && chosen.scan_id === scan.id ? chosen.floor_id : undefined;
-  const floor = chosenFloor !== undefined && floorIds.includes(chosenFloor) ? chosenFloor
-    : selectedFloor !== undefined && floorIds.includes(selectedFloor) ? selectedFloor : floorIds[0];
+  const floor = interiorFloor(scan, selected_location, chosen, spatial.case_id);
   const rooms = allRooms.filter(room => (room.floor_id ?? null) === floor).map(room => ({ room, ring: sourceRing(room.polygon) }));
   const outlinedRooms = rooms.filter(item => item.ring.length > 0);
   const sweeps = allSweeps.filter(sweep => (sweep.floor_id ?? null) === floor)
@@ -140,10 +140,10 @@ function InteriorView({ spatial, selected_location, on_focus }: Omit<SpatialView
     <div className="brace-spatial-heading"><div><span>Matterport · recorded model geometry</span><h3>Explore the scanned space</h3></div></div>
     <div className="brace-spatial-controls"><label>Scanned space<select value={scan.id} onChange={event => {
       const next = spatial.locations.find(row => row.scan_id === event.target.value && !row.sweep_id);
-      setChosen({ case_id: spatial.case_id, scan_id: event.target.value, floor_id: null });
+      setChosen({ case_id: spatial.case_id, scan_id: event.target.value, floor_id: null, focus_key: spatialFocusKey(selected_location) });
       if (next) on_focus(next);
     }}>{scans.map(row => <option key={row.id} value={row.id}>{row.name || row.id}</option>)}</select></label>
-      {floorIds.length > 1 && <label>Scan level<select value={floor ?? ""} onChange={event => setChosen({ case_id: spatial.case_id, scan_id: scan.id, floor_id: event.target.value || null })}>
+      {floorIds.length > 1 && <label>Scan level<select value={floor ?? ""} onChange={event => setChosen({ case_id: spatial.case_id, scan_id: scan.id, floor_id: event.target.value || null, focus_key: spatialFocusKey(selected_location) })}>
         {floorIds.map((id, index) => <option key={id ?? "unassigned"} value={id ?? ""}>{scan.floors?.find(row => row.id === id)?.label || (id === null ? "Unassigned level" : `Scan level ${index + 1}`)}</option>)}
       </select></label>}</div>
     {fit ? <Diagram key={`${spatial.case_id}:${scan.id}:${floor}`} title="Matterport room outlines and recorded scan viewpoints in model coordinates"

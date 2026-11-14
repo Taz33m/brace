@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { LocationRef, ReportInput, ResidentHome } from "../contract";
 import type { ObservedChoice, PhotoItem, ReportDraft, ReportFlowProps } from "./types";
+import { emptyReportDraft } from "./types";
 import { ActionBar, Choice, Message, ScreenHead } from "../ui";
 import {
   IconAlert,
@@ -61,7 +62,8 @@ type Phase =
   | { kind: "uploading"; index: number; total: number }
   | { kind: "submitting" }
   | { kind: "upload_failed"; local_ids: string[]; message: string; retryable: boolean }
-  | { kind: "error"; message: string; retryable: boolean; settled?: boolean };
+  | { kind: "error"; message: string; retryable: boolean }
+  | { kind: "settled"; message: string };
 
 /** Only rooms in the resident's own verified unit scan can be picked as an exact room. */
 function verifiedRooms(home: ResidentHome): LocationRef[] {
@@ -134,6 +136,7 @@ export function ReportFlow(props: ReportFlowProps) {
   /** Photos removed while still preparing; their late result is discarded. */
   const removedRef = useRef(new Set<string>());
   const sendingRef = useRef(false);
+  const settledRef = useRef(false);
   const lifetimeRef = useFlowLifetime();
 
   const rooms = useMemo(() => verifiedRooms(home), [home]);
@@ -272,7 +275,7 @@ export function ReportFlow(props: ReportFlowProps) {
 
   async function send(skip?: ReadonlySet<string>) {
     const lifetime = lifetimeRef.current;
-    if (!lifetime || lifetime.aborted || sendingRef.current || offline) return;
+    if (!lifetime || lifetime.aborted || sendingRef.current || settledRef.current || offline) return;
     const current = draftRef.current;
     if (Object.keys(validate(current, rooms)).length) {
       setAttempted(true);
@@ -363,13 +366,14 @@ export function ReportFlow(props: ReportFlowProps) {
           on_expired();
         } else if (err.code === "idempotency_conflict") {
           // An earlier send whose reply was lost did arrive; the server refused a second, edited copy.
+          settledRef.current = true;
           keeperRef.current.succeeded();
           nowStampRef.current = null;
+          current.photos.forEach((photo) => photo.preview_url && URL.revokeObjectURL(photo.preview_url));
+          set_draft(emptyReportDraft);
           setPhase({
-            kind: "error",
+            kind: "settled",
             message: "Your earlier send already reached the property team, so this version wasn't sent again. Check My updates to see it.",
-            retryable: false,
-            settled: true,
           });
         } else if (err.kind === "invalid") {
           keeperRef.current.rejected();
@@ -399,6 +403,28 @@ export function ReportFlow(props: ReportFlowProps) {
       sendingRef.current = false;
       onBusyRef.current?.(false);
     }
+  }
+
+  if (phase.kind === "settled") {
+    return (
+      <>
+        <main className="r-main has-actionbar" role="status">
+          <ScreenHead title="Earlier report received" lede={phase.message} />
+          <p>Return home to open My updates, or start a new report for another problem.</p>
+        </main>
+        <ActionBar>
+          <button type="button" className="r-btn" onClick={props.on_cancel}>Back to home</button>
+          <button type="button" className="r-btn primary" onClick={() => {
+            settledRef.current = false;
+            setAttempted(false);
+            setFormNotice(null);
+            setPhotoNotice(null);
+            setPhase({ kind: "idle" });
+            setStep("form");
+          }}>Start a new report</button>
+        </ActionBar>
+      </>
+    );
   }
 
   // ---------------- review step ----------------
@@ -511,7 +537,7 @@ export function ReportFlow(props: ReportFlowProps) {
                 }
               >
                 {phase.message}
-                {phase.retryable || phase.settled ? null : " Tap Edit to change your report, or go back to home."}
+                {phase.retryable ? null : " Tap Edit to change your report, or go back to home."}
               </Message>
             ) : null}
             {offline ? (

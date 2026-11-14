@@ -117,8 +117,56 @@ export function evidenceImageUrl(evidence: Evidence | null, spatial: RecoverySpa
   return `/api/recovery/cases/${encodeURIComponent(caseId)}/evidence/${encodeURIComponent(evidence.evidence_id)}/image`;
 }
 
+export type EvidenceAssociation = "source" | "exact_viewpoint" | "same_room" | "same_scan" | "exact_location" | "verified_structure" | "site_overview" | "unassociated";
+
+/** Source identifiers establish view membership; proximity never establishes a unit match. */
+export function evidenceAssociation(evidence: Evidence, focus: LocationRef | null): EvidenceAssociation {
+  if (!focus) return "source";
+  const location = evidence.location;
+  if (focus.scan_id && location?.scan_id === focus.scan_id) {
+    if (focus.sweep_id && location.sweep_id === focus.sweep_id) return "exact_viewpoint";
+    if (focus.room_id && location.room_id === focus.room_id) return "same_room";
+    return "same_scan";
+  }
+  if (focus.structure_id && !focus.scan_id && location?.structure_id === focus.structure_id) {
+    if (location.scan_id && !["verified_unit", "verified_space"].includes(location.binding)) return "unassociated";
+    return location.scan_id ? "verified_structure" : "exact_location";
+  }
+  if (location?.location_id === focus.location_id && !focus.scan_id) return "exact_location";
+  return evidence.kind === "vexcel_image" ? "site_overview" : "unassociated";
+}
+
 export function preferredEvidence(evidence: Evidence[], selectedId: string | null, kinds: Evidence["kind"][],
-  imageUrl: (evidence: Evidence) => string | null): Evidence | null {
+  imageUrl: (evidence: Evidence) => string | null, focus: LocationRef | null = null): Evidence | null {
   const rows = evidence.filter(row => kinds.includes(row.kind));
+  if (focus) {
+    const rank: Record<EvidenceAssociation, number> = { exact_viewpoint: 0, exact_location: 0, same_room: 1,
+      verified_structure: 1, same_scan: 2, site_overview: 3, source: 4, unassociated: 5 };
+    const associated = rows.filter(row => evidenceAssociation(row, focus) !== "unassociated")
+      .sort((a, b) => rank[evidenceAssociation(a, focus)] - rank[evidenceAssociation(b, focus)]);
+    // An explicit evidence-list selection can still inspect metadata. Map focus
+    // passes no selected ID, preferring actual image bytes within this source scope.
+    return associated.find(row => row.evidence_id === selectedId)
+      ?? associated.find(row => imageUrl(row) !== null) ?? associated[0] ?? null;
+  }
   return rows.find(row => row.evidence_id === selectedId) ?? rows.find(row => imageUrl(row) !== null) ?? rows[0] ?? null;
+}
+
+export interface InteriorChoice { case_id: string; scan_id: string | null; floor_id: string | null; focus_key: string }
+export const spatialFocusKey = (location: LocationRef | null) => JSON.stringify([
+  location?.location_id, location?.scan_id, location?.sweep_id, location?.room_id,
+]);
+
+export function interiorFloor(scan: SpatialScan, focus: LocationRef | null, choice: InteriorChoice, caseId: string): string | null {
+  const floorIds = [...new Set([...(scan.rooms ?? []).map(room => room.floor_id ?? null),
+    ...(scan.sweeps ?? []).map(sweep => sweep.floor_id ?? null)])];
+  // Manual floor browsing lasts only while the external selection is unchanged.
+  if (choice.case_id === caseId && choice.scan_id === scan.id && choice.focus_key === spatialFocusKey(focus)
+    && floorIds.includes(choice.floor_id)) return choice.floor_id;
+  if (focus?.scan_id === scan.id) {
+    const selected = scan.sweeps?.find(row => row.id === focus.sweep_id)
+      ?? scan.rooms?.find(row => row.id === focus.room_id);
+    if (selected) return selected.floor_id ?? null;
+  }
+  return floorIds[0] ?? null;
 }

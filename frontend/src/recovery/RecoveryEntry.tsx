@@ -7,10 +7,11 @@ import { createRecoveryClient, RecoveryApiError } from "./client";
 import { OwnerCaseController } from "./owner-controller";
 import type { OwnerCaseState } from "./owner-controller";
 import { recoveryHash, residentHash } from "./routes";
-import { SpatialCaseController, currentSpatial, emptySpatial, evidenceImageUrl, permittedEvidenceImage, preferredEvidence } from "./spatial";
+import { SpatialCaseController, currentSpatial, emptySpatial, evidenceAssociation, evidenceImageUrl, permittedEvidenceImage, preferredEvidence } from "./spatial";
 import type { RecoverySpatial, SpatialState } from "./spatial";
 import "./entry.css";
 import { DraftNotices } from "./DraftNotices";
+import { SupportInbox } from "./SupportInbox";
 import { SpatialViewer } from "./SpatialViewer";
 
 type Client = ReturnType<typeof createRecoveryClient>;
@@ -94,16 +95,28 @@ export function EvidenceSlot({ title, evidence, image_url, location }: {
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [url, evidence?.evidence_id]);
   const selectedLocation = evidence?.location ?? (evidence === null ? location : null);
+  const association = evidence ? evidenceAssociation(evidence, location ?? null) : null;
+  const associationText = !url && association && ["exact_viewpoint", "same_room", "same_scan"].includes(association)
+    ? "Source metadata from the selected scan; no cached image is available."
+    : association === "exact_viewpoint" ? "Source image from the selected scan viewpoint."
+    : association === "same_room" ? (location?.sweep_id ? "The selected viewpoint has no cached image. Showing another viewpoint in the same recorded room." : "Source image from the selected recorded room.")
+    : association === "same_scan" ? (location?.sweep_id || location?.room_id ? "No cached image matches this viewpoint or room. Showing another available viewpoint in the same scan." : "Showing an available viewpoint from the selected scan.")
+    : association === "verified_structure" ? "This source has a reviewed association with the selected structure."
+    : association === "site_overview" ? "Site overview only. This image is not matched to the selected structure, room, or viewpoint."
+    : association === "exact_location" ? "Source record for the selected location." : null;
   return <section className="brace-entry-evidence" aria-label={title}><h2>{title}</h2>
     {evidence ? <><p>{evidence.source_label}</p>
+      {associationText && <p className="brace-entry-association" role="status">{associationText}</p>}
       <p>{evidence.captured_at ? `Captured ${evidence.captured_at}` : "Capture date unknown"}</p>
       {url && !failed ? <img src={url} alt={evidence.media?.alt ?? evidence.summary} onError={() => setFailed(true)} />
         : <p className="brace-entry-muted">{failed ? "This evidence image could not be loaded." : "No image is available for this evidence."}</p>}
-      <p>{evidence.summary}</p>{evidence.limitations.length > 0 && <ul>{evidence.limitations.map((item, index) => <li key={index}>{item}</li>)}</ul>}
-    </> : <p className="brace-entry-muted">No {title.toLowerCase()} is available for this case.</p>}
+      <p>{evidence.summary}</p><p className="brace-entry-source-id">Source: {evidence.source_id}</p>
+      {evidence.limitations.length > 0 && <ul>{evidence.limitations.map((item, index) => <li key={index}>{item}</li>)}</ul>}
+    </> : <p className="brace-entry-muted">{location ? `No ${title.toLowerCase()} is linked to this selection. Choose a registered scan or another source.` : `No ${title.toLowerCase()} is available for this case.`}</p>}
     {selectedLocation && <p>{selectedLocation.label} · {selectedLocation.binding.replace(/_/g, " ")}</p>}
-    {location && evidence && location.location_id !== evidence.location?.location_id
-      && <p className="brace-entry-muted">Selected location: {location.label}. Its association with this evidence is unverified.</p>}
+    {location && evidence && <p className="brace-entry-muted">Selected location: {location.label}.
+      {evidence.location?.scan_id && !["verified_unit", "verified_space"].includes(evidence.location.binding)
+        ? " Scan membership does not verify a resident unit or structure association." : ""}</p>}
   </section>;
 }
 
@@ -206,14 +219,15 @@ export function RecoveryEntry({ case_id }: { case_id: string | null }) {
     }
   }
   const imageUrl = (evidence: Evidence | null) => evidenceImageUrl(evidence, spatial, openId, analysisRevision, window.location.origin);
-  const aerial = preferredEvidence(snapshot?.evidence ?? [], selected, ["vexcel_image"], imageUrl);
-  const interior = preferredEvidence(snapshot?.evidence ?? [], selected, ["matterport_view", "resident_photo"], imageUrl);
+  const aerial = preferredEvidence(snapshot?.evidence ?? [], selected, ["vexcel_image"], imageUrl, focused);
+  const interior = preferredEvidence(snapshot?.evidence ?? [], selected, ["matterport_view", "resident_photo"], imageUrl, focused);
   const spatialLoading = snapshot && !spatial && spatialState.state !== "error";
   const spatialError = spatialState.case_id === openId && spatialState.analysis_revision === analysisRevision ? spatialState.error : null;
   function focus(location: LocationRef) {
     setFocused(location);
-    const match = snapshot?.evidence.find(evidence => evidence.location?.location_id === location.location_id);
-    if (match) setSelected(match.evidence_id);
+    const match = preferredEvidence(snapshot?.evidence ?? [], null,
+      location.scan_id ? ["matterport_view", "resident_photo"] : ["vexcel_image"], imageUrl, location);
+    setSelected(match && imageUrl(match) ? match.evidence_id : null);
   }
   const props: WorkspaceProps = {
     cases, snapshot, state: listError ? "error" : listing ? "loading" : !openId ? "ready" : currentView.state,
@@ -241,10 +255,19 @@ export function RecoveryEntry({ case_id }: { case_id: string | null }) {
     {spatialLoading && <p className="brace-entry-status" role="status">Loading registered spatial evidence…</p>}
     {currentView.connection === "reconnecting" && snapshot && <p className="brace-entry-status" role="status">Reconnecting to case updates…</p>}
     <EntryBoundary key={openId ?? "cases"}><Suspense fallback={<EntryMessage title="Opening recovery workspace…" />}>
-      {Workspace ? <Workspace {...props} /> : <EntryMessage title="Recovery workspace unavailable" message="This view is not available in the current build. Your case data has not been changed." retry={retry} />}
+      {Workspace ? <Workspace {...props} /> : <>
+        <EntryMessage title={snapshot?.case.property_name ?? "Recovery sources"}
+          message={snapshot ? `${snapshot.case.address} · ${snapshot.case.mode_label}` : listing || openId ? "Loading your registered recovery case…" : "No recovery cases are assigned to this owner."} />
+        {snapshot && <section className="brace-entry-source-workspace" aria-label="Recovery source explorer">
+          <p>The owner workspace is being integrated. Explore the registered aerial and interior evidence here.</p>
+          {props.map_slot}{props.interior_slot}
+        </section>}
+      </>}
     </Suspense></EntryBoundary>
     {snapshot && <DraftNotices key={snapshot.case.case_id} snapshot={snapshot} busy={currentView.busy}
       on_published={retry} on_session_expired={() => setNeedsSignIn(true)} />}
+    {snapshot && <SupportInbox key={`support:${snapshot.case.case_id}`} snapshot={snapshot} busy={currentView.busy}
+      on_updated={retry} on_session_expired={() => setNeedsSignIn(true)} />}
     {!Workspace && <p className="brace-entry-return"><a href="#/">Back to Prepare</a></p>}
   </div>;
 }

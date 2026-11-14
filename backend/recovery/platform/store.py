@@ -973,9 +973,10 @@ class CaseStore:
 
     def _support_view(self, row: sqlite3.Row) -> m.SupportReceipt:
         data = json.loads(row["json"])
+        public_detail = data.pop("public_status_detail", SUPPORT_STATUS_TEXT[data["status"]])
         return m.SupportReceipt(request_id=row["request_id"], household_id=row["household_id"],
                                 received_at=row["received_at"], duplicate=False,
-                                public_status_detail=SUPPORT_STATUS_TEXT[data["status"]], **data)
+                                public_status_detail=public_detail, **data)
 
     def resident_home(self, actor: Actor) -> m.ResidentHome:
         with self._read() as conn:

@@ -164,3 +164,31 @@ test("mounted support still completes after StrictMode setup replay", async () =
   assert.equal(input.calls.completed, 1); assert.equal(input.calls.succeeded, 1);
   screen.unmount();
 });
+
+for (const Component of [ReportFlow, SupportFlow]) {
+  test(`${Component.name} retires a conflicted draft and ignores another click on the old send handler`, async () => {
+    const conflict = { status: 409, code: "idempotency_conflict", message: "Earlier submission exists", retryable: false };
+    let requests = 0;
+    const input = props({
+      api: {
+        async upload_image(file) { return { upload_id: file.name }; },
+        async submit_report() { requests++; throw conflict; },
+        async request_support() { requests++; throw conflict; },
+      },
+      ...(Component === SupportFlow ? { draft: { category: "housing", description: "Temporary housing" } } : {}),
+    });
+    input.set_draft = update => { input.draft = update(input.draft); };
+    const screen = mount(Component, input);
+    screen.send(); await tick();
+    assert.equal(requests, 1);
+    assert.equal(input.calls.succeeded, 1);
+    assert.equal(input.draft.category, null, "Going home and returning cannot reuse the settled draft");
+    if (Component === ReportFlow) { assert.equal(input.draft.text, ""); assert.deepEqual(input.draft.photos, []); }
+    else assert.equal(input.draft.description, "");
+    screen.send(); await tick();
+    assert.equal(requests, 1, "No second request before the terminal state has rendered");
+    assert.equal(input.calls.keys, 1, "No new idempotency key for the old draft");
+    assert.equal(input.calls.completed, 0, "A conflict is not a fabricated receipt");
+    screen.unmount();
+  });
+}

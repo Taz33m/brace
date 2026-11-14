@@ -15,6 +15,7 @@ import { useFlowLifetime } from "../lib/useFlowLifetime";
 import { ActionBar, Choice, Message, ScreenHead } from "../ui";
 import { IconAccess, IconChat, IconHousing, IconMic, IconOther, IconRetry, IconStop } from "../icons";
 import type { SupportDraft, SupportFlowProps } from "./types";
+import { emptySupportDraft } from "./types";
 
 const CATEGORY_ICON: Record<SupportInput["category"], ReactNode> = {
   housing: <IconHousing size={28} />,
@@ -31,14 +32,15 @@ const PROMPT: Record<SupportInput["category"] | "none", { label: string; hint: s
   none: { label: "What do you need?", hint: "A few words is enough." },
 };
 
-type Phase = { kind: "idle" } | { kind: "sending" } | { kind: "error"; error: ResidentError };
+type Phase = { kind: "idle" } | { kind: "sending" } | { kind: "error"; error: ResidentError } | { kind: "settled" };
 
-export function SupportFlow({ api, connection, draft, set_draft, keeper: sharedKeeper, on_submitted, on_expired, on_busy }: SupportFlowProps) {
+export function SupportFlow({ api, connection, draft, set_draft, keeper: sharedKeeper, on_submitted, on_expired, on_busy, on_cancel }: SupportFlowProps) {
   const onBusyRef = useRef(on_busy);
   onBusyRef.current = on_busy;
   useEffect(() => () => onBusyRef.current?.(false), []);
   const keeper = useRef(sharedKeeper);
   const pending = useRef(false);
+  const settledRef = useRef(false);
   const lifetimeRef = useFlowLifetime();
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
   const [attempted, setAttempted] = useState(false);
@@ -64,7 +66,7 @@ export function SupportFlow({ api, connection, draft, set_draft, keeper: sharedK
 
   async function send() {
     const lifetime = lifetimeRef.current;
-    if (!lifetime || lifetime.aborted || pending.current || offline) return;
+    if (!lifetime || lifetime.aborted || pending.current || settledRef.current || offline) return;
     setAttempted(true);
     if (!draft.category) {
       categoryRef.current?.querySelector<HTMLElement>("[role=radio]")?.focus();
@@ -100,8 +102,10 @@ export function SupportFlow({ api, connection, draft, set_draft, keeper: sharedK
       }
       if (error.code === "idempotency_conflict") {
         // The earlier send (reply lost) arrived; the server refused an edited second copy.
+        settledRef.current = true;
         keeper.current.succeeded();
-        setPhase({ kind: "error", error: { ...error, retryable: false, message: "Your earlier request already reached the property team, so this version wasn't sent again. Check My updates to see it." } });
+        set_draft(emptySupportDraft);
+        setPhase({ kind: "settled" });
         return;
       }
       if (error.kind === "invalid") keeper.current.rejected();
@@ -112,6 +116,25 @@ export function SupportFlow({ api, connection, draft, set_draft, keeper: sharedK
 
   const error = phase.kind === "error" ? phase.error : null;
   const canRetry = !!error && error.kind !== "invalid" && error.retryable && !offline;
+
+  if (phase.kind === "settled") {
+    return (
+      <>
+        <main className="r-main has-actionbar" role="status">
+          <ScreenHead title="Earlier request received" lede="Your earlier request already reached the property team, so this version wasn't sent again." />
+          <p>Return home to open My updates, or start a new request for different support.</p>
+        </main>
+        <ActionBar>
+          <button type="button" className="r-btn" onClick={on_cancel}>Back to home</button>
+          <button type="button" className="r-btn primary" onClick={() => {
+            settledRef.current = false;
+            setAttempted(false);
+            setPhase({ kind: "idle" });
+          }}>Start a new request</button>
+        </ActionBar>
+      </>
+    );
+  }
 
   return (
     <>

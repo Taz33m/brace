@@ -5,7 +5,7 @@ import ts from "typescript";
 
 const source = await readFile(new URL("../src/recovery/spatial.ts", import.meta.url), "utf8");
 const { outputText } = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.ESNext } });
-const { SpatialCaseController, currentSpatial, evidenceImageUrl, preferredEvidence, permittedEvidenceImage } =
+const { SpatialCaseController, currentSpatial, evidenceImageUrl, preferredEvidence, permittedEvidenceImage, evidenceAssociation, interiorFloor, spatialFocusKey } =
   await import(`data:text/javascript;base64,${Buffer.from(outputText).toString("base64")}`);
 
 const manifest = (case_id, analysis_revision = 1, image_evidence_ids = ["image-1"]) => ({
@@ -90,4 +90,45 @@ test("default evidence prefers cached images while explicit selection preserves 
   assert.equal(preferredEvidence([metadata, image, inside], null, ["vexcel_image"], imageUrl), image);
   assert.equal(preferredEvidence([metadata, image, inside], "attributes", ["vexcel_image"], imageUrl), metadata);
   assert.equal(preferredEvidence([metadata, image, inside], "inside", ["vexcel_image"], imageUrl), image);
+});
+
+test("map focus selects exact cached viewpoint, then available same-room or same-scan imagery", () => {
+  const location = { location_id: "chosen", scan_id: "scan-a", sweep_id: "sweep-a", room_id: "room-a", structure_id: "S1", binding: "unverified" };
+  const row = (id, sweep, room, scan = "scan-a") => ({ evidence_id: id, kind: "matterport_view",
+    location: { ...location, location_id: id, scan_id: scan, sweep_id: sweep, room_id: room } });
+  const unrelated = row("unrelated", "sweep-other", "room-a", "scan-b");
+  const scan = row("same-scan", "sweep-other", "room-other");
+  const room = row("same-room", "sweep-room", "room-a");
+  const exact = row("exact", "sweep-a", "room-a");
+  const rows = [unrelated, scan, room, exact];
+  const available = new Set(rows.map(item => item.evidence_id));
+  const image = item => available.has(item.evidence_id) ? "/cached" : null;
+  const pick = () => preferredEvidence(rows, null, ["matterport_view"], image, location);
+  assert.equal(pick(), exact);
+  available.delete("exact"); assert.equal(pick(), room);
+  assert.equal(evidenceAssociation(room, location), "same_room");
+  available.delete("same-room"); assert.equal(pick(), scan);
+  assert.equal(evidenceAssociation(scan, location), "same_scan");
+  available.delete("same-scan"); assert.equal(pick(), exact, "metadata stays in the selected scan when no image is cached");
+  assert.equal(preferredEvidence([unrelated], null, ["matterport_view"], image, location), null);
+});
+
+test("a footprint does not select an unverified scan and aerial fallback remains site-wide", () => {
+  const location = { location_id: "structure:S1", structure_id: "S1", scan_id: null, binding: "unverified" };
+  const scan = { evidence_id: "scan", kind: "matterport_view", location: { ...location, location_id: "scan:1", scan_id: "scan-1" } };
+  const aerial = { evidence_id: "aerial", kind: "vexcel_image", location: null };
+  assert.equal(preferredEvidence([scan], "scan", ["matterport_view"], () => "/cached", location), null);
+  assert.equal(evidenceAssociation(scan, location), "unassociated");
+  assert.equal(evidenceAssociation(aerial, location), "site_overview");
+  assert.equal(preferredEvidence([aerial], null, ["vexcel_image"], () => "/cached", location), aerial);
+});
+
+test("an externally selected viewpoint reveals its floor after manual floor browsing", () => {
+  const scan = { id: "scan", rooms: [], sweeps: [{ id: "lower", floor_id: "floor-1" }, { id: "upper", floor_id: "floor-2" }, { id: "unknown", floor_id: null }] };
+  const lower = { location_id: "lower", scan_id: "scan", sweep_id: "lower" };
+  const upper = { location_id: "upper", scan_id: "scan", sweep_id: "upper" };
+  const choice = { case_id: "case", scan_id: "scan", floor_id: "floor-1", focus_key: spatialFocusKey(lower) };
+  assert.equal(interiorFloor(scan, lower, choice, "case"), "floor-1");
+  assert.equal(interiorFloor(scan, upper, choice, "case"), "floor-2");
+  assert.equal(interiorFloor(scan, { ...upper, sweep_id: "unknown" }, choice, "case"), null);
 });
