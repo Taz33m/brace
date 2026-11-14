@@ -173,6 +173,22 @@ MIGRATIONS: list[str] = [
         PRIMARY KEY (actor_id, operation, idem_key)
     );
     """,
+    # v2: source evidence IDs are stable across incidents/case versions. Their
+    # uniqueness and authorization boundary is the case, not the whole database.
+    """
+    CREATE TABLE evidence_case_scoped (
+        evidence_id TEXT NOT NULL,
+        case_id TEXT NOT NULL REFERENCES cases(case_id),
+        household_id TEXT,
+        json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (case_id, evidence_id)
+    );
+    INSERT INTO evidence_case_scoped (evidence_id, case_id, household_id, json, created_at)
+        SELECT evidence_id, case_id, household_id, json, created_at FROM evidence;
+    DROP TABLE evidence;
+    ALTER TABLE evidence_case_scoped RENAME TO evidence;
+    """,
 ]
 
 

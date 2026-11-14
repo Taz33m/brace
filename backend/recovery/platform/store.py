@@ -467,7 +467,8 @@ class CaseStore:
     def add_evidence(self, actor: Actor, case_id: str, evidence: m.Evidence, expected_revision: int) -> m.CommandResult:
         """Lead domain operation: register dated evidence (inspection, cost source, ...)."""
         with self._owner_edit(actor, case_id, expected_revision) as conn:
-            if conn.execute("SELECT 1 FROM evidence WHERE evidence_id = ?", (evidence.evidence_id,)).fetchone():
+            if conn.execute("SELECT 1 FROM evidence WHERE case_id = ? AND evidence_id = ?",
+                            (case_id, evidence.evidence_id)).fetchone():
                 raise PlatformError(409, "evidence_exists", "This evidence is already registered.")
             conn.execute("INSERT INTO evidence VALUES (?,?,?,?,?)",
                          (evidence.evidence_id, case_id, None, dumps(evidence), self.now()))
