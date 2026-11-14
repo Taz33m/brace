@@ -169,12 +169,130 @@ def test_inventory_rejects_symlinked_image_outside_cache(inventory_environment, 
 
 def test_capture_asset_pins_expected_date(inventory_environment, monkeypatch):
     monkeypatch.setattr(vexcel, "captures", lambda *_a, **_k: [
-        {"collection": "before", "date": "2024-07-07"},
-        {"collection": "after", "date": "2024-07-09"}])
+        {"collection": "before", "date": "2024-07-07", "first_date": "2024-07-01", "last_date": "2024-07-07", "layer": "urban"},
+        {"collection": "after", "date": "2024-07-09", "first_date": "2024-07-09", "last_date": "2024-07-09", "layer": "graysky"}])
+    descriptors = []
+    def unavailable(descriptor, allow_network):
+        descriptors.append(descriptor)
+        assert allow_network is False
+        return None, "Capture image has not been fetched"
+    monkeypatch.setattr(sources, "_resolve_pair_capture", unavailable)
     out = sources.load_inventory(7, incident_at="2024-07-08", assessment_as_of="2026-11-14")
-    captures = [a for a in out["assets"].values() if a["kind"] == "vexcel_capture"]
-    assert {a["collection"]: a["expected_date"] for a in captures} == {
+    assert {a["collection"]: a["expected_date"] for a in descriptors} == {
         "before": "2024-07-07", "after": "2024-07-09"}
+    assert descriptors[0]["expected_first_date"] == "2024-07-01"
+    assert descriptors[1]["layers"] == "graysky" and descriptors[1]["role"] == "after"
+    assert all(item["incident_at"] == "2024-07-08" and item["assessment_as_of"] == "2026-11-14" for item in descriptors)
+    assert all(not out["capture_pairs"][role]["image_available"] for role in ("before", "after"))
+    assert not any(asset["kind"] == "vexcel_capture" for asset in out["assets"].values()), "Unvalidated images must not become frozen assets"
+
+
+def _seed_capture_pair(site, *, after_metadata=None, after_buffer=0, request_layers=False):
+    from PIL import Image
+    from shapely.geometry import box
+
+    area = box(*site.d["aerial"]["bounds"]).wkt
+    before = {"collection": "before", "first_date": "2024-06-01", "last_date": "2024-07-07", "date": "2024-07-07",
+              "layer": "urban", "gsd": .3, "last_publish": "2024-07-21"}
+    after = {"collection": "after", "first_date": "2024-07-09", "last_date": "2024-07-20", "date": "2024-07-20",
+             "layer": "graysky", "gsd": .4, "last_publish": "2024-07-21"}
+    paths = {}
+    for layers, capture, first, last, buffer_m in (
+        (vexcel.VEXCEL_LAYERS, before, "2024-07-01", "2024-07-02", 8),
+        ("graysky,graysky-g", after, "2024-07-10", "2024-07-11", after_buffer),
+    ):
+        catalog = vexcel.VX_CACHE / "captures_v2" / f"{vexcel._key(area, layers)}.json"
+        catalog.parent.mkdir(parents=True, exist_ok=True)
+        catalog.write_text(json.dumps([capture]))
+        body = {"wkt": area, "srid": 4326, "layer": layers if request_layers else capture["layer"], "buffer-meter": buffer_m,
+                "crop": "bounding_box", "image-format": "jpeg", "collection": capture["collection"],
+                "destination-dimensions": "1536,1536"}
+        path = vexcel.VX_CACHE / "images" / f"{vexcel._key('ortho/extract', body)}.jpg"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        Image.new("RGB", (8, 8)).save(path, "JPEG")
+        fields = {"collection": capture["collection"], "layer": capture["layer"],
+                  "first-capture-date": first, "last-capture-date": last,
+                  "last-publish-date": "2024-07-21", "geometry": area, "min-gsd": str(capture["gsd"])}
+        if capture["collection"] == "after":
+            fields.update(after_metadata or {})
+        packet = "<x:xmpmeta>" + "".join(f"<Vexcel:{key}>{value}</Vexcel:{key}>" for key, value in fields.items()) + "</x:xmpmeta>"
+        with path.open("ab") as stream:
+            stream.write(packet.encode())
+        paths[capture["collection"]] = path
+    return area, paths
+
+
+@pytest.mark.parametrize("request_layers", [False, True])
+def test_cached_pair_freezes_real_bytes_and_uses_narrower_actual_windows(inventory_environment, request_layers):
+    from backend.recovery.platform.models import Evidence
+
+    _, paths = _seed_capture_pair(inventory_environment, request_layers=request_layers)
+    out = sources.load_inventory(7, incident_at="2024-07-08", assessment_as_of="2024-08-01")
+    assert out["source_status"]["vexcel"]["comparison_images_available"] == 2
+    after = out["capture_pairs"]["after"]
+    assert (after["first_date"], after["last_date"]) == ("2024-07-10", "2024-07-11")
+    assert (after["catalog_first_date"], after["catalog_last_date"]) == ("2024-07-09", "2024-07-20")
+    assert after["image_available"] and after["layer"] == "graysky"
+    for role in ("before", "after"):
+        pair = out["capture_pairs"][role]
+        asset = out["assets"][pair["evidence_id"]]
+        assert asset == {"kind": "local_image", "path": str(paths[role].resolve()),
+                         "sha256": hashlib.sha256(paths[role].read_bytes()).hexdigest()}
+        evidence = next(row for row in out["evidence"] if row["evidence_id"] == pair["evidence_id"])
+        Evidence.model_validate(evidence)
+        assert evidence["captured_at"] == pair["last_capture"] and evidence["available_at"] == "2024-07-21"
+        assert "capture window" in evidence["summary"] and "No damage determination" in evidence["summary"]
+
+
+def test_network_opt_in_fetches_only_selected_images_after_cache_probes(inventory_environment, monkeypatch):
+    _, paths = _seed_capture_pair(inventory_environment, after_buffer=8)
+    catalog_calls, image_calls = [], []
+    original_captures = vexcel.captures
+    def captures(*args, **kwargs):
+        catalog_calls.append(kwargs)
+        return original_captures(*args, **kwargs)
+    monkeypatch.setattr(vexcel, "captures", captures)
+    def ortho(area_wkt, **kwargs):
+        image_calls.append(kwargs)
+        if kwargs["cached_only"]:
+            raise FileNotFoundError()
+        path = paths[kwargs["collection"]]
+        return path, vexcel._image_info(path.read_bytes())
+    monkeypatch.setattr(vexcel, "ortho", ortho)
+    out = sources.load_inventory(7, incident_at="2024-07-08", assessment_as_of="2026-11-14", allow_network=True)
+    assert all(call["max_gsd"] is None and call["thin"] is False for call in catalog_calls)
+    assert {call["layers"] for call in catalog_calls} == {vexcel.VEXCEL_LAYERS, "graysky,graysky-g"}
+    assert [call["collection"] for call in image_calls if not call["cached_only"]] == ["before", "after"]
+    assert out["source_status"]["vexcel"]["comparison_images_available"] == 2
+
+
+@pytest.mark.parametrize("bad_metadata", [
+    {"first-capture-date": "2024-07-07"},
+    {"last-capture-date": "2027-01-01"},
+    {"geometry": "POLYGON((0 0,1 0,1 1,0 1,0 0))"},
+    {"collection": "other-collection"},
+    {"layer": "other-layer"},
+])
+def test_mismatched_pair_images_remain_metadata_only(inventory_environment, bad_metadata):
+    _seed_capture_pair(inventory_environment, after_metadata=bad_metadata)
+    out = sources.load_inventory(7, incident_at="2024-07-08", assessment_as_of="2026-11-14")
+    after = out["capture_pairs"]["after"]
+    assert after and not after["image_available"] and after["unavailable_reason"]
+    assert after["evidence_id"] not in out["assets"]
+    assert out["capture_pairs"]["before"]["image_available"]
+
+
+def test_actual_future_publication_excludes_pair_evidence(inventory_environment):
+    _seed_capture_pair(inventory_environment, after_metadata={"last-publish-date": "2027-01-01"})
+    out = sources.load_inventory(7, incident_at="2024-07-08", assessment_as_of="2026-11-14")
+    assert out["capture_pairs"]["after"] is None
+    assert not any(row["source_id"] == "vexcel:collection:after:7" for row in out["evidence"])
+
+
+def test_legacy_catalog_unknown_start_never_becomes_post_incident_pair(inventory_environment, monkeypatch):
+    monkeypatch.setattr(vexcel, "captures", lambda *_a, **_k: [{"collection": "legacy", "date": "2024-07-09", "gsd": .1}])
+    out = sources.load_inventory(7, incident_at="2024-07-08", assessment_as_of="2026-11-14")
+    assert out["capture_pairs"]["after"] is None and out["captures"][0]["first_date"] is None
 
 
 def test_duplicate_local_image_is_hashed_once(inventory_environment, monkeypatch):

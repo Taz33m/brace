@@ -130,11 +130,11 @@ def _image_info(image: bytes) -> dict:
     return info
 
 
-def _image(endpoint: str, body: dict, refresh: bool = False) -> tuple[Path, dict]:
+def _image(endpoint: str, body: dict, refresh: bool = False, *, cached_only: bool = False) -> tuple[Path, dict]:
     key = _key(endpoint, body)
     img = VX_CACHE / "images" / f"{key}.jpg"
     meta = VX_CACHE / "images" / f"{key}.json"
-    if img.exists() and not refresh:
+    if img.exists() and (not refresh or cached_only):
         info = json.loads(meta.read_text()) if meta.exists() else {}
         if info.get("metadata_version") != 2:
             # Enrich old local metadata without downloading or changing image bytes.
@@ -143,6 +143,8 @@ def _image(endpoint: str, body: dict, refresh: bool = False) -> tuple[Path, dict
                     info[name] = value
             meta.write_text(json.dumps(info))
         return img, info
+    if cached_only:
+        raise FileNotFoundError("Requested Vexcel image is not cached")
     r = _send("POST", endpoint, body=body)
     if not r.is_success:
         raise VexcelError(r.status_code, r.text[:300])
@@ -155,11 +157,12 @@ def _image(endpoint: str, body: dict, refresh: bool = False) -> tuple[Path, dict
 
 def ortho(area_wkt: str, buffer_m: float = 8, drawing: list[dict] | None = None, refresh: bool = False,
           collection: str | None = None, max_px: tuple[int, int] | None = None,
-          layers: str | None = None) -> tuple[Path, dict]:
+          layers: str | None = None, *, cached_only: bool = False) -> tuple[Path, dict]:
     """Straight-down image of an area. Returns (file, info) where info['bounds'] is [west, south, east, north].
 
     Without `collection` the API picks current imagery; with it, that collection.
     Collection images may span dates: inspect first_capture and last_capture.
+    ``cached_only`` never fetches, even with refresh=True; a miss raises FileNotFoundError.
     """
     body: dict[str, Any] = {"wkt": area_wkt, "srid": 4326, "layer": VEXCEL_LAYERS if layers is None else layers,
                             "buffer-meter": buffer_m, "crop": "bounding_box", "image-format": "jpeg"}
@@ -169,7 +172,7 @@ def ortho(area_wkt: str, buffer_m: float = 8, drawing: list[dict] | None = None,
         body["destination-dimensions"] = f"{max_px[0]},{max_px[1]}"  # large sites: ask for a downsized image
     if drawing:
         body["drawing"] = drawing
-    return _image("ortho/extract", body, refresh)
+    return _image("ortho/extract", body, refresh, cached_only=cached_only)
 
 
 def captures(area_wkt: str, max_gsd: float | None = 0.12, *, thin: bool = True,

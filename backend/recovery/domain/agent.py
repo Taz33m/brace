@@ -34,6 +34,11 @@ You cannot verify observations, approve tasks, book contractors, publish notices
 send messages, or authorize re-entry. All output remains an owner-reviewed draft.
 Only propose repairs for verified observations; reported conditions need review.
 Do not claim a visual fact unless inspect_view actually returned that view.
+When pair_inspection identifies before/after aerials, inspect every available side
+before comparing or finishing. Capture windows can span days or months; retain
+the whole window and gaps from the incident. A visible difference is a hypothesis
+for verification, never automatic disaster causation, damage verification or a
+valuation haircut. If either image is unavailable, retain that comparison gap.
 
 Call get_case and list_evidence first. Inspect the views useful to the specific
 questions, calculate_valuation, address every report question, propose concrete
@@ -128,6 +133,7 @@ class RecoveryAgent:
         self.usage = {"input_tokens": 0, "output_tokens": 0, "cache_read_input_tokens": 0,
                       "cache_creation_input_tokens": 0}
         self.inspected: set[str] = set()
+        self.image_failures: set[str] = set()
         self.read_ids: set[str] = set()
         self.read_case = False
         self.listed_evidence = False
@@ -140,6 +146,44 @@ class RecoveryAgent:
         for label, kind in _LAYERS.items():
             if kind not in present:
                 self._question(f"{label} evidence is unavailable for this assessment; identify the needed source or inspection.", [], [])
+        pair = self.inputs.get("pair_inspection") or self.inputs.get("capture_pairs") or {}
+        self.capture_pair = {side: copy.deepcopy(pair.get(side)) for side in ("before", "after")}
+        self.capture_pair["limitation"] = pair.get("limitation", "Dates and visual changes do not establish damage or causation.")
+        for side in ("before", "after"):
+            capture = self.capture_pair[side]
+            if not isinstance(capture, dict) or self.evidence.get(capture.get("evidence_id"), {}).get("kind") != "vexcel_image":
+                self.capture_pair[side] = None
+        self.pair_question = None
+        refs = self._pair_ids()
+        if refs:
+            self.pair_question = self._question(
+                "Review the selected before/after Vexcel aerials. Inspect both available images, preserve their capture windows and incident gaps, and retain missing views or any unverified change for review.", refs, [])
+
+    def _pair_ids(self) -> list[str]:
+        return list(dict.fromkeys(self.capture_pair[side]["evidence_id"] for side in ("before", "after")
+                                 if self.capture_pair[side]))
+
+    def _pair_context(self) -> dict:
+        context = copy.deepcopy(self.capture_pair)
+        for side in ("before", "after"):
+            capture = context[side]
+            if capture:
+                identity = capture["evidence_id"]
+                status = self.inputs.get("image_availability", {}).get(identity, capture.get("image_status"))
+                capture.update(image_status=status, inspected=identity in self.inspected,
+                               inspection_failed=identity in self.image_failures,
+                               inspectable=(status == "cached" or status == "requires_fetch" and
+                                            bool(self.inputs.get("source_fetch_allowed", False)) or
+                                            status is None and self.inspect_image is not None))
+        context["ready_to_compare"] = len(self._pair_ids()) == 2 and all(identity in self.inspected for identity in self._pair_ids())
+        return context
+
+    def _unavailable_image(self, evidence_id: str, message: str) -> None:
+        self.image_failures.add(evidence_id)
+        if self.pair_question is not None and evidence_id in self._pair_ids():
+            self.pair_question.update(status="needs_verification", basis="inferred",
+                conclusion="The selected before/after imagery could not both be inspected. Obtain the unavailable image and review the pair; no visual change or damage is established.")
+        raise ToolError(message)
 
     @staticmethod
     def _index(rows: list[dict], key: str) -> dict[str, dict]:
@@ -183,6 +227,7 @@ class RecoveryAgent:
                               "image_status": availability.get(row["evidence_id"])} for row in self.evidence.values()],
                 "questions": self.questions, "source_status": self.inputs.get("source_status", {}),
                 "limitations": self.inputs.get("limitations", []),
+                "pair_inspection": self._pair_context(),
                 "source_fetch_allowed": bool(self.inputs.get("source_fetch_allowed", False)),
                 "image_guidance": "metadata_only entries have no image bytes: read_evidence or get_spatial_context for roof attributes. Inspect cached images. requires_fetch images can be inspected only when source_fetch_allowed is true; otherwise retain the evidence gap."}
 
@@ -199,7 +244,8 @@ class RecoveryAgent:
             return {"scans": [{"id": s["id"], "name": s.get("name"), "room_count": len(s.get("rooms", [])),
                                "sweep_count": len(s.get("sweeps", []))} for s in self.scans.values()],
                     "structures": [{"id": s["id"], "footprint_sqft": s.get("footprint_sqft")} for s in self.structures.values()],
-                    "capture_pairs": self.inputs.get("capture_pairs", {}), "limitation": warning}
+                    "capture_pairs": self.inputs.get("capture_pairs", {}),
+                    "pair_inspection": self._pair_context(), "limitation": warning}
         source = self.scans if kind == "scan" else self.structures
         self._refs([source_id], source, kind)
         field = "scan_id" if kind == "scan" else "structure_id"
@@ -214,23 +260,24 @@ class RecoveryAgent:
             raise ToolError("This evidence is a record, not a visual view")
         availability = self.inputs.get("image_availability", {}).get(evidence_id)
         if availability == "metadata_only":
-            raise ToolError("This entry is metadata only; use read_evidence or get_spatial_context, not inspect_view")
+            self._unavailable_image(evidence_id, "This entry is metadata only; use read_evidence or get_spatial_context, not inspect_view")
         if availability == "requires_fetch" and not self.inputs.get("source_fetch_allowed", False):
-            raise ToolError("This image requires a source fetch, which is disabled for this run; retain the evidence gap")
+            self._unavailable_image(evidence_id, "This image requires a source fetch, which is disabled for this run; retain the evidence gap")
         if self.inspect_image is None:
-            raise ToolError("Image bytes are unavailable; retain a verification question")
+            self._unavailable_image(evidence_id, "Image bytes are unavailable; retain a verification question")
         try:
             blocks = self.inspect_image(evidence_id)
         except Exception:
-            raise ToolError("The registered image could not be loaded; retain a verification question") from None
+            self._unavailable_image(evidence_id, "The registered image could not be loaded; retain a verification question")
         if not isinstance(blocks, list) or not blocks or any(
             not isinstance(b, dict) or b.get("type") != "image" or
             not isinstance(b.get("source"), dict) or b["source"].get("type") != "base64" or
             b["source"].get("media_type") not in {"image/jpeg", "image/png", "image/webp", "image/gif"} or
             not isinstance(b["source"].get("data"), str) or not b["source"]["data"] for b in blocks
         ):
-            raise ToolError("The image provider returned no usable registered image")
+            self._unavailable_image(evidence_id, "The image provider returned no usable registered image")
         self.inspected.add(evidence_id)
+        self.image_failures.discard(evidence_id)
         self.read_ids.add(evidence_id)
         return [{"type": "text", "text": json.dumps({"evidence": row}, default=str)}, *blocks]
 
@@ -246,6 +293,8 @@ class RecoveryAgent:
             raise ToolError("Unknown question reference")
         refs = self._refs(evidence_ids, self.evidence, "evidence")
         if status == "resolved":
+            if row is self.pair_question and (not self._pair_context()["ready_to_compare"] or not set(self._pair_ids()) <= set(refs)):
+                raise ToolError("Inspect and cite both selected aerials before resolving the comparison; otherwise retain needs_verification")
             if not refs:
                 raise ToolError("A resolved question needs cited evidence")
             if any(self.reports[r].get("status") != "verified" for r in row["report_ids"]):
@@ -345,6 +394,11 @@ class RecoveryAgent:
             raise ToolError("Run calculate_valuation before finishing")
         if not self.notices:
             raise ToolError("Draft a resident notice before finishing")
+        pair = self._pair_context()
+        missing = [pair[side]["evidence_id"] for side in ("before", "after") if pair[side] and
+                   pair[side]["inspectable"] and not pair[side]["inspected"] and not pair[side]["inspection_failed"]]
+        if missing:
+            raise ToolError("Inspect available selected aerials before finishing: " + ", ".join(missing))
         pending = [q["question_id"] for q in self.questions if q["status"] == "open"]
         if pending:
             raise ToolError("Address open questions or mark needs_verification: " + ", ".join(pending))

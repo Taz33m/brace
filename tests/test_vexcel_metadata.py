@@ -125,3 +125,21 @@ def test_ortho_layers_are_in_request_and_image_cache_identity(tmp_path, monkeypa
     assert info["first_date"] != info["last_date"]
     assert vexcel.ortho(AREA, collection="storm", layers="graysky")[0] == disaster
     assert len(calls) == 2
+
+
+def test_ortho_cache_only_miss_never_calls_network_and_cache_identity_stays_pinned(tmp_path, monkeypatch):
+    monkeypatch.setattr(vexcel, "VX_CACHE", tmp_path)
+    monkeypatch.setattr(vexcel, "_send", lambda *a, **kw: pytest.fail("cache-only access called network"))
+    with pytest.raises(FileNotFoundError, match="not cached"):
+        vexcel.ortho(AREA, collection="storm", layers="graysky", cached_only=True)
+    body = {"wkt": AREA, "srid": 4326, "layer": "graysky", "buffer-meter": 0,
+            "crop": "bounding_box", "image-format": "jpeg", "collection": "storm",
+            "destination-dimensions": "1536,1536"}
+    image = tmp_path / "images" / f"{vexcel._key('ortho/extract', body)}.jpg"
+    image.parent.mkdir()
+    image.write_bytes(xmp_image())
+    path, metadata = vexcel.ortho(AREA, buffer_m=0, collection="storm", layers="graysky",
+                                  max_px=(1536, 1536), cached_only=True, refresh=True)
+    assert path == image and metadata["layer"] == "graysky"
+    with pytest.raises(FileNotFoundError):
+        vexcel.ortho(AREA, buffer_m=8, collection="storm", layers="graysky", max_px=(1536, 1536), cached_only=True)

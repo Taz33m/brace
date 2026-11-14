@@ -207,14 +207,18 @@ def test_image_provider_decodes_and_strips_metadata(tmp_path):
         assert not decoded.getexif()
 
 
-def test_capture_requires_explicit_fetch_and_collection(tmp_path):
+def test_capture_requires_explicit_fetch_and_collection(tmp_path, monkeypatch):
+    from backend import vexcel
+
+    monkeypatch.setattr(vexcel, "VX_CACHE", tmp_path)
+    monkeypatch.setattr(vexcel, "_send", lambda *a, **kw: pytest.fail("Cache-only resolver attempted network"))
     evidence = [{"evidence_id": "a"}]
     images = EvidenceImages({"a": {"kind": "vexcel_capture", "area_wkt": "POINT(0 0)"}},
                             evidence, cache_root=tmp_path)
-    with pytest.raises(ValueError, match="not been fetched"):
-        images("a")
-    images.allow_network = True
     with pytest.raises(ValueError, match="explicit collection"):
+        images("a")
+    images.assets["a"]["collection"] = "missing-capture"
+    with pytest.raises(ValueError, match="not been fetched"):
         images("a")
 
 
@@ -257,3 +261,97 @@ def test_seed_has_real_identity_and_no_invented_damage():
     assert inventory["evidence"]
     with pytest.raises(ValueError, match="precedes"):
         make_case_seed(inventory, incident_name="Event", incident_at="2026-11-14", assessment_as_of="2024-01-01")
+
+
+def capture_descriptor():
+    return {"kind": "vexcel_capture", "collection": "storm", "layers": "graysky",
+            "area_wkt": "POLYGON((-95 29,-94 29,-94 30,-95 30,-95 29))", "buffer_m": 0,
+            "expected_first_date": "2024-07-09", "expected_date": "2024-07-12",
+            "role": "after", "incident_at": "2024-07-08", "assessment_as_of": "2024-08-01",
+            "property_point": {"longitude": -94.5, "latitude": 29.5}}
+
+
+def capture_metadata():
+    return {"collection": "storm", "layer": "graysky", "first_capture": "2024-07-10T12:00:00Z",
+            "last_capture": "2024-07-11T15:00:00Z", "bounds": [-95, 29, -94, 30]}
+
+
+def test_dated_capture_accepts_narrower_local_window_and_pins_request(tmp_path, monkeypatch):
+    from backend import vexcel
+
+    path = tmp_path / "capture.jpg"
+    Image.new("RGB", (32, 32)).save(path)
+    calls = []
+
+    def ortho(area, **kwargs):
+        calls.append((area, kwargs))
+        return path, capture_metadata()
+
+    monkeypatch.setattr(vexcel, "ortho", ortho)
+    descriptor = capture_descriptor()
+    reader = EvidenceImages({"a": descriptor}, [{"evidence_id": "a"}], cache_root=tmp_path)
+    assert reader("a")[0]["type"] == "image"
+    assert calls == [(descriptor["area_wkt"], {"collection": "storm", "layers": "graysky", "buffer_m": 0,
+                                               "max_px": (1536, 1536), "cached_only": True})]
+    reader.allow_network = True
+    assert reader("a")
+    assert calls[-1][1]["cached_only"] is False
+
+
+@pytest.mark.parametrize("descriptor_changes,metadata_changes,error", [
+    ({}, {"collection": "other-capture"}, "selected capture"),
+    ({}, {"layer": "urban"}, "selected layer"),
+    ({}, {"layer": None}, "selected layer"),
+    ({}, {"first_capture": None}, "source date"),
+    ({}, {"last_capture": None}, "source date"),
+    ({}, {"first_capture": "2024-07-08T12:00:00Z"}, "selected capture date"),
+    ({"expected_first_date": "2024-07-01"}, {"first_capture": "2024-07-08T23:00:00Z"}, "incident side"),
+    ({"expected_date": "2024-08-03"}, {"last_capture": "2024-08-02T12:00:00Z"}, "cutoff"),
+    ({}, {"first_capture": "2024-07-12T12:00:00Z"}, "capture date"),
+    ({}, {"bounds": [-94.8, 29.2, -94.2, 29.8]}, "cover the requested area"),
+    ({"property_point": {"longitude": -93, "latitude": 29.5}}, {}, "cover the requested area"),
+    ({}, {"bounds": [-95, 29, float("nan"), 30]}, "geographic bounds"),
+    ({"role": "after", "assessment_as_of": None}, {}, "dated pair requires"),
+])
+def test_dated_capture_rejects_wrong_provenance_and_coverage(tmp_path, monkeypatch, descriptor_changes, metadata_changes, error):
+    from backend import vexcel
+
+    monkeypatch.setattr(vexcel, "ortho", lambda *a, **kw: (tmp_path / "capture.jpg", {**capture_metadata(), **metadata_changes}))
+    descriptor = {**capture_descriptor(), **descriptor_changes}
+    reader = EvidenceImages({"a": descriptor}, [{"evidence_id": "a"}], cache_root=tmp_path)
+    with pytest.raises(ValueError, match=error):
+        reader._resolve(descriptor)
+
+
+def test_before_capture_and_legacy_last_only_descriptor_still_resolve(tmp_path, monkeypatch):
+    from backend import vexcel
+
+    path = tmp_path / "capture.jpg"
+    before = {**capture_descriptor(), "role": "before", "expected_first_date": "2024-06-01", "expected_date": "2024-06-30"}
+    metadata = {**capture_metadata(), "first_capture": "2024-06-10T12:00:00Z", "last_capture": "2024-06-15T15:00:00Z"}
+    monkeypatch.setattr(vexcel, "ortho", lambda *a, **kw: (path, metadata))
+    reader = EvidenceImages({}, [], cache_root=tmp_path)
+    assert reader._resolve(before) == path
+    legacy = {"kind": "vexcel_capture", "collection": "storm", "area_wkt": "POINT(-94.5 29.5)", "expected_date": "2024-06-15"}
+    assert reader._resolve(legacy) == path
+    legacy["expected_date"] = "2024-06-16"
+    with pytest.raises(ValueError, match="capture date"):
+        reader._resolve(legacy)
+
+
+def test_valuation_inputs_pair_readiness_uses_only_snapshot_image_ids():
+    from backend.recovery.domain.service import valuation_inputs
+
+    inventory = {"subject": {"id": 1}, "capture_pairs": {
+        "before": {"evidence_id": "b", "collection": "old", "first_date": "2023-12-03", "last_date": "2023-12-07"},
+        "after": {"evidence_id": "a", "collection": "new", "first_date": "2024-08-07", "last_date": "2024-09-28"}},
+        "assets": {identity: {"kind": "local_image", "path": identity} for identity in ("a", "b")}}
+    snapshot = {"evidence": [{"evidence_id": identity, "kind": "vexcel_image"} for identity in ("a", "b")]}
+    inputs = valuation_inputs(inventory, snapshot)
+    assert inputs["pair_inspection"]["ready"] is True
+    assert inputs["pair_inspection"]["after"]["first_date"] == "2024-08-07"
+    snapshot["evidence"] = snapshot["evidence"][:1]
+    partial = valuation_inputs(inventory, snapshot)
+    assert partial["pair_inspection"]["before"] is None
+    assert partial["pair_inspection"]["ready"] is False
+    assert inputs["pair_inspection"]["before"]["evidence_id"] == "b"

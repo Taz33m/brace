@@ -9,10 +9,11 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import math
 from datetime import datetime, timezone
 from pathlib import Path
 
-from shapely.geometry import box
+from shapely.geometry import Point, box
 
 from backend import building, geo, matterport, portfolio, vexcel
 from backend.config import CACHE_DIR, KIT_DIR
@@ -93,6 +94,62 @@ def _evidence(source_id: str, kind: str, label: str, received_at: str, *,
             "received_at": received_at, "model_created_at": normalize_date(model_created_at),
             "location": location, "media": media, "summary": summary,
             "limitations": limitations or []}
+
+
+def _capture_catalog(area_wkt: str, allow_network: bool) -> tuple[list[dict], list[dict], list[str]]:
+    """Keep routine and disaster catalogs separate in cache, then join source IDs."""
+    rows, catalogs, limitations, seen = [], [], [], set()
+    for layers in (vexcel.VEXCEL_LAYERS, "graysky,graysky-g"):
+        try:
+            found = vexcel.captures(area_wkt, max_gsd=None, thin=False, layers=layers,
+                                    cached_only=not allow_network)
+            if allow_network and any("first_date" not in row or "last_date" not in row for row in found):
+                found = vexcel.captures(area_wkt, max_gsd=None, thin=False, layers=layers, refresh=True)
+            catalogs.append({"layers": layers, "status": "available" if found else "unavailable", "count": len(found)})
+        except (vexcel.VexcelError, OSError, ValueError):
+            catalogs.append({"layers": layers, "status": "unavailable", "count": 0})
+            limitations.append(f"Vexcel capture inventory is unavailable for layers {layers}.")
+            continue
+        for source in found:
+            if not source.get("collection") or source["collection"] in seen:
+                continue
+            seen.add(source["collection"])
+            row = copy.deepcopy(source)
+            # Legacy caches retain a last day, but do not establish a whole
+            # post-incident window. Never infer their missing first capture.
+            row["first_date"] = normalize_date(row.get("first_date"))
+            row["last_date"] = normalize_date(row.get("last_date") or row.get("date"))
+            row["date"] = row["last_date"]
+            row["available_at"] = normalize_date(row.get("last_publish"))
+            row["query_layers"] = layers
+            rows.append(row)
+    return rows, catalogs, limitations
+
+
+def _resolve_pair_capture(descriptor: dict, allow_network: bool) -> tuple[Path | None, str | None]:
+    from .service import EvidenceImages
+
+    cached = EvidenceImages({}, [], allow_network=False, cache_root=CACHE_DIR)
+    last_reason = "Selected capture image is not cached."
+    # Existing discovery images used both request sizes. Every candidate goes
+    # through the same provenance/coverage checks before a path can be reused.
+    layer_options = list(dict.fromkeys(filter(None, [descriptor.get("layers"), descriptor.get("catalog_layers")])))
+    for layers in layer_options:
+        for buffer_m in (8, 0):
+            try:
+                return cached._resolve({**descriptor, "layers": layers, "buffer_m": buffer_m}), None
+            except ValueError as exc:
+                last_reason = str(exc)
+            except (OSError, vexcel.VexcelError):
+                last_reason = "Selected capture image or its metadata is unavailable."
+    if allow_network:
+        try:
+            return EvidenceImages({}, [], allow_network=True, cache_root=CACHE_DIR)._resolve(descriptor), None
+        except ValueError as exc:
+            last_reason = str(exc)
+        except (OSError, vexcel.VexcelError):
+            last_reason = "Selected Vexcel capture could not be fetched."
+    return None, last_reason
 
 
 def load_inventory(property_id: int, *, incident_at: str, assessment_as_of: str,
@@ -220,26 +277,97 @@ def load_inventory(property_id: int, *, incident_at: str, assessment_as_of: str,
                         limitations=["Aerial pixels do not establish indoor damage, causation or unit occupancy.",
                                      "Source publication date is unknown."])
         add(row, "vexcel", local_image(aerial_path) if aerial_path.exists() else None)
-        bounds = aerial.get("bounds")
-        if bounds and len(bounds) == 4:
-            area_wkt = box(*bounds).wkt
-            try:
-                captures = vexcel.captures(area_wkt, thin=False, cached_only=not allow_network)
-            except vexcel.VexcelError:
-                limitations.append("Full Vexcel capture inventory is unavailable.")
-            pair = select_capture_pair(captures, incident_at, assessment_as_of, mode)
-            # The pair is the decision-useful subset. Keep the complete inventory separately.
-            for role in ("before", "after"):
-                capture = pair[role]
-                if not capture:
-                    continue
-                row = _evidence(f"vexcel:collection:{capture['collection']}:{property_id}", "vexcel_image",
-                                f"Vexcel {role}-incident capture", now, captured_at=capture["date"],
-                                summary=f"Selected {role}-incident flight {capture['collection']}.",
-                                limitations=[pair["limitation"], "Publication date is unknown; coverage must be checked in the returned image."])
-                add(row, "vexcel", {"kind": "vexcel_capture", "area_wkt": area_wkt,
-                                    "collection": capture["collection"], "expected_date": capture["date"]})
-    if not pair["before"] or not pair["after"]:
+    bounds = ((bundle or {}).get("aerial") or {}).get("bounds")
+    point = {"longitude": subject.get("lon"), "latitude": subject.get("lat")}
+    valid_point = all(isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+                      for value in point.values()) and abs(point["longitude"]) <= 180 and abs(point["latitude"]) <= 90
+    valid_bounds = isinstance(bounds, (list, tuple)) and len(bounds) == 4 and all(
+        isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) for value in bounds
+    ) and -180 <= bounds[0] < bounds[2] <= 180 and -90 <= bounds[1] < bounds[3] <= 90
+    area_wkt = box(*bounds).wkt if valid_bounds else Point(point["longitude"], point["latitude"]).wkt if valid_point else None
+    if area_wkt:
+        captures, catalogs, catalog_limits = _capture_catalog(area_wkt, allow_network)
+        status["vexcel"]["catalogs"] = catalogs
+        limitations.extend(catalog_limits)
+        pair = select_capture_pair(captures, incident_at, assessment_as_of, mode)
+        # Freeze only the chosen pair, never fetch the complete catalog of images.
+        for role in ("before", "after"):
+            candidate = pair[role]
+            if not candidate:
+                continue
+            capture = copy.deepcopy(candidate)
+            capture.update(catalog_first_date=candidate.get("first_date"), catalog_last_date=candidate.get("last_date"),
+                           image_available=False, unavailable_reason=None)
+            pair[role] = capture
+            descriptor = {"kind": "vexcel_capture", "area_wkt": area_wkt,
+                          "collection": capture["collection"], "layers": capture.get("layer") or capture["query_layers"],
+                          "catalog_layers": capture["query_layers"],
+                          "expected_first_date": capture.get("first_date"), "expected_date": capture["last_date"],
+                          "incident_at": incident_at, "role": role, "assessment_as_of": assessment_as_of,
+                          "property_point": point, "buffer_m": 8}
+            asset, image = None, None
+            if valid_point:
+                image, capture["unavailable_reason"] = _resolve_pair_capture(descriptor, allow_network)
+            else:
+                capture["unavailable_reason"] = "Property coordinates are unavailable; image coverage cannot be verified."
+            if image is not None:
+                try:
+                    asset = local_image(image)
+                    if asset is None:
+                        raise ValueError("Selected image is outside the approved cache or is unavailable.")
+                    raw = image.read_bytes()
+                    if hashlib.sha256(raw).hexdigest() != asset["sha256"]:
+                        raise ValueError("Selected image changed while its evidence identity was frozen.")
+                    metadata = vexcel._image_info(raw)
+                    first = normalize_date(metadata.get("first_capture"))
+                    last = normalize_date(metadata.get("last_capture"))
+                    if not first or not last:
+                        raise ValueError("Selected image has no complete capture window.")
+                    from .service import EvidenceImages
+
+                    # Recheck the metadata embedded in the frozen bytes as well
+                    # as the sidecar used by the resolver; no stale JSON claims.
+                    EvidenceImages._validate_capture_context(descriptor, metadata)
+                    if metadata.get("collection") != descriptor["collection"] or metadata.get("layer") not in descriptor["layers"].split(","):
+                        raise ValueError("Selected image identity does not match its catalog source.")
+                    expected_start = descriptor.get("expected_first_date") or descriptor["expected_date"]
+                    actual_start = first if descriptor.get("expected_first_date") else last
+                    if date_bounds(actual_start)[0] < date_bounds(expected_start)[0] or date_bounds(last)[1] > date_bounds(descriptor["expected_date"])[1]:
+                        raise ValueError("Selected image dates are outside its catalog window.")
+                    capture.update(first_date=first[:10], last_date=last[:10], date=last[:10],
+                                   first_capture=first, last_capture=last, first_publish=normalize_date(metadata.get("first_publish")),
+                                   last_publish=normalize_date(metadata.get("last_publish")),
+                                   available_at=normalize_date(metadata.get("last_publish")),
+                                   layer=metadata.get("layer"), graysky_event=metadata.get("graysky_event"),
+                                   min_gsd=metadata.get("min_gsd"), max_gsd=metadata.get("max_gsd"),
+                                   image_available=True, unavailable_reason=None)
+                except (ValueError, OSError):
+                    asset = None
+                    capture.update(image_available=False, unavailable_reason="Selected image metadata or frozen bytes could not be verified.")
+            first_label = capture.get("first_capture") or capture.get("first_date") or "unknown start"
+            last_label = capture.get("last_capture") or capture.get("last_date") or "unknown end"
+            row_limits = [pair["limitation"], "Aerial imagery does not establish indoor damage, causation or unit occupancy."]
+            if not capture.get("available_at"):
+                row_limits.append("Source publication date is unknown.")
+            if capture["image_available"]:
+                row_limits.append(f"Catalog window {capture['catalog_first_date'] or 'unknown start'} to {capture['catalog_last_date']}; displayed image dates come from its own XMP metadata.")
+            else:
+                row_limits.append(capture["unavailable_reason"] or "Image unavailable; this is catalog metadata only.")
+            row = _evidence(f"vexcel:collection:{capture['collection']}:{property_id}", "vexcel_image",
+                            f"Vexcel {role}-incident capture", now,
+                            captured_at=capture.get("last_capture") or capture.get("last_date"),
+                            available_at=capture.get("available_at"),
+                            summary=f"{'Validated image' if capture['image_available'] else 'Catalog candidate'} {role} the incident; capture window {first_label} to {last_label}. No damage determination.",
+                            limitations=row_limits)
+            capture["evidence_id"] = row["evidence_id"]
+            if not add(row, "vexcel", asset):
+                pair[role] = None
+            elif capture["unavailable_reason"]:
+                limitations.append(f"Vexcel {role}-incident image: {capture['unavailable_reason']}")
+    else:
+        limitations.append("Vexcel comparison cannot be searched without property coordinates or an aerial extent.")
+    status["vexcel"]["comparison_images_available"] = sum(bool(pair[role] and pair[role].get("image_available")) for role in ("before", "after"))
+    if not all(pair[role] and pair[role].get("image_available") for role in ("before", "after")):
         limitations.append("No eligible complete before/after Vexcel pair is available; do not infer disaster damage from one image.")
 
     scans = (bundle or {}).get("scans") or []

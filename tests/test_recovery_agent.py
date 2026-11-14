@@ -295,3 +295,86 @@ def test_usage_and_actual_models_are_traced_without_provider_thinking(snapshot):
                                   "cache_read_input_tokens": 25, "cache_creation_input_tokens": 10}
     assert "private provider reasoning" not in json.dumps(result)
     assert "usage" not in result["assessment"]
+
+
+def paired_inputs(snapshot):
+    before = copy.deepcopy(snapshot["evidence"][1])
+    before.update(evidence_id="aerial-before", source_id="source:aerial-before", captured_at="2023-12-07")
+    snapshot["evidence"].append(before)
+    return {"subject": {"id": 1}, "sales": [], "evidence": snapshot["evidence"],
+            "image_availability": {"aerial-before": "cached", "aerial-1": "cached"},
+            "capture_pairs": {
+                "before": {"evidence_id": "aerial-before", "collection": "before", "first_date": "2023-12-03", "last_date": "2023-12-07"},
+                "after": {"evidence_id": "aerial-1", "collection": "after", "first_date": "2024-08-07", "last_date": "2024-09-28"}}}
+
+
+def image_block():
+    return [{"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": "test-image"}}]
+
+
+def test_selected_pair_cannot_finish_or_resolve_comparison_until_both_images_inspected(snapshot):
+    inputs = paired_inputs(snapshot)
+    script = Script([
+        turn(tool("get_case"), tool("list_evidence"), tool("calculate_valuation"),
+             tool("draft_notice", title="Review in progress", body="Source images are being reviewed. No repairs or schedule are confirmed.")),
+        turn(tool("resolve_question", question_id="run-1:question:1", status="needs_verification", conclusion="Resident report needs authorized review.", basis="reported"),
+             tool("resolve_question", question_id="run-1:question:2", status="resolved", conclusion="Compared source images", basis="observed", evidence_ids=["aerial-before", "aerial-1"]),
+             tool("finish", headline="Review needed", summary="No verified damage.")),
+        turn(tool("inspect_view", evidence_id="aerial-before"),
+             tool("finish", headline="Review needed", summary="No verified damage.")),
+        turn(tool("inspect_view", evidence_id="aerial-1"),
+             tool("resolve_question", question_id="run-1:question:2", status="needs_verification", conclusion="Both images inspected. Their capture windows are months apart; any apparent difference needs review and is not verified disaster damage.", basis="observed", evidence_ids=["aerial-before", "aerial-1"]),
+             tool("finish", headline="Review needed", summary="Both dated aerials were inspected. Damage, causation and costs remain unverified.")),
+    ])
+    inspected = []
+    original = copy.deepcopy(snapshot)
+    agent = RecoveryAgent(snapshot, inputs, client=script, inspect_image=lambda identity: (inspected.append(identity), image_block())[1])
+    result = agent.run()
+    assert result["assessment"]["status"] == "draft"
+    assert inspected == ["aerial-before", "aerial-1"]
+    assert agent._pair_context()["ready_to_compare"] is True
+    assert agent._pair_context()["after"]["first_date"] == "2024-08-07"
+    assert any("both selected aerials" in item["content"] for item in script.requests[2]["messages"][-1]["content"] if item["is_error"])
+    assert any("Inspect available selected aerials" in item["content"] for item in script.requests[3]["messages"][-1]["content"] if item["is_error"])
+    assert result["assessment"]["valuation"]["current_condition"]["point"] is None
+    assert result["assessment"]["valuation"]["repair_cost"]["point"] is None
+    assert result["proposed_tasks"] == []
+    assert snapshot == original
+
+
+def test_failed_selected_image_stays_an_explicit_gap_without_blocking_draft_forever(snapshot):
+    inputs = paired_inputs(snapshot)
+
+    def inspect(identity):
+        if identity == "aerial-1":
+            raise RuntimeError("private-url-or-provider-secret")
+        return image_block()
+
+    agent = RecoveryAgent(snapshot, inputs, inspect_image=inspect)
+    agent.t_get_case(); agent.t_list_evidence(); agent.t_calculate_valuation()
+    agent.t_draft_notice("Review", "Source images are under review; no repairs are scheduled.")
+    agent.t_resolve_question("run-1:question:1", "needs_verification", "Await review", "reported")
+    agent.t_inspect_view("aerial-before")
+    error = agent._call_tool("inspect_view", {"evidence_id": "aerial-1"})
+    assert error["is_error"] and "private-url" not in error["content"]
+    assert agent.inspected == {"aerial-before"}
+    assert agent.pair_question["status"] == "needs_verification"
+    assert not agent._pair_context()["ready_to_compare"]
+    assert agent.t_finish("Partial review", "After image unavailable; no paired comparison or damage finding.")["status"] == "draft"
+    assert "could not both be inspected" in agent.pair_question["conclusion"]
+
+
+def test_missing_or_reused_pair_evidence_never_becomes_a_complete_comparison(snapshot):
+    inputs = paired_inputs(snapshot)
+    inputs["capture_pairs"]["after"]["evidence_id"] = "foreign-evidence"
+    agent = RecoveryAgent(snapshot, inputs, inspect_image=lambda _: image_block())
+    pair = agent.t_list_evidence()["pair_inspection"]
+    assert pair["after"] is None and pair["ready_to_compare"] is False
+    agent.t_inspect_view("aerial-before")
+    result = agent._call_tool("resolve_question", {"question_id": agent.pair_question["question_id"], "status": "resolved",
+        "conclusion": "Comparison complete", "basis": "observed", "evidence_ids": ["aerial-before"]})
+    assert result["is_error"]
+    inputs["capture_pairs"]["after"]["evidence_id"] = "aerial-before"
+    same = RecoveryAgent(snapshot, inputs, inspect_image=lambda _: image_block())
+    same.t_inspect_view("aerial-before")
+    assert same._pair_context()["ready_to_compare"] is False

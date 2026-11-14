@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from hashlib import sha256
 from io import BytesIO
 import json
+import math
 from pathlib import Path
 from threading import Lock
 from typing import Any, Callable, Protocol
@@ -65,7 +66,7 @@ def make_case_seed(inventory: dict, *, incident_name: str, incident_at: str,
 
 def valuation_inputs(inventory: dict, snapshot: dict, financial_assumptions: dict | None = None) -> dict:
     """Use case evidence (including new reports/reviews), never a stale source copy."""
-    return deepcopy({"subject": inventory["subject"], "sales": inventory.get("sales", []),
+    inputs = deepcopy({"subject": inventory["subject"], "sales": inventory.get("sales", []),
                      "evidence": snapshot["evidence"],
                      "locations": inventory.get("locations", []), "scans": inventory.get("scans", []),
                      "structures": inventory.get("structures", []),
@@ -81,6 +82,21 @@ def valuation_inputs(inventory: dict, snapshot: dict, financial_assumptions: dic
                      },
                      "source_fetch_allowed": False,
                      "financial_assumptions": financial_assumptions or {}})
+    pair = inputs["capture_pairs"]
+    evidence = {row["evidence_id"]: row for row in snapshot["evidence"]}
+    inspection = {"limitation": pair.get("limitation", "Capture dates and visual changes do not establish damage or causation.")}
+    for side in ("before", "after"):
+        capture = pair.get(side) or {}
+        identity = capture.get("evidence_id")
+        row = evidence.get(identity)
+        inspection[side] = ({**{key: capture.get(key) for key in
+                               ("collection", "layer", "first_date", "last_date")},
+                             "evidence_id": identity, "image_status": inputs["image_availability"].get(identity)}
+                            if row and row.get("kind") == "vexcel_image" else None)
+    inspection["ready"] = all(inspection[side] and inspection[side]["image_status"] == "cached"
+                              for side in ("before", "after")) and inspection["before"]["evidence_id"] != inspection["after"]["evidence_id"]
+    inputs["pair_inspection"] = inspection
+    return inputs
 
 
 def screen_case(snapshot: dict, inputs: dict) -> dict:
@@ -153,25 +169,71 @@ class EvidenceImages:
                 return cached
             return matterport.face_image(model, sweep, face)
         if kind == "vexcel_capture":
-            if not self.allow_network:
-                raise ValueError("Capture image has not been fetched")
             from ... import vexcel
 
             if not descriptor.get("collection"):
                 raise ValueError("A dated capture requires an explicit collection")
-            path, metadata = vexcel.ortho(descriptor["area_wkt"], collection=descriptor["collection"],
-                                           max_px=(1536, 1536))
+            strict = any(key in descriptor for key in ("role", "incident_at", "assessment_as_of", "property_point"))
+            if strict and (descriptor.get("role") not in {"before", "after"} or not all(
+                descriptor.get(key) for key in ("layers", "expected_date", "incident_at", "assessment_as_of", "property_point")
+            )):
+                raise ValueError("A dated pair requires its layer, capture window, incident, cutoff and property point")
+            try:
+                path, metadata = vexcel.ortho(descriptor["area_wkt"], collection=descriptor["collection"],
+                    layers=descriptor.get("layers"), buffer_m=descriptor.get("buffer_m", 8),
+                    max_px=(1536, 1536), cached_only=not self.allow_network)
+            except FileNotFoundError:
+                raise ValueError("Capture image has not been fetched") from None
             if metadata.get("collection") != descriptor["collection"]:
                 raise ValueError("Returned imagery does not match the selected capture")
+            if descriptor.get("layers") and metadata.get("layer") not in {
+                layer.strip() for layer in descriptor["layers"].split(",") if layer.strip()
+            }:
+                raise ValueError("Returned imagery does not match the selected layer")
             if descriptor.get("expected_date"):
                 from .temporal import date_bounds
 
                 start, end = date_bounds(descriptor["expected_date"])
-                actual_start, actual_end = date_bounds(metadata.get("last_capture"))
-                if actual_start < start or actual_end > end:
+                actual_start, actual_end = date_bounds(metadata.get("last_capture") or metadata.get("last_date"))
+                if descriptor.get("expected_first_date"):
+                    start = date_bounds(descriptor["expected_first_date"])[0]
+                    actual_start = date_bounds(metadata.get("first_capture") or metadata.get("first_date"))[0]
+                if actual_start < start or actual_end > end or actual_start > actual_end:
                     raise ValueError("Returned imagery does not match the selected capture date")
+            if strict:
+                self._validate_capture_context(descriptor, metadata)
             return path
         raise ValueError("Unsupported image descriptor")
+
+    @staticmethod
+    def _validate_capture_context(descriptor: dict, metadata: dict) -> None:
+        from shapely import wkt
+        from shapely.geometry import Point, box
+        from .temporal import date_bounds
+
+        first = date_bounds(metadata.get("first_capture") or metadata.get("first_date"))[0]
+        last = date_bounds(metadata.get("last_capture") or metadata.get("last_date"))[1]
+        incident_start, incident_end = date_bounds(descriptor["incident_at"])
+        cutoff = date_bounds(descriptor["assessment_as_of"])[1]
+        if first > last or last > cutoff:
+            raise ValueError("Returned capture window is reversed or after the assessment cutoff")
+        if (descriptor["role"] == "before" and last >= incident_start or
+                descriptor["role"] == "after" and first <= incident_end):
+            raise ValueError("Returned capture window is not wholly on the selected incident side")
+        bounds = metadata.get("bounds")
+        if (not isinstance(bounds, (list, tuple)) or len(bounds) != 4 or
+                any(isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) for value in bounds) or
+                not (-180 <= bounds[0] < bounds[2] <= 180 and -90 <= bounds[1] < bounds[3] <= 90)):
+            raise ValueError("Returned imagery has no valid geographic bounds")
+        point = descriptor["property_point"]
+        coordinates = [point.get("longitude"), point.get("latitude")] if isinstance(point, dict) else []
+        if (len(coordinates) != 2 or any(isinstance(value, bool) or not isinstance(value, (int, float)) or
+                                      not math.isfinite(value) for value in coordinates)):
+            raise ValueError("A valid property point is required for capture coverage")
+        requested = wkt.loads(descriptor["area_wkt"])
+        footprint = box(*bounds).buffer(1e-7)  # numeric rounding only, less than two centimetres
+        if requested.is_empty or not requested.is_valid or not footprint.covers(requested) or not footprint.covers(Point(*coordinates)):
+            raise ValueError("Returned imagery does not cover the requested area and property")
 
 
 class AnalysisStore(Protocol):
