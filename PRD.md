@@ -110,10 +110,17 @@ One schedule per property, served as `GET /api/schedule/{property_id}`. Every sc
 
 ## 7. The agent
 
-A deep agent on LangChain's `deepagents`, as `backend/desk_agent.py` already is. One orchestrator takes a scan and
-gives each room to a sub-agent with its own context. A room's sub-agent looks at that room's panoramas, names the
-fit-out it can see, and returns items with where each is. The orchestrator merges the rooms, asks the price
-research for a range per kind of item, and writes the schedule.
+The LangChain track requires a deep agent used in a useful way. Ours is the inventory agent, built on LangChain's
+`deepagents`, and the product does not work without it:
+
+- **One sub-agent per room, each with its own context.** A room is several panoramas. Reading a whole home in one
+  context would fill it with pictures; a sub-agent looks at one room's pictures, decides what in them is the
+  owner's fit-out, and hands back a short list. This is what sub-agents are for.
+- **The orchestrator plans and merges.** It lists the rooms, sends them out together, then reconciles what came
+  back: the same refrigerator seen from two standpoints is one refrigerator.
+- **Files as working memory.** Each room's findings are written to a file the orchestrator reads back, so a long
+  run can be inspected afterwards and shown in the pitch.
+- **A pricing sub-agent.** For each kind of item it searches the web for a stated price and hands back the page.
 
 Rules, enforced in code and not left to the prompt:
 
@@ -207,5 +214,5 @@ backend (FastAPI)
 ## 12. Open questions
 
 1. Who inside an owner's company buys this: the asset manager, the risk manager, or the broker on their behalf?
-2. Does the LangChain track need more than an agent built on its library? Nobody has re-read that track's rules.
+2. Settled: the LangChain track requires a deep agent used in a useful way. Section 7 is that agent.
 3. Does the smoke scenario get built, or is one scenario enough for two minutes?
