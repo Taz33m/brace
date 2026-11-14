@@ -77,26 +77,28 @@ def test_the_plan_uses_what_the_agent_found_only_when_its_page_confirmed_the_pri
     assert {b["fix"]["measure"] for b in r["buildings"] if b["fix"]} == {"box-barrier--3-ft"}                    # never the cheaper one that was not confirmed
     found = {f["name"]: f for f in r["research"]["found"]}
     assert found["Cheap wall, 3 ft"]["why_not"] == "the price could not be confirmed on the page" and found["Box barrier, 3 ft"]["planned"]
-    assert "Floodwall: 10 weeks. It does not fit 48 hours." in r["plan"]["tradeoffs"] and r["research"]["by"] == "agent" and r["research"]["searches"] == 1
-    assert "found on the web by Brace's research agent on 2026-11-14" in " ".join(r["assumptions"])
+    assert "Floodwall: 10 weeks. It does not fit 48 hours." in r["plan"]["tradeoffs"] and found["Floodwall"]["why_not"] == "long-term work" and r["research"]["by"] == "agent" and r["research"]["searches"] == 1
+    assert "what Brace's research agent found on the web on 2026-11-14" in " ".join(r["assumptions"])
 
 
-def test_research_that_confirms_nothing_usable_falls_back_to_the_barriers_entered_by_hand(site, tmp_path):
-    _research(tmp_path, [_fix(checked=False)])
+def test_the_barriers_entered_by_hand_stay_and_a_price_its_page_calls_incomplete_is_never_planned(site, tmp_path):
+    _research(tmp_path, [_fix(checked=False), _fix(name="Sand box, 4 ft", holds_ft=4.0, price=5.0, source={"title": "t", "url": "https://example.org/b", "quote": "About $5 per linear foot (not including sand)."})])
     r = flood.test(site, 2, budget=1_000_000, hours=48, crews=1)
     assert {b["fix"]["measure"] for b in r["buildings"] if b["fix"]} == {"tube30"}
+    assert {f["name"]: f["why_not"] for f in r["research"]["found"]}["Sand box, 4 ft"] == "the page says this price leaves something out"
 
 
-def test_a_sandbag_wall_is_priced_and_timed_by_its_bags_and_a_slow_fix_can_run_out_of_time(site, tmp_path):
+def test_a_sandbag_wall_is_priced_and_timed_by_its_bags_and_the_plan_pays_more_when_time_is_short(site, tmp_path):
     assert flood.bags_per_ft(2) == 21 and flood.bags_per_ft(1) == 6
     _research(tmp_path, [_fix(name="Sandbag", holds_ft=None, price=0.5, price_unit="per sandbag", bags_per_person_hour=30.0), _fix(name="Sandbag, no rate", holds_ft=None, price=0.4, price_unit="per sandbag")])
     cat = flood.catalogue()
     wall = {m["id"]: m for m in cat["measures"]}["sandbags-2ft"]
     assert wall["cost_per_ft"] == 10.5 and wall["crew_hours_per_100ft"] == 17.5                                       # 21 bags a foot; 2,100 bags at 30 a person-hour, four people
     assert [f["why_not"] for f in cat["found"]] == [None, "no stated filling rate"]
-    r = flood.test(site, 2, budget=1_000_000, hours=48, crews=1)                                                       # 24 crew hours: a 2 ft wall round A needs about 76
-    by = {b["id"]: b for b in r["buildings"]}
-    assert by["A"]["left_out"] == "the time ran out" and by["B"]["fix"]["measure"] == "sandbags-1ft" and 20 < by["B"]["fix"]["crew_hours"] < 24
+    short = flood.test(site, 2, budget=1_000_000, hours=48, crews=1)                                                   # 24 crew hours: a 2 ft sandbag wall round A needs about 76
+    assert {b["id"]: b["fix"]["measure"] for b in short["buildings"] if b["fix"]} == {"A": "tube30", "B": "tube30"} and short["plan"]["loss"] == 0   # the dearer barrier, because it is the one that fits
+    long = flood.test(site, 2, budget=1_000_000, hours=48, crews=10)                                                   # with the crews, the cheaper wall
+    assert {b["id"]: b["fix"]["measure"] for b in long["buildings"] if b["fix"]} == {"A": "sandbags-2ft", "B": "sandbags-1ft"} and long["plan"]["spent"] < short["plan"]["spent"]
 
 
 def test_the_top_of_a_price_range_is_counted_and_a_panel_wall_is_priced_by_its_face(site, tmp_path):

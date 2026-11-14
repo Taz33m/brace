@@ -21,6 +21,7 @@ from __future__ import annotations
 import io
 import json
 import math
+import re
 from functools import lru_cache
 
 import numpy as np
@@ -55,6 +56,8 @@ WORK_H_PER_DAY = 12.0      # crews work 07:00 to 19:00, as the storm desk assume
 CREW_SIZE = 4              # people in a crew, for turning a rate per person into crew hours
 SANDBAG_WALLS_FT = (1.0, 2.0, 3.0)
 PANEL_WALLS_FT = (2.0, 4.0, 6.0)
+# A sentence that says its own price leaves out something the fix cannot work without. Such a price is listed, never planned.
+LEAVES_OUT = re.compile(r"\b(not including|excluding|does not include|doesn't include|not included|plus (the )?(cost of )?(sand|fill|installation|labou?r))\b", re.I)
 
 
 def bags_per_ft(height_ft: float) -> float:
@@ -67,16 +70,16 @@ def _slug(text: str) -> str:
 
 
 def catalogue() -> dict:
-    """The fixes the plan may choose from.
+    """The fixes the plan may choose from: the two barriers entered by hand, and what the research agent found.
 
-    When the research agent has run, these are the fixes it found whose price a fetch of the page confirmed; a fix it found
-    but could not confirm is listed and never planned. With no research saved, the two barriers entered by hand.
+    An agent's find is planned only when a fetch of its page confirmed the price and the page does not say the price leaves
+    something out. A find that fails either is listed and never planned.
     """
     try:
         run = json.loads(RESEARCH.read_text())
     except (OSError, ValueError):
         return {"by": "hand", "made_at": None, "measures": list(HAND), "found": [], "steps": [], "searches": 0}
-    measures, found = [], []
+    measures, found = list(HAND), []
     for f in run.get("fixes") or []:
         price = float(f.get("price_high") or f["price"])      # where a page gives a range, the plan counts the top of it
         row = {"name": f["name"], "type": f["type"], "holds_ft": f.get("holds_ft"), "price": f.get("price"), "price_high": f.get("price_high"), "price_unit": f.get("price_unit"),
@@ -86,9 +89,10 @@ def catalogue() -> dict:
         if not row["checked"]:
             row["why_not"] = "the price could not be confirmed on the page"
         elif f["type"] != "quick":
-            row["why_not"] = "takes weeks"
-            if f.get("weeks"):
-                measures.append({**base, "id": _slug(f["name"]), "name": f["name"], "holds_ft": f.get("holds_ft"), "cost_per_ft": None, "crew_hours_per_100ft": None})
+            row["why_not"] = "long-term work"
+            measures.append({**base, "id": _slug(f["name"]), "name": f["name"], "holds_ft": f.get("holds_ft"), "cost_per_ft": None, "crew_hours_per_100ft": None})
+        elif LEAVES_OUT.search((f.get("source") or {}).get("quote") or ""):
+            row["why_not"] = "the page says this price leaves something out"
         elif f.get("price_unit") == "per linear foot" and f.get("holds_ft"):
             row["planned"] = True
             measures.append({**base, "id": _slug(f["name"]), "name": f["name"], "holds_ft": float(f["holds_ft"]), "cost_per_ft": price,
@@ -104,8 +108,8 @@ def catalogue() -> dict:
                                  "crew_hours_per_100ft": round(100 * bags_per_ft(h) / (float(f["bags_per_person_hour"]) * CREW_SIZE), 1)})
         else:
             row["why_not"] = ("no stated filling rate" if f.get("price_unit") == "per sandbag" else "no stated height" if f.get("price_unit") == "per linear foot" else "its price is not per foot of barrier")
-    if not any(m["type"] == "quick" for m in measures):      # research that confirmed nothing usable falls back to the hand-entered barriers
-        measures = list(HAND) + [m for m in measures if m["type"] != "quick"]
+    seen: set[str] = set()
+    measures = [m for m in measures if not (m["id"] in seen or seen.add(m["id"]))]
     return {"by": "agent", "made_at": run.get("made_at"), "model": run.get("model"), "measures": measures, "found": found,
             "steps": run.get("steps") or [], "searches": sum(1 for e in run.get("steps") or [] if e.get("kind") == "search")}
 
@@ -268,8 +272,8 @@ def tradeoffs(cat: dict, rows: list[dict], chosen: list[dict], hours: float, cre
             n = len(used[m["id"]])
             lines.append(f"{m['name']} at {n} building{'s' if n != 1 else ''}: the cheapest fix that holds the water there, ${m['cost_per_ft']:,.0f} a foot.")
     for m in cat["measures"]:
-        if m["type"] != "quick" and m.get("weeks"):
-            lines.append(f"{m['name']}: {m['weeks']:g} weeks. It does not fit {hours:g} hours.")
+        if m["type"] != "quick":
+            lines.append(f"{m['name']}: {m['weeks']:g} weeks. It does not fit {hours:g} hours." if m.get("weeks") else f"{m['name']}: long-term work. It does not fit {hours:g} hours.")
     waiting = sum(1 for r in rows if r["left_out"] == "the time ran out")
     if waiting:
         lines.append(f"{waiting} more building{'s' if waiting != 1 else ''} would be worth protecting: {crews} crews cannot reach them in {hours:g} hours.")
@@ -284,8 +288,9 @@ def tradeoffs(cat: dict, rows: list[dict], chosen: list[dict], hours: float, cre
 
 def assumptions(s: dict, crews: int, cat: dict | None = None) -> list[str]:
     cat = cat or catalogue()
-    fixes = (f"Fixes and prices: found on the web by Brace's research agent on {cat['made_at'][:10]}; a fix is planned only if a fetch of its page confirmed the price. Where a page gives a range, the top of it is counted. Shipping and tax are not counted."
-             if cat["by"] == "agent" else "Barrier prices: AquaDam, as reported by Bloomberg in 2017, before shipping and tax.")
+    fixes = "Fixes and prices: two water-filled barriers entered by hand (AquaDam, as reported by Bloomberg in 2017, before shipping and tax)"
+    fixes += (f", and what Brace's research agent found on the web on {cat['made_at'][:10]}. A find is planned only if a fetch of its page confirmed the price and the page does not say the price leaves something out. Where a page gives a range, the top of it is counted."
+              if cat["by"] == "agent" else ".")
     return [
         "A what-if, not a forecast: the water is set by hand, in feet at the lowest building on the site.",
         f"Ground under each building: {s['terrain']}. A building on higher ground gets less water.",

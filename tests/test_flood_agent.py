@@ -67,4 +67,4 @@ def test_a_run_saves_each_fix_with_whether_its_page_confirmed_it(tmp_path, monke
     saved = json.loads((tmp_path / "flood" / "research.json").read_text())
     assert len(saved["fixes"]) == 2
     cat = flood.catalogue()                                                                                              # and the plan takes only the confirmed one
-    assert [m["name"] for m in cat["measures"]] == ["Water-filled barrier, 4 ft"] and cat["by"] == "agent"
+    assert [m["id"] for m in cat["measures"]] == ["tube30", "tube48", "water-filled-barrier--4-ft"] and cat["by"] == "agent"
