@@ -13,7 +13,7 @@ from typing import Any
 from .config import CACHE_DIR, KIT_DIR
 
 INDEX = CACHE_DIR / "portfolio.json"
-INDEX_VERSION = 2
+INDEX_VERSION = 3
 
 TYPE_LABEL = {
     "Multifamily": "Apartment community", "Office": "Office", "Industrial": "Industrial", "GeneralRetail": "Retail",
@@ -85,6 +85,34 @@ def _slim(r: dict, models: list[str], companies: dict[int, dict]) -> dict:
     }
 
 
+def last_sales(comps: list[dict]) -> dict[str, dict]:
+    """The most recent priced sale of each property: {property id: {price, date, basis, portfolio}}.
+
+    A comp that covers one property carries the sale price. A portfolio comp covers several,
+    and only an allocated share is known for each, so that share is used and marked as such.
+    `basis` is CoStar's own label for how the price was established; it travels with the price.
+    """
+    best: dict[str, dict] = {}
+    for c in comps:
+        entities = c.get("entities") or []
+        date = (c.get("soldDate") or "")[:10]
+        if not date:
+            continue
+        for e in entities:
+            pid = e.get("propertyId")
+            if pid is None:
+                continue
+            if len(entities) == 1 and c.get("soldForPrice"):
+                sale = {"price": c["soldForPrice"], "basis": _enum("SalePriceStatus", c.get("salePriceStatus")) or "Unknown", "portfolio": False}
+            elif len(entities) > 1 and e.get("allocatedPrice"):
+                sale = {"price": e["allocatedPrice"], "basis": "Allocated", "portfolio": True}
+            else:
+                continue
+            if str(pid) not in best or date > best[str(pid)]["date"]:
+                best[str(pid)] = {**sale, "date": date}
+    return best
+
+
 def _build() -> dict:
     models: dict[int, list[str]] = defaultdict(list)
     with open(KIT_DIR / "commercial-properties.csv") as f:
@@ -112,8 +140,11 @@ def _build() -> dict:
             tenants[str(o["propertyId"])].append({
                 "name": c["name"], "employees": c.get("employees"), "suite": c.get("suite"),
                 "industry": _enum("IndustryType", o.get("industryType")), "since": (o.get("fromDate") or "")[:4] or None})
+    with open(KIT_DIR / "data" / "commercial-sale-comp.jsonl") as f:
+        sales = last_sales([json.loads(line) for line in f])
     for pid, b in buildings.items():
         b["tenant_count"] = len(tenants.get(pid, []))
+        b["last_sale"] = sales.get(pid)
     return {"version": INDEX_VERSION, "buildings": buildings, "tenants": tenants}
 
 

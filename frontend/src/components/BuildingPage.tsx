@@ -1,7 +1,7 @@
 import QRCode from "qrcode";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
-import { exposureLine, hours, num, standingLine, when } from "../format";
+import { exposureLine, hours, money, num, standingLine, when } from "../format";
 import { BEARING, nearestScanView, structureAt } from "../geo";
 import type { Action, AgentEvent, Building, Direction, Lead, LonLat, Message, Plan, Scenario, Selection } from "../types";
 import { PlanPanel, type RunState } from "./PlanPanel";
@@ -149,6 +149,11 @@ export function BuildingPage({ id, scenario, step, sdkKey, agentReady, onBack }:
           <div><dt>Construction</dt><dd>{r.construction ? r.construction.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase() : "–"}</dd></div>
           <div><dt>Managed by</dt><dd>{r.contacts.manager ?? r.contacts.owner ?? "Not on record"}</dd></div>
           <div><dt>Tenants on record</dt><dd>{num(r.tenant_count)}</dd></div>
+          {b.last_sale && (
+            <div title={`How CoStar established this price: ${b.last_sale.basis.toLowerCase()}${b.last_sale.portfolio ? " (an estimated share of a portfolio sale)" : ""}`}>
+              <dt>Last sold, {b.last_sale.date.slice(0, 4)}</dt><dd>{money(b.last_sale.price)}{b.last_sale.portfolio ? " (share)" : ""}</dd>
+            </div>
+          )}
         </dl>
       </header>
 

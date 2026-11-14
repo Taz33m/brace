@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
-import { exposureLine, hours, num, when } from "../format";
+import { exposureLine, hours, money, num, when } from "../format";
 import type { Portfolio, Scenario, ScenarioMap } from "../types";
 import { ThreatMap } from "./ThreatMap";
 
@@ -79,6 +79,13 @@ export function MapPage({ scenarios, scenario, step, onScenario, onStep, onOpen 
                 <h2>{num(data.shown)} buildings {what}</h2>
                 <p>{num(data.homes)} apartment homes and {num(data.tenants)} business tenants in them.
                   {scenario.live ? "" : " This is a replay of a real forecast."}</p>
+                {data.value.buildings_with_sale > 0 && (
+                  <p className="value">
+                    <strong>{money(data.value.last_sale_total)}</strong> is what {num(data.value.buildings_with_sale)} of these buildings last sold for.
+                    <small> Last recorded sale prices going back to {data.value.oldest_sale?.slice(0, 4)}, not today's value and not a loss estimate
+                      {data.value.allocated_share ? `; ${num(data.value.allocated_share)} are estimated shares of portfolio sales` : ""}.</small>
+                  </p>
+                )}
               </div>
               <div className="filters">
                 <select value={manager} onChange={(e) => setManager(e.target.value)} aria-label="Property manager">

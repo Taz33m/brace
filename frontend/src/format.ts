@@ -3,6 +3,13 @@ import type { Exposure, Threat, Timing } from "./types";
 export const usd = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 export const num = (n: number | null | undefined) => (n == null ? "–" : n.toLocaleString("en-US"));
 
+/** "$42.6 billion", "$18.0 million", "$950,000" */
+export function money(n: number): string {
+  if (n >= 1e9) return `$${(n / 1e9).toFixed(1)} billion`;
+  if (n >= 1e6) return `$${(n / 1e6).toFixed(1)} million`;
+  return usd(n);
+}
+
 export function costRange(low: number, high: number): string {
   if (low === 0 && high === 0) return "No outside cost";
   return low === high ? usd(low) : `${usd(low)} to ${usd(high)}`;

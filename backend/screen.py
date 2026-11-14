@@ -172,7 +172,7 @@ def rank(scenario_id: str, step_id: str | None = None) -> list[dict]:
             "id": b["id"], "name": b["name"], "address": b["address"], "city": b["city"], "lat": b["lat"], "lon": b["lon"],
             "type_label": b["type_label"], "units": b.get("units"), "stories": b.get("stories"), "year_built": b.get("year_built"),
             "tenant_count": b.get("tenant_count"), "manager": b["contacts"].get("manager"), "owner": b["contacts"].get("owner"),
-            "photo": b.get("photo"), "scans": len(b["model_ids"]),
+            "photo": b.get("photo"), "scans": len(b["model_ids"]), "last_sale": b.get("last_sale"),
             "exposure": e, "hours_left": hours_left(e), "reasons": [s["text"] for s in sig],
             "_order": w * (1 + vuln) * _people(b),
         })

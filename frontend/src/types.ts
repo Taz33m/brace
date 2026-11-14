@@ -44,7 +44,11 @@ export interface Exposure {
   warning_hours?: number | null;
 }
 
+/** The most recent priced sale CoStar records for a building. `basis` is how the price was established. */
+export interface Sale { price: number; date: string; basis: string; portfolio: boolean }
+
 export interface Row {
+  last_sale: Sale | null;
   id: number;
   rank: number;
   name: string;
@@ -74,6 +78,7 @@ export interface Portfolio {
   shown: number;
   homes: number;
   tenants: number;
+  value: { buildings_with_sale: number; last_sale_total: number; allocated_share: number; oldest_sale: string | null };
   managers: { name: string; buildings: number }[];
   types: { name: string; buildings: number }[];
   buildings: Row[];
@@ -201,6 +206,7 @@ export interface Building {
   aerial: { bounds: [number, number, number, number]; width: number; height: number; captured: string | null; obliques: string[] };
   scans: Scan[];
   threat: Threat;
+  last_sale: Sale | null;
   reasons: string[];
   plan: (Plan & { events: AgentEvent[] }) | null;
 }

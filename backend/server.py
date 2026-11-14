@@ -114,7 +114,12 @@ def portfolio(scenario: str, step: str | None = None, manager: str | None = None
         plan = _plan(r["id"], key) if (building_dir(r["id"]) / "plans" / f"{key}.json").exists() else None
         top.append({**r, "plan": {"actions": len(plan["actions"]), "headline": plan["headline"]} if plan else None})
     band = (lambda r: r["exposure"].get("wind_band")) if sc["kind"] == "hurricane" else (lambda r: "warning")
+    sold = [r["last_sale"] for r in view if r.get("last_sale")]
     return {
+        # What is exposed, not what would be lost: the last recorded sale price of each touched building.
+        "value": {"buildings_with_sale": len(sold), "last_sale_total": sum(x["price"] for x in sold),
+                  "allocated_share": sum(1 for x in sold if x["portfolio"]),
+                  "oldest_sale": min((x["date"] for x in sold), default=None)},
         "scenario": scenario, "step": step_id, "touched": len(rows), "shown": len(view),
         "homes": sum(r["units"] or 0 for r in view), "tenants": sum(r["tenant_count"] or 0 for r in view),
         "managers": [{"name": m, "buildings": n} for m, n in managers.most_common(40)],
@@ -135,7 +140,8 @@ def building(property_id: int, scenario: str, step: str | None = None) -> dict:
         raise HTTPException(502, str(e))
     facts = screen.site_facts().get(str(property_id))
     reasons = [x["text"] for x in screen.signals(sc["kind"], s.d["record"], facts, threat["standing_risk"])]
-    return {**s.d, "threat": threat, "reasons": reasons, "plan": _plan(property_id, _plan_key(scenario, step_id))}
+    return {**s.d, "threat": threat, "reasons": reasons, "last_sale": portfolio_data.building(property_id).get("last_sale"),
+            "plan": _plan(property_id, _plan_key(scenario, step_id))}
 
 
 def _jpeg(im: Image.Image, quality: int = 85) -> Response:

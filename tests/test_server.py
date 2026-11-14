@@ -10,8 +10,12 @@ SCENARIO = {"id": "test-storm", "kind": "hurricane", "name": "Hurricane Test", "
                       {"id": "t36", "issued": "2024-07-06T21:00:00Z", "label": "36 hours before landfall"}]}
 
 
+SALES = {7: {"price": 18_000_000, "basis": "Confirmed", "portfolio": False, "date": "2014-09-19"},
+         8: {"price": 30_000_000, "basis": "Allocated", "portfolio": True, "date": "2021-12-15"}}
+
+
 def row(i, manager, kind="Office"):
-    return {"id": i, "rank": i, "name": f"Building {i}", "address": "1 Test St", "city": "Houston", "lat": 29.7 + i / 100, "lon": -95.4,
+    return {"last_sale": SALES.get(i), "id": i, "rank": i, "name": f"Building {i}", "address": "1 Test St", "city": "Houston", "lat": 29.7 + i / 100, "lon": -95.4,
             "type_label": kind, "units": 100 if kind != "Office" else None, "stories": 3, "year_built": 1990, "tenant_count": 4,
             "manager": manager, "owner": None, "photo": None, "scans": 1,
             "exposure": {"kind": "hurricane", "wind_band": "tropical storm", "peak_wind_mph": 45, "hours_until_tropical_storm_wind": 30.0},
@@ -25,6 +29,7 @@ def client(site, threat, monkeypatch):
     monkeypatch.setattr(screen, "rank", lambda sid, step=None: [row(7, "Acme"), row(8, "Acme", "Apartment community"), row(9, "Other")])
     monkeypatch.setattr(screen, "threat_for", lambda sid, step, b: {**threat, "step_id": step})
     monkeypatch.setattr(screen, "site_facts", lambda: {})
+    monkeypatch.setattr(server.portfolio_data, "building", lambda pid: {"last_sale": {"price": 18_000_000, "basis": "Confirmed", "portfolio": False, "date": "2014-09-19"}})
     monkeypatch.setattr(server.Site, "load", classmethod(lambda cls, pid: site if pid == 7 else (_ for _ in ()).throw(server.BuildingError("unknown property"))))
     return TestClient(server.app)
 
@@ -41,6 +46,8 @@ def test_portfolio_filters_and_counts(client):
     p = client.get("/api/portfolio?scenario=test-storm").json()
     assert p["touched"] == 3 and p["shown"] == 3 and p["homes"] == 100 and p["tenants"] == 12
     assert p["managers"][0] == {"name": "Acme", "buildings": 2} and len(p["points"]) == 3
+    # Value exposed is the sum of last recorded sale prices, with how many buildings have one and how many are allocated shares.
+    assert p["value"] == {"buildings_with_sale": 2, "last_sale_total": 48_000_000, "allocated_share": 1, "oldest_sale": "2014-09-19"}
     acme = client.get("/api/portfolio?scenario=test-storm&manager=Acme&kind=Office").json()
     assert acme["shown"] == 1 and acme["buildings"][0]["id"] == 7 and acme["buildings"][0]["plan"] is None
     assert acme["managers"][0]["buildings"] == 2                               # the filter list stays whole
@@ -49,6 +56,7 @@ def test_portfolio_filters_and_counts(client):
 def test_building_bundle_plan_and_files(client, site):
     b = client.get("/api/buildings/7?scenario=test-storm&step=t48").json()
     assert b["record"]["name"] == "Test Plaza" and b["threat"]["step_id"] == "t48" and b["plan"] is None
+    assert b["last_sale"]["price"] == 18_000_000 and b["last_sale"]["basis"] == "Confirmed"
     assert "in a high-risk flood zone (AE)" in b["reasons"]
     assert client.get("/api/buildings/999?scenario=test-storm").status_code == 404
     assert client.get("/api/buildings/7/aerial.jpg").headers["content-type"] == "image/jpeg"
