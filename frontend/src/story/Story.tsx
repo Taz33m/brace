@@ -14,7 +14,7 @@ export const STORIES: { id: StoryId; title: string; line: string }[] = [
   { id: "storm", title: "Before the storm", line: "Hurricane Beryl, thirty-nine hours out. One building, measured, and the work that still fits." },
   { id: "desk", title: "Five buildings, two crews", line: "Not enough crew hours for every roof. Scroll the clock and watch the desk decide who goes where." },
   { id: "after", title: "After the storm", line: "One room as it was scanned, cleared, and furnished again." },
-  { id: "inside", title: "The way out", line: "The lifts are out. Ask the building for the way, then ask again from a wheelchair." },
+  { id: "inside", title: "Ask the building", line: "Ask where something is. The building draws the way and walks you there in the headset." },
 ];
 
 /** Smooth scrolling, as in the plane project: the page always starts at the top, and the scroll drives every timeline. */
@@ -98,10 +98,10 @@ function AfterStory() {
   );
 }
 
-/** The way out: the laptop shows what the headset sees. This one is done by hand, so it is the page itself, with the way back. */
+/** Ask the building: the laptop shows what the headset sees. This one is done by hand, so it is the page itself, with the way back. */
 function InsideStory() {
   return (
-    <section className="st-stage st-live" aria-label="The way out">
+    <section className="st-stage st-live" aria-label="Ask the building">
       <iframe className="st-site st-shown st-hands" title="What the headset sees" src="/#/place/P3S6VUTP3qB/watch" />
     </section>
   );

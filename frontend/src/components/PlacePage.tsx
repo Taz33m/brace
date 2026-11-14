@@ -8,7 +8,7 @@ import type { Voice } from "../voice";
 /**
  * Standing inside a scanned building and asking the way. You look around, ask where something is, and the
  * way is drawn on the floor in front of you: follow the marks, look at the next ring or tap to walk to it. A way
- * worked out for a wheelchair walks itself. The small plan at the lower left shows the whole route and where you
+ * that is found walks itself. The small plan at the lower left shows the whole route and where you
  * are on it.
  */
 const FACE_M = 50, EYE_M = 1.4, DWELL_S = 1.0, REACH_M = 16;
@@ -64,8 +64,6 @@ function brief(got: PlaceAnswer): string {
   const how = way.stairs ? `, ${down ? "down" : "up"} ${way.stairs.flights} flight${way.stairs.flights === 1 ? "" : "s"} of stairs` : way.lift ? ", by the lift" : "";
   return `${got.event ? `${got.event} is at ${got.place}` : got.place}. ${metres}${how}.`;
 }
-
-const USES_A_CHAIR = /wheel\s*chair|can(?:'|no)?t (?:take|use|do|climb) (?:the )?stairs|step[- ]free|no stairs/i;
 
 export function PlacePage({ model, watch = false }: { model: string; watch?: boolean }) {
   const [place, setPlace] = useState<Place | null>(null);
@@ -321,16 +319,14 @@ export function PlacePage({ model, watch = false }: { model: string; watch?: boo
       say(brief(got), 12);
       draw();
       tell();
-      // A way worked out for a wheelchair walks itself, once there has been time to read what it is.
-      if (moving === "wheelchair") walkOn(FIRST_S);
+      // The way walks itself, once there has been time to read what it is: nobody should have to stare at rings to move.
+      walkOn(FIRST_S);
       return got;
     };
     const lookBearing = () => { const f = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion); return ((THREE.MathUtils.radToDeg(Math.atan2(f.x, -f.z)) % 360) + 360) % 360; };
     const lookPitch = () => THREE.MathUtils.radToDeg(Math.asin(Math.max(-1, Math.min(1, new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion).y))));
     control.current = {
       ask: async (query: string) => {
-        // "I'm in a wheelchair" is not a place to find: it changes how the way to the last place is worked out.
-        if (USES_A_CHAIR.test(query)) return control.current!.moveBy("wheelchair");
         // A new question stops any walk under way, so the way is asked from where you stand.
         halt();
         asked = query;
@@ -513,7 +509,6 @@ export function PlacePage({ model, watch = false }: { model: string; watch?: boo
       sessionUrl: `/api/places/${model}/voice`,
       run: async (name, args) => {
         if (name === "find_place" && control.current) return control.current.ask(String(args.query ?? ""));
-        if (name === "i_move_by" && control.current) return control.current.moveBy(args.mover === "wheelchair" ? "wheelchair" : "walking", Number(args.chair_width_in) || undefined);
         return { found: false, say: "I cannot do that here." };
       },
       onState: () => {},
@@ -541,9 +536,6 @@ export function PlacePage({ model, watch = false }: { model: string; watch?: boo
           {/* A button clicked with the mouse lets go of the focus, so a clicker's Space or Enter then steps rather than pressing it again. */}
           <button onClick={(e) => { if (e.detail) e.currentTarget.blur(); }}>Ask</button>
           <span>{last ? (last.found && last.route ? `${last.route.metres} m` : "") : voiceReady ? "Or just ask aloud" : ""}</span>
-          <button type="button" aria-pressed={mover === "wheelchair"} onClick={(e) => { if (e.detail) e.currentTarget.blur(); void control.current?.moveBy(mover === "wheelchair" ? "walking" : "wheelchair"); }}>
-            {mover === "wheelchair" ? "In a wheelchair" : "Walking"}
-          </button>
           <button type="button" onClick={() => setStereo(true)}>Headset view</button>
         </form>
       )}
