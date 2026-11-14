@@ -2,7 +2,7 @@
 import asyncio
 import threading
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.responses import Response, StreamingResponse
 from fastapi.testclient import TestClient
 from starlette.middleware.cors import CORSMiddleware
@@ -137,6 +137,34 @@ def test_legacy_catchall_cannot_shadow_platform_route_and_receive_bypass():
     with TestClient(app) as client:
         response = client.get("/api/resident/home")
         assert response.status_code == 404 and "owner_secret" not in response.text
+
+
+@pytest.mark.parametrize("shadow", [False, True])
+def test_nested_included_routers_keep_prefixes_and_route_precedence(shadow):
+    app = FastAPI()
+    if shadow:
+        legacy = APIRouter()
+
+        @legacy.post("/{path:path}")
+        async def catchall(path):
+            return {"owner_secret": True}
+
+        app.include_router(legacy)
+    session = APIRouter()
+
+    @session.post("/session")
+    async def bootstrap():
+        return {"ok": True}
+
+    platform = APIRouter()
+    platform.include_router(session, prefix="/resident")
+    app.include_router(platform, prefix="/api")
+    install_legacy_owner_gate(app, lambda _: False)
+    with TestClient(app) as client:
+        response = client.post("/api/resident/session")
+        assert response.status_code == (404 if shadow else 200)
+        assert "owner_secret" not in response.text
+        assert client.post("/api/resident/missing").status_code == 404
 
 
 def test_sync_authorization_runs_off_event_loop_and_installation_is_idempotent():

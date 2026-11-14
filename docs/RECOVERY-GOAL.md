@@ -22,5 +22,11 @@ Preserve the preparation routes, source dates and spatial uncertainty, honest un
 - `frontend/src/recovery/client.ts`: owner/resident HTTP adapters and resumable fetch-based event streams.
 - `frontend/src/recovery/routes.ts`: preparation/recovery/resident route parsing and invitation cleanup before session exchange.
 - `frontend/src/recovery/owner-controller.ts`: request-race protection, confirmed state, replay-safe commands, and event-driven refresh.
+- `frontend/src/App.tsx` and `recovery/RecoveryEntry.tsx`: isolated owner/resident entry points, owner sign-in, one-use invitation bootstrap, and lazy loading of the teammate-owned components.
+- `backend/recovery/registry.py`: immutable private case inputs, context and source-metadata validation, and the worker input provider.
+- `backend/recovery/evidence_router.py`: owner-scoped spatial manifests and SHA-256-pinned cached images, with no source fetching or filesystem paths in browser payloads.
+- `backend/recovery/runtime.py`: explicit assembly of the platform, worker, evidence router, and legacy owner gate. Refuses a platform without the worker handshake.
 
-These integration helpers do not replace teammate-owned components, persistence, or authentication. The next checkpoint is mounting those exports and enforcing the full owner/household permission model.
+The platform is now merged, including sessions, invitations, reports/uploads, events, worker completion, review, tasks, and publication. Integration fixes scope evidence IDs to each case and prevent event delivery after revocation or starvation behind another household's events. The local runtime connects it to registered sponsor evidence and resident-photo inspection. A scripted-model test completes the owner/resident API workflow with real persistence and revision checks.
+
+The next checkpoint is the teammate-owned owner UI and resident screens, followed by their integrated browser/phone walkthrough. The resident branch received so far is a compiling scaffold; its screens are still being implemented. Do not mark the overall goal complete based on backend or scaffold tests alone.

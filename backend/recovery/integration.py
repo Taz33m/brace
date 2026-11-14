@@ -32,15 +32,31 @@ class _LegacyOwnerGate:
         # Unknown namespace URLs stay 404 even when a legacy catch-all is present.
         # Only explicit platform routes may delegate their permission checks.
         partial = None
-        for route in self.router.routes:
+        def effective_routes():
+            for route in self.router.routes:
+                # FastAPI can retain included routers as branches rather than
+                # copying APIRoutes. Their contexts apply all include prefixes.
+                # A branch has no path, so inspecting it directly fails closed
+                # even for valid session bootstrap endpoints.
+                contexts = getattr(route, "effective_route_contexts", None)
+                if callable(contexts):
+                    yield from contexts()
+                else:
+                    yield route
+
+        def declared_path(route):
+            return (getattr(route, "path", None) or getattr(route, "path_format", None)
+                    or getattr(getattr(route, "starlette_route", None), "path", ""))
+
+        for route in effective_routes():
             match = route.matches(scope)[0]
             if match == Match.FULL:
                 # Match actual router order: a legacy catch-all ahead of a later
                 # platform declaration must never receive the delegated bypass.
-                return _platform_path(getattr(route, "path", ""))
+                return _platform_path(declared_path(route))
             if match == Match.PARTIAL and partial is None:
                 partial = route
-        return partial is not None and _platform_path(getattr(partial, "path", ""))
+        return partial is not None and _platform_path(declared_path(partial))
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         path = scope.get("path", "")

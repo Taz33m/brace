@@ -321,3 +321,11 @@ async def stream(property_id: int, scenario: str, step: str | None = None, repla
                 break
             await asyncio.sleep(0.25)
     return EventSourceResponse(live())
+
+
+# Recovery is opt-in while teammates finish the owner/resident workspaces.
+# Enabling it also protects every legacy API; owner login has no default secret.
+if os.environ.get("BRACE_RECOVERY_ENABLED") == "1":
+    from .recovery.local import install_local_recovery
+
+    install_local_recovery(app)

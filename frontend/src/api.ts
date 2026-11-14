@@ -5,7 +5,7 @@ async function get<T>(path: string): Promise<T> {
   if (!r.ok) {
     let detail = r.statusText;
     try { detail = (await r.json()).detail ?? detail; } catch { /* not JSON */ }
-    throw new Error(detail);
+    throw Object.assign(new Error(detail), { status: r.status });
   }
   return r.json();
 }
