@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 import fcntl
+import json
 import os
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -101,6 +102,14 @@ def install_local_recovery(app: FastAPI, *, root: Path | None = None, agent_fact
     try:
         store = CaseStore(private / "platform.sqlite3", private / "media")
         registry = CaseInputRegistry(directory / "registered-inputs")
+        seed_runs = os.environ.get("BRACE_RECOVERY_SEED_RUNS")
+        if seed_runs:
+            for value in json.loads(seed_runs):
+                run = Path(value)
+                seed = json.loads((run / "seed.json").read_text())
+                inventory = json.loads((run / "inventory.json").read_text())
+                inputs = json.loads((run / "inputs.json").read_text())
+                import_fresh_case(store, registry, seed, inventory, inputs.get("financial_assumptions"))
     except Exception:
         lock.close()
         raise
@@ -141,7 +150,13 @@ def install_local_recovery(app: FastAPI, *, root: Path | None = None, agent_fact
             resolve_owner=legacy_owner, resolve_owner_case=owner_case, agent_factory=agent_factory,
             input_provider=with_report_images(registry.input_provider, report_image))
         app.include_router(build_notice_router(store, owner))
-        app.include_router(build_support_router(store, owner))
+        photon = None
+        if os.environ.get("BRACE_PHOTON_BRIDGE_SECRET"):
+            from .photon import PhotonService, build_photon_router
+            photon = PhotonService(store)
+            app.state.brace_photon_service = photon
+            app.include_router(build_photon_router(store, photon))
+        app.include_router(build_support_router(store, owner, photon=photon))
         app.add_middleware(MutationOriginGate, origins=origins)
         app.router.add_event_handler("shutdown", lock.close)
         app.state.brace_recovery_store = store

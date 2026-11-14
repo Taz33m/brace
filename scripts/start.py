@@ -15,6 +15,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from dotenv import dotenv_values
 
 ROOT = Path(__file__).resolve().parent.parent
 FRONTEND = ROOT / "frontend"
@@ -66,6 +67,13 @@ def main() -> int:
     if not (FRONTEND / "node_modules").exists():
         print("The web app's packages are not installed. Run: (cd frontend && npm install)")
         return 1
+    photon = ROOT / "messaging" / "photon"
+    config = {**dotenv_values(ROOT / ".env"), **os.environ}
+    photon_enabled = config.get("BRACE_RECOVERY_ENABLED") == "1" and all(
+        config.get(k) for k in ("PHOTON_PROJECT_ID", "PHOTON_PROJECT_SECRET", "BRACE_PHOTON_BRIDGE_SECRET"))
+    if photon_enabled and not (photon / "node_modules" / "spectrum-ts").exists():
+        print("Run npm --prefix messaging/photon ci to start iMessage with Brace.")
+        photon_enabled = False
 
     env = {**os.environ, "BRACE_API_PORT": str(api), "BRACE_WEB_PORT": str(web), "BRACE_VR_PORT": str(vr)}
     quiet = {"stdout": subprocess.DEVNULL}   # errors still reach the terminal
@@ -91,6 +99,11 @@ def main() -> int:
             print("Something did not start. The error is above.")
             stop()
             return 1
+        if photon_enabled:
+            running.append(subprocess.Popen(
+                ["node", "worker.mjs"], cwd=photon,
+                env={**env, "BRACE_PHOTON_BRIDGE_URL": f"http://127.0.0.1:{api}"}))
+            print("  iMessage           configured")
         address = lan_address()
         dotenv = ROOT / ".env"
         keyed = bool(os.environ.get("OPENAI_API_KEY")) or (dotenv.exists() and any(

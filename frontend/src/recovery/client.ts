@@ -302,6 +302,12 @@ export function createRecoveryClient(options: RecoveryClientOptions = {}) {
       post<HouseholdReceipt>(`/api/recovery/cases/${encodeURIComponent(case_id)}/households`, input, idempotency_key),
     get_household_access: (case_id: string, signal?: AbortSignal) =>
       request<HouseholdAccessView>(`/api/recovery/cases/${encodeURIComponent(case_id)}/households/access`, { signal }),
+    photon_status: (case_id: string, signal?: AbortSignal) =>
+      request<{ connections: { household_id: string; active: boolean }[] }>(
+        `/api/recovery/cases/${encodeURIComponent(case_id)}/photon`, { signal }),
+    create_photon_link: (case_id: string, household_id: string) =>
+      request<{ join_message: string; expires_at: string; line?: string }>(
+        `/api/recovery/cases/${encodeURIComponent(case_id)}/households/${encodeURIComponent(household_id)}/photon-link`, { method: "POST" }),
     revoke_household_access: (case_id: string, household_id: string, input: { expected_revision: number }, key: string) =>
       post<RevokeAccessReceipt>(`/api/recovery/cases/${encodeURIComponent(case_id)}/households/${encodeURIComponent(household_id)}/revoke-access`, input, key),
     command: (case_id: string, command: OwnerCommand, idempotency_key: string) =>

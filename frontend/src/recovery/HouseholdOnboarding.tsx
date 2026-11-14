@@ -31,6 +31,11 @@ export function HouseholdOnboarding({ snapshot, busy, on_command, on_session_exp
   const [revoking, setRevoking] = useState<string | null>(null);
   const [revokeRetry, setRevokeRetry] = useState<string | null>(null);
   const [revoked, setRevoked] = useState<RevokeAccessReceipt | null>(null);
+  const [photonHouseholds, setPhotonHouseholds] = useState<Set<string> | null>(null);
+  const [photonPending, setPhotonPending] = useState<string | null>(null);
+  const [photonInvite, setPhotonInvite] = useState<{
+    household: string; join_message: string; expires_at: string; line?: string;
+  } | null>(null);
   const revokeAttempt = useRef<{ household_id: string; input: { expected_revision: number }; key: string } | null>(null);
   const attempt = useRef<Attempt | null>(null);
   const invitation = useRef<OwnerCommand | null>(null);
@@ -41,6 +46,19 @@ export function HouseholdOnboarding({ snapshot, busy, on_command, on_session_exp
   useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
   const requestedRevision = Math.max(snapshot.case.case_revision, created?.case_revision ?? 0, revoked?.case_revision ?? 0);
   const latestRevision = Math.max(requestedRevision, access?.case_revision ?? 0);
+  useEffect(() => {
+    const abort = new AbortController();
+    const refresh = () => {
+      void client.photon_status(snapshot.case.case_id, abort.signal).then(result => {
+        if (!abort.signal.aborted) {
+          setPhotonHouseholds(new Set(result.connections.filter(row => row.active).map(row => row.household_id)));
+        }
+      }).catch(() => {});
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 6000);
+    return () => { abort.abort(); window.clearInterval(timer); };
+  }, [snapshot.case.case_id]);
   useEffect(() => {
     const abort = new AbortController();
     setAccessLoading(true); setAccessError(null);
@@ -61,6 +79,23 @@ export function HouseholdOnboarding({ snapshot, busy, on_command, on_session_exp
   function showError(problem: unknown) {
     setError(problem instanceof Error ? problem.message : "This update could not be completed. Try again.");
     if (problem instanceof RecoveryApiError && [401, 403].includes(problem.status)) on_session_expired();
+  }
+
+  async function invitePhoton(householdId: string) {
+    if (busy || inFlight.current) return;
+    inFlight.current = true;
+    setPhotonPending(householdId);
+    setPhotonInvite(null);
+    setError(null);
+    try {
+      const receipt = await client.create_photon_link(snapshot.case.case_id, householdId);
+      if (active.current) setPhotonInvite({ household: householdId, ...receipt });
+    } catch (problem) {
+      if (active.current) showError(problem);
+    } finally {
+      inFlight.current = false;
+      if (active.current) setPhotonPending(null);
+    }
   }
 
   async function add(event: FormEvent) {
@@ -145,7 +180,7 @@ export function HouseholdOnboarding({ snapshot, busy, on_command, on_session_exp
 
   const households = [...snapshot.household_labels];
   if (created && !households.some(row => row.household_id === created.household.household_id)) households.push(created.household);
-  const disabled = busy || saving || inviting !== null || revoking !== null;
+  const disabled = busy || saving || inviting !== null || revoking !== null || photonPending !== null;
   const mutationPending = pendingRetry || inviteRetry !== null || revokeRetry !== null;
   const accessReady = !accessLoading && !accessError && access !== null && access.case_revision >= requestedRevision;
   return <section className="brace-households" aria-labelledby="brace-households-title">
@@ -178,10 +213,21 @@ export function HouseholdOnboarding({ snapshot, busy, on_command, on_session_exp
           <button type="button" disabled={disabled || pendingRetry || revokeRetry !== null || (inviteRetry !== null && inviteRetry !== row.household_id)}
             onClick={() => void invite(row.household_id)}>{inviting === row.household_id ? "Creating link…"
               : inviteRetry === row.household_id ? "Retry invitation" : wasRevoked && !hasLinks && !signedIn ? "Invite again" : "Generate private invitation"}</button>
+          {photonHouseholds && <button type="button" disabled={disabled || mutationPending}
+            onClick={() => void invitePhoton(row.household_id)}>
+            {photonPending === row.household_id ? "Creating code…" : photonHouseholds.has(row.household_id) ? "Link another iPhone" : "Link iMessage"}
+          </button>}
           {detail && (signedIn || hasLinks || revokeRetry === row.household_id) && <button className="brace-household-revoke" type="button"
             disabled={disabled || pendingRetry || inviteRetry !== null || (revokeRetry !== null && revokeRetry !== row.household_id)}
             onClick={() => setConfirmRevoke(row.household_id)}>Revoke access</button>}
         </div></div>
+        {photonHouseholds?.has(row.household_id) && <p className="brace-households-success">iMessage connected</p>}
+        {photonInvite?.household === row.household_id &&
+          <div className="brace-household-confirm">
+            <p>Send <strong>{photonInvite.join_message}</strong>{photonInvite.line ? <> to <strong>{photonInvite.line}</strong></> : " to the property's iMessage line"}.</p>
+            <small>Private code expires at {new Date(photonInvite.expires_at).toLocaleTimeString()}.</small>
+            <button type="button" className="brace-household-cancel" onClick={() => setPhotonInvite(null)}>Dismiss code</button>
+          </div>}
         {confirmRevoke === row.household_id && <div className="brace-household-confirm" role="group" aria-label={`Revoke access for ${row.unit_label || "this household"}`}>
           <p>Sign out <strong>{row.unit_label || "this household"}</strong> and disable all their existing invitation links? Their reports and requests will be kept.</p>
           {revokeRetry === row.household_id && <p>The result is not confirmed. Retry this same action to check it.</p>}

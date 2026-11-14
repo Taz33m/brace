@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 import sqlite3
 import time
@@ -493,9 +494,21 @@ class CaseStore:
         if command.type == "start_assessment":
             return self._start_with_receipt(actor, case_id, command, idem, launcher)
         try:
-            return handler(actor, case_id, command, launcher=launcher, idem=idem)
+            result = handler(actor, case_id, command, launcher=launcher, idem=idem)
         except _Replayed as replayed:
-            return replayed.result
+            result = replayed.result
+        photon = getattr(self, "_brace_photon_service", None)
+        if command.type == "publish_notice" and photon is not None:
+            try:
+                with self._read() as conn:
+                    event = conn.execute(
+                        "SELECT entity_id FROM events WHERE case_id=? AND case_revision=? AND type='notice.published'",
+                        (case_id, result.case_revision)).fetchone()
+                if event:
+                    photon.queue_notice(case_id, event["entity_id"], command.title.strip(), command.body.strip())
+            except Exception:
+                logging.getLogger(__name__).warning("Could not queue a published recovery notice for Photon")
+        return result
 
     def _start_with_receipt(self, actor, case_id, command, idem, launcher) -> m.CommandResult:
         """start_assessment depends on the launcher outcome after commit, and is already

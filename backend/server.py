@@ -404,9 +404,12 @@ def site_model_board() -> dict:
 
 
 @app.get("/api/buildings/{building_id}/site-model")
-def building_site_model(building_id: int) -> dict:
+def building_site_model(building_id: int, request: Request) -> dict:
     """Everything known about one address, each fact with the sources it rests on."""
     model = _site_model(building_id)
+    from .recovery.site_activity import case_activity
+    model["reports"] = sorted(
+        model["reports"] + case_activity(request, building_id), key=lambda row: row["at"])
     return {**model, "facts": site_model.facts(model)}
 
 

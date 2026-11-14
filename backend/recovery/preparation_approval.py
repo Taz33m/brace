@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 
 from fastapi import HTTPException, Request
@@ -43,7 +44,20 @@ def approve_notice(request: Request, *, building: int, scenario: str, step: str 
             actor, case_id, approval_key="prepare:" + digest,
             title=notice["subject"], body=notice["body"],
             source_ids=[f"preparation:{building}:{scenario}:{step or 'now'}:{notice['id']}:{digest}"])
-        return {"ok": True, "say": "Approved. The notice is now published in the residents' private Brace updates.",
+        say = "Approved. The notice is now published in the residents' private Brace updates."
+        queued = 0
+        photon = getattr(request.app.state, "brace_photon_service", None)
+        if photon is not None:
+            try:
+                queued = photon.queue_notice(
+                    case_id, publication["notice_id"], notice["subject"], notice["body"],
+                    property_name=snapshot.case.property_name, threat=plan.get("threat"))
+            except Exception:
+                logging.getLogger(__name__).warning("Could not queue a Photon notice")
+                queued = None
+            if queued:
+                say += " Brace also queued it for linked iMessage conversations."
+        return {"ok": True, "say": say, "photon_queued": queued,
                 "delivery": "resident_feed", "case_id": case_id,
                 "household_count": len(snapshot.household_labels), **publication}
     except (json.JSONDecodeError, AttributeError):

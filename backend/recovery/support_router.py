@@ -1,12 +1,9 @@
-"""Explicit owner responses to resident support requests, persisted atomically.
-
-These are portal status updates, never external messages or automatically booked
-assistance. Case revisions move; financial analysis inputs do not change.
-"""
+"""Persist explicit owner responses and mirror them to a linked Photon conversation."""
 from __future__ import annotations
 
 from copy import deepcopy
 import json
+import logging
 from typing import Annotated, Callable, Literal
 
 from fastapi import APIRouter, Depends, Header
@@ -80,7 +77,7 @@ def respond_support_request(store, actor, case_id: str, request_id: str,
         return result
 
 
-def build_support_router(store, resolve_owner: Callable) -> APIRouter:
+def build_support_router(store, resolve_owner: Callable, *, photon=None) -> APIRouter:
     router = APIRouter(route_class=OwnerEnvelopeRoute)
 
     @router.get("/api/recovery/cases/{case_id}/support-requests")
@@ -95,6 +92,22 @@ def build_support_router(store, resolve_owner: Callable) -> APIRouter:
     def respond(case_id: str, request_id: str, body: SupportResponseInput,
                 idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=8, max_length=200)],
                 actor=Depends(resolve_owner)):
-        return respond_support_request(store, actor, case_id, request_id, body, idempotency_key)
+        result = respond_support_request(store, actor, case_id, request_id, body, idempotency_key)
+        if photon is not None:
+            receipt = result["request"]
+            try:
+                with store._read() as conn:
+                    event = conn.execute(
+                        "SELECT event_id FROM events WHERE case_id=? AND entity_id=? "
+                        "AND case_revision=? AND type='support.updated'",
+                        (case_id, request_id, result["case_revision"])).fetchone()
+                queued = photon.queue_household_update(
+                    case_id, receipt["household_id"], event["event_id"],
+                    f"Brace • Property team update\n{receipt['public_status_detail']}") if event else 0
+                result["photon_queued"] = queued
+            except Exception:
+                logging.getLogger(__name__).warning("Could not queue a Photon support update")
+                result["photon_queued"] = None
+        return result
 
     return router
