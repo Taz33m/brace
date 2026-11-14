@@ -113,7 +113,7 @@ export function ReportFlow(props: ReportFlowProps) {
   const onBusyRef = useRef(on_busy);
   onBusyRef.current = on_busy;
   // Leaving the screen ends any busy state this flow reported.
-  useEffect(() => () => onBusyRef.current(false), []);
+  useEffect(() => () => onBusyRef.current?.(false), []);
 
   const [step, setStep] = useState<"form" | "review">("form");
   const [attempted, setAttempted] = useState(false);
@@ -280,7 +280,7 @@ export function ReportFlow(props: ReportFlowProps) {
       return;
     }
     sendingRef.current = true;
-    onBusyRef.current(true);
+    onBusyRef.current?.(true);
     try {
       let photos = current.photos.filter((p) => p.file);
       if (skip?.size) {
@@ -397,7 +397,7 @@ export function ReportFlow(props: ReportFlowProps) {
       }
     } finally {
       sendingRef.current = false;
-      onBusyRef.current(false);
+      onBusyRef.current?.(false);
     }
   }
 

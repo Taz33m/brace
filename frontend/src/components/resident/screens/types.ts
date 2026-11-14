@@ -78,7 +78,7 @@ export interface ReportFlowProps {
   /** Shell-owned "just now" stamp, reused across retries of the same intended report. */
   now_stamp: { current: string | null };
   /** True while a send is in flight; the shell disables leaving the screen meanwhile. */
-  on_busy: (busy: boolean) => void;
+  on_busy?: (busy: boolean) => void;
   /** Server confirmed the report. Shell clears the draft, refreshes home, shows the receipt. */
   on_submitted: (receipt: ReportReceipt) => void;
   on_cancel: () => void;
@@ -101,7 +101,7 @@ export interface SupportFlowProps {
   /** Shell-owned, so a retry after leaving and re-entering the screen reuses the same key. */
   keeper: SubmissionKeeper;
   /** True while a send is in flight; the shell disables leaving the screen meanwhile. */
-  on_busy: (busy: boolean) => void;
+  on_busy?: (busy: boolean) => void;
   on_submitted: (receipt: SupportReceipt) => void;
   on_cancel: () => void;
   on_expired: () => void;

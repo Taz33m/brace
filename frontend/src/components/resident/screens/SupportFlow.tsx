@@ -36,7 +36,7 @@ type Phase = { kind: "idle" } | { kind: "sending" } | { kind: "error"; error: Re
 export function SupportFlow({ api, connection, draft, set_draft, keeper: sharedKeeper, on_submitted, on_expired, on_busy }: SupportFlowProps) {
   const onBusyRef = useRef(on_busy);
   onBusyRef.current = on_busy;
-  useEffect(() => () => onBusyRef.current(false), []);
+  useEffect(() => () => onBusyRef.current?.(false), []);
   const keeper = useRef(sharedKeeper);
   const pending = useRef(false);
   const lifetimeRef = useFlowLifetime();
@@ -79,20 +79,20 @@ export function SupportFlow({ api, connection, draft, set_draft, keeper: sharedK
     const input: SupportInput = { category: draft.category, description };
     const key = keeper.current.keyFor(input);
     pending.current = true;
-    onBusyRef.current(true);
+    onBusyRef.current?.(true);
     setPhase({ kind: "sending" });
     try {
       const receipt = await api.request_support(input, key);
       if (lifetime.aborted) return;
       keeper.current.succeeded();
       pending.current = false;
-      onBusyRef.current(false);
+      onBusyRef.current?.(false);
       setPhase({ kind: "idle" });
       on_submitted(receipt);
     } catch (e) {
       if (lifetime.aborted) return;
       pending.current = false;
-      onBusyRef.current(false);
+      onBusyRef.current?.(false);
       const error = toResidentError(e);
       if (error.kind === "expired") {
         on_expired();
