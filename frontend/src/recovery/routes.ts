@@ -4,7 +4,8 @@ export type AppRoute =
   | { kind: "walk"; scenario: string; step: string | null; building: number }
   | { kind: "scene"; scenario: string; step: string | null; building: number }
   | { kind: "place"; model: string; watch: boolean }
-  | { kind: "show"; at: number }
+  | { kind: "home" }
+  | { kind: "story"; id: "storm" | "after" | "inside" }
   | { kind: "furnish"; building: number; scan: string }
   | { kind: "model"; building: number | null }
   | { kind: "recovery"; case_id: string | null }
@@ -53,7 +54,7 @@ function readQuery(query: string): URLSearchParams {
 export function parseAppRoute(hash: string): AppRoute {
   try {
     if (hash === "" || hash === "#" || hash === "#/") {
-      return { kind: "prepare", scenario: null, step: null, building: null, vr: false };
+      return { kind: "home" };
     }
     if (!hash.startsWith("#") || hash.slice(1).includes("#")) return invalid();
     const fragment = hash.slice(1).replace(/^\//, "");
@@ -74,9 +75,9 @@ export function parseAppRoute(hash: string): AppRoute {
     if (prefix === "recovery") {
       return parts.length <= 2 ? { kind: "recovery", case_id: parts[1] ?? null } : invalid();
     }
-    // The show: every scenario in order, playing by itself. An optional number starts it part-way through.
-    if (prefix === "show") {
-      return parts.length === 1 || (parts.length === 2 && /^[1-9]\d?$/.test(parts[1])) ? { kind: "show", at: Number(parts[1] ?? 1) - 1 } : invalid();
+    // A scenario, told by scrolling.
+    if (prefix === "story") {
+      return parts.length === 2 && (parts[1] === "storm" || parts[1] === "after" || parts[1] === "inside") ? { kind: "story", id: parts[1] } : invalid();
     }
     // One room as it was, cleared, and furnished again.
     if (prefix === "furnish") {
@@ -100,7 +101,7 @@ export function parseAppRoute(hash: string): AppRoute {
     const prepare = vr || walk || scene ? parts.slice(1) : parts;
     if (!prepare.length) return invalid();
     const scenario = prepare[0];
-    if (["resident", "recovery", "vr", "walk", "model", "scene", "place", "furnish", "show"].includes(scenario)) return invalid();
+    if (["resident", "recovery", "vr", "walk", "model", "scene", "place", "furnish", "story"].includes(scenario)) return invalid();
     let step: string | null = null;
     let building: number | null = null;
     let offset = 1;
@@ -134,7 +135,7 @@ export function prepareHash(scenario: string | null, step: string | null = null,
     if (step !== null || building !== null || vr) throw new Error("A scenario is required for this route.");
     return "#/";
   }
-  if (["resident", "recovery", "vr", "walk", "model", "scene", "place", "furnish", "show"].includes(scenario)) throw new Error("Reserved Brace route identifier.");
+  if (["resident", "recovery", "vr", "walk", "model", "scene", "place", "furnish", "story"].includes(scenario)) throw new Error("Reserved Brace route identifier.");
   if (step === "b" || step === "-") throw new Error("Reserved Brace step identifier.");
   if (building !== null && !safeBuilding(building)) throw new Error("A positive building ID is required.");
   return `#/${vr ? "vr/" : ""}${encodedPart(scenario)}/${step === null ? "-" : encodedPart(step)}${building === null ? "" : `/b/${building}`}`;

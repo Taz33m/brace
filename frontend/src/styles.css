@@ -344,3 +344,5 @@ html[data-show] .map-body { grid-template-columns: minmax(0, 1fr); }
 html[data-show] .scene-beats, html[data-show] .scene-source, html[data-show] .scene-steps, html[data-show] .scene-place a, html[data-show] .furnish-states { display: none; }
 /* A label a shot must carry (cleared, or an illustration) sits where the show's captions sit, in the same type. */
 html[data-show] .furnish-label { left: 6vw; bottom: 12.5vh; max-width: 62vw; font: 300 clamp(20px, 3.2vh, 38px)/1.2 "Helvetica Neue", Helvetica, Arial, sans-serif; text-shadow: 0 2px 24px rgba(0, 0, 0, 0.85); }
+
+.st-wait { position: fixed; inset: 0; background: #0b0b0c; }

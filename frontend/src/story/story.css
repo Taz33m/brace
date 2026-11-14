@@ -1,0 +1,129 @@
+/* The scenarios, told by scrolling. The cabin, the sky and the type are the plane project's: obsidian, ivory and
+   champagne, a light serif for anything said large and a quiet sans for the rest. */
+html.st-on, html.st-on body { background: #0b0b0c; }
+html.st-on { scrollbar-width: none; }
+html.st-on::-webkit-scrollbar { display: none; }
+html.st-on, html.st-on body, html.st-on #root { height: auto; min-height: 100%; }
+
+.st { --obsidian: #0b0b0c; --ivory: #f3ece0; --champagne: #d7c29e; --amber: #ffc20e; --stage-h: 100vh; --safe-h: 100vh;
+  --heading: "Cormorant Garamond", "Iowan Old Style", Georgia, serif; --sans: "Manrope", "Helvetica Neue", Arial, sans-serif;
+  position: relative; color: var(--ivory); font-family: var(--sans); background: transparent; }
+@supports (height: 100lvh) { .st { --stage-h: 100lvh; --safe-h: 100svh; } }
+.st-fill { position: absolute; inset: 0; }
+.st-will { will-change: transform; }
+.st-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+.st-home { position: fixed; z-index: 60; top: 26px; left: 6vw; font: 500 12px/1 var(--sans); letter-spacing: 0.24em; text-transform: uppercase; color: var(--champagne); text-decoration: none; opacity: 0.75; mix-blend-mode: difference; }
+.st-home:hover { opacity: 1; }
+
+/* ---- the sky, fixed behind everything ---- */
+.st-sky { position: fixed; inset: 0; z-index: 0; isolation: isolate; overflow: hidden; pointer-events: none; background: var(--obsidian); }
+.st-sky img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.st-sky-photo { position: absolute; inset: -3%; }
+.st-sky-photo img { object-position: 50% 46%; }
+.st-sky-drift { position: absolute; left: 0; right: 0; top: 14%; height: 48%; opacity: 0.6; mix-blend-mode: screen; }
+.st-sky-drift-track { position: absolute; top: 0; bottom: 0; left: 0; display: flex; width: 400vw; animation: st-drift 140s linear infinite; }
+.st-sky-drift-tile { position: relative; height: 100%; width: 100vw; }
+@keyframes st-drift { from { transform: translate3d(0, 0, 0); } to { transform: translate3d(-50%, 0, 0); } }
+.st-sky-sweep { position: absolute; left: -40%; top: 8%; height: 84%; width: 180%; opacity: 0; mix-blend-mode: screen; }
+.st-sky-scrim { position: absolute; inset: 0; opacity: 0; background: linear-gradient(to bottom, rgba(11, 11, 12, 0.35), rgba(11, 11, 12, 0.45), rgba(11, 11, 12, 0.75)); }
+.st-sky-bank { position: absolute; left: -15%; bottom: 0; height: 118%; width: 130%; opacity: 0; mix-blend-mode: screen; }
+.st-sky-bank img { object-position: top; }
+.st-sky-veil { position: absolute; inset: 0; opacity: 0; background: var(--ivory); }
+.st-sky-whisper { position: absolute; left: 24px; right: 24px; top: 50%; margin: -0.6em 0 0; text-align: center; opacity: 0; font: 300 clamp(2.2rem, 5vw, 4.8rem)/1.05 var(--heading); color: var(--obsidian); }
+
+/* ---- the window ---- */
+.st-hero { position: relative; z-index: 10; }
+.st-stage { position: relative; width: 100%; height: var(--stage-h); overflow: hidden; }
+.st-sticky { position: sticky; top: 0; }
+.st-safe { position: absolute; left: 0; right: 0; top: 0; height: var(--safe-h); }
+/* The window artwork is 2752 x 1536. It covers the stage on landscape screens and keeps the whole frame in view on portrait ones. */
+.st-window-box { --w: max(min(calc(var(--stage-h) * 1.7917), 250vw), 100vw); position: absolute; left: 50%; top: 50%; width: var(--w); height: calc(var(--w) * 0.5581);
+  margin-left: calc(var(--w) * -0.5); margin-top: calc(var(--w) * -0.2791); }
+.st-window-art { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.st-band { position: absolute; background: #000; }
+.st-band-top { left: -60vw; right: -60vw; bottom: calc(100% - 1px); height: var(--stage-h); }
+.st-band-bottom { left: -60vw; right: -60vw; top: calc(100% - 1px); height: var(--stage-h); }
+.st-band-left { top: 0; bottom: 0; right: calc(100% - 1px); width: 60vw; }
+.st-band-right { top: 0; bottom: 0; left: calc(100% - 1px); width: 60vw; }
+
+.st-lead, .st-counter { position: absolute; margin: 0; font: 400 clamp(3.1rem, 7.6vw, 8.8rem)/0.88 var(--heading); letter-spacing: -0.01em; color: var(--ivory); }
+.st-lead { left: 6vw; top: 15%; }
+.st-counter { right: 6vw; bottom: 16%; text-align: right; }
+.st-line { display: block; }
+.st-indent { padding-left: 0.55em; }
+.st-outdent { padding-right: 0.55em; }
+.st-word { display: inline-block; white-space: nowrap; }
+.st-char { display: inline-block; }
+.st-aside { position: absolute; left: 6vw; bottom: 9%; max-width: 19rem; }
+.st-aside-title { margin: 0; font: 500 17px/1.25 var(--sans); }
+.st-rule { display: block; width: 32px; height: 1px; margin: 20px 0; background: var(--champagne); }
+.st-aside-text { margin: 0; font: 400 13px/1.6 var(--sans); color: rgba(243, 236, 224, 0.75); }
+.st-cue { position: absolute; right: 6vw; bottom: 9%; width: 26vw; }
+.st-cue-line { display: block; height: 1px; width: 100%; margin-bottom: 16px; background: rgba(215, 194, 158, 0.4); }
+.st-cue p { display: flex; justify-content: space-between; margin: 0; font: 400 10px/1 var(--sans); letter-spacing: 0.24em; text-transform: uppercase; color: rgba(243, 236, 224, 0.85); }
+.st-statement { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 0 8vw; visibility: hidden; opacity: 0; }
+.st-statement-shade { position: absolute; inset: 0; background: radial-gradient(ellipse at center, rgba(8, 8, 10, 0.62) 0%, rgba(8, 8, 10, 0.28) 45%, rgba(8, 8, 10, 0) 72%); }
+.st-statement p { position: relative; max-width: 60rem; margin: 0; text-align: center; font: 300 clamp(1.9rem, 3.7vw, 3.7rem)/1.14 var(--heading); text-shadow: 0 2px 24px rgba(0, 0, 0, 0.35); text-wrap: balance; }
+.st-brand { padding-right: 0.2em; font-weight: 500; letter-spacing: 0.2em; color: var(--champagne); }
+
+.st-cloud-rise { position: relative; z-index: 10; height: 220vh; }
+
+/* ---- the ground: Houston, one building, its hours, one of its homes, then the live site ---- */
+.st-ground-section { position: relative; z-index: 10; height: 1700vh; }
+.st-ground { position: absolute; left: 50%; top: 50%; width: max(100vw, 100vh); height: max(100vw, 100vh); margin: calc(max(100vw, 100vh) * -0.5) 0 0 calc(max(100vw, 100vh) * -0.5); visibility: hidden; }
+.st-ring, .st-dots { position: absolute; inset: 0; width: 100%; height: 100%; transform-origin: 50% 50%; }
+.st-ring img { position: absolute; inset: 0; width: 100%; height: 100%; }
+.st-ring-inset { -webkit-mask-image: linear-gradient(to right, transparent, #000 12%, #000 88%, transparent), linear-gradient(to bottom, transparent, #000 12%, #000 88%, transparent);
+  mask-image: linear-gradient(to right, transparent, #000 12%, #000 88%, transparent), linear-gradient(to bottom, transparent, #000 12%, #000 88%, transparent); -webkit-mask-composite: source-in; mask-composite: intersect; }
+.st-dots { mix-blend-mode: screen; pointer-events: none; }
+.st-outline { position: absolute; outline: var(--line, 1.5px) solid var(--ivory); box-shadow: 0 0 0 400vmax rgba(11, 11, 12, 0.5); visibility: hidden; }
+.st-dim { position: absolute; inset: 0; background: rgba(11, 11, 12, 0.28); visibility: hidden; }
+.st-backdrop { position: absolute; inset: 0; background: var(--obsidian); visibility: hidden; }
+
+.st-city, .st-place, .st-clock, .st-inside { position: absolute; margin: 0; visibility: hidden; text-shadow: 0 2px 26px rgba(0, 0, 0, 0.7); }
+.st-city { left: 6vw; bottom: 14%; }
+.st-kicker { margin: 0 0 14px; font: 500 12px/1 var(--sans); letter-spacing: 0.24em; text-transform: uppercase; color: var(--champagne); }
+.st-figure { margin: 0; font: 300 clamp(1.7rem, 3vw, 3rem)/1.1 var(--heading); }
+.st-figure strong { display: block; font: 400 clamp(4rem, 9vw, 10rem)/0.9 var(--heading); letter-spacing: -0.02em; font-variant-numeric: lining-nums tabular-nums; }
+.st-place { left: 6vw; top: 15%; }
+.st-place h2 { margin: 0; font: 400 clamp(2.4rem, 4.6vw, 5rem)/0.95 var(--heading); letter-spacing: -0.01em; }
+.st-place p { margin: 14px 0 0; font: 300 clamp(1.3rem, 2vw, 2rem)/1.2 var(--heading); color: rgba(243, 236, 224, 0.88); }
+.st-clock { right: 6vw; bottom: 13%; text-align: right; transform-origin: 100% 100%; }
+.st-clock strong { display: block; font: 400 clamp(8rem, 21vw, 22rem)/0.8 var(--heading); letter-spacing: -0.03em; color: var(--amber); font-variant-numeric: lining-nums; }
+.st-clock span { display: block; margin-top: 18px; font: 300 clamp(1.5rem, 2.6vw, 2.6rem)/1.1 var(--heading); }
+.st-pano { position: absolute; inset: 0; visibility: hidden; }
+.st-pano canvas { display: block; }
+.st-inside { left: 6vw; bottom: 13%; font: 300 clamp(2rem, 4vw, 4.2rem)/1.05 var(--heading); }
+.st-inside small { display: block; margin-top: 14px; font: 500 12px/1 var(--sans); letter-spacing: 0.24em; text-transform: uppercase; color: var(--champagne); }
+.st-site { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: var(--obsidian); visibility: hidden; pointer-events: none; }
+.st-site.st-shown { visibility: visible; }
+.st-site.st-hands { pointer-events: auto; }
+.st-credit { position: absolute; right: 14px; bottom: 10px; margin: 0; font: 400 10.5px/1 var(--sans); color: rgba(243, 236, 224, 0.5); pointer-events: none; mix-blend-mode: difference; }
+
+.st-room-section { position: relative; z-index: 10; height: 340vh; }
+.st-live { position: fixed; inset: 0; height: auto; }
+
+.st-end { position: relative; z-index: 10; height: 100vh; display: grid; place-content: center; justify-items: center; gap: 26px; background: var(--obsidian); }
+.st-end h2 { margin: 0; font: 400 clamp(4rem, 10vw, 9rem)/0.9 var(--heading); letter-spacing: -0.01em; }
+.st-end a, .st-home-more a { font: 500 12px/1 var(--sans); letter-spacing: 0.24em; text-transform: uppercase; color: var(--champagne); text-decoration: none; padding-bottom: 6px; border-bottom: 1px solid rgba(215, 194, 158, 0.4); }
+.st-end a:hover, .st-home-more a:hover { border-bottom-color: var(--champagne); }
+
+/* ---- the home page: the cabin, and the scenarios ---- */
+.st-homepage { position: fixed; inset: 0; overflow: hidden; }
+.st-home-stage { position: absolute; inset: 0; height: auto; }
+.st-home-mark { top: 12%; }
+.st-home-line { position: absolute; left: 6vw; top: calc(12% + clamp(3.1rem, 7.6vw, 8.8rem) + 22px); margin: 0; font: 300 clamp(1.2rem, 1.7vw, 1.7rem)/1.25 var(--heading); color: rgba(243, 236, 224, 0.85); }
+.st-menu { position: absolute; right: 6vw; bottom: 12%; width: min(27rem, 30vw); display: flex; flex-direction: column; }
+.st-menu a { display: block; padding: 18px 0 19px; border-top: 1px solid rgba(215, 194, 158, 0.35); color: var(--ivory); text-decoration: none; transition: padding-left 300ms ease, color 300ms ease; }
+.st-menu a:last-child { border-bottom: 1px solid rgba(215, 194, 158, 0.35); }
+.st-menu strong { display: block; font: 400 clamp(1.7rem, 2.5vw, 2.6rem)/1 var(--heading); }
+.st-menu span { display: block; margin-top: 8px; font: 400 13px/1.5 var(--sans); color: rgba(243, 236, 224, 0.7); }
+.st-menu a:hover, .st-menu a:focus-visible { padding-left: 12px; color: var(--champagne); outline: none; }
+.st-home-more { position: absolute; left: 6vw; bottom: 9%; margin: 0; display: flex; gap: 28px; }
+
+@media (max-width: 760px) {
+  .st-cue, .st-aside { display: none; }
+  .st-menu { left: 6vw; right: 6vw; width: auto; bottom: 15%; }
+}
+@media (prefers-reduced-motion: reduce) { .st-sky-drift-track { animation: none; } }

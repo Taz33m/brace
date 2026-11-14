@@ -21,9 +21,11 @@ test("preparation and headset routes preserve existing links", () => {
     kind: "prepare", scenario: "beryl-2024", step: null, building: 1190364, vr: false,
   });
   assert.equal(parseAppRoute("#/la-red-flag-jan-2025/20250105T2240Z").step, "20250105T2240Z");
-  for (const hash of ["", "#", "#/"]) assert.deepEqual(parseAppRoute(hash), {
-    kind: "prepare", scenario: null, step: null, building: null, vr: false,
-  });
+  // The default page is the list of scenarios; the portfolio map keeps its own address.
+  for (const hash of ["", "#", "#/"]) assert.deepEqual(parseAppRoute(hash), { kind: "home" });
+  assert.deepEqual(parseAppRoute("#/beryl-2024"), { kind: "prepare", scenario: "beryl-2024", step: null, building: null, vr: false });
+  assert.deepEqual(parseAppRoute("#/story/storm"), { kind: "story", id: "storm" });
+  assert.equal(parseAppRoute("#/story/elsewhere").kind, "invalid");
 });
 
 test("resident routes cannot fall through to preparation", () => {
