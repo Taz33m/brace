@@ -1,0 +1,46 @@
+/* Preview harness only (ResidentPreview). Scoped under .rp-page; never loaded by the real mount. */
+.rp-page { min-height: 100vh; background: #1b2532; color: #e7ecf2; font-family: "Barlow", "Helvetica Neue", Arial, sans-serif; }
+.rp-banner {
+  position: sticky; top: 0; z-index: 50; background: #f6d58b; color: #3d2a00; padding: 8px 16px; font-size: 14px; line-height: 1.35;
+}
+.rp-banner strong { text-transform: uppercase; letter-spacing: 0.06em; }
+.rp-stage { display: flex; gap: 32px; justify-content: center; align-items: flex-start; padding: 28px 20px 40px; }
+
+/* Desktop: a 390x844 phone frame. `transform` makes the resident action bar's position:fixed
+   resolve against the frame, so it sits at the bottom of the phone, not the browser window. */
+.rp-frame {
+  width: 390px; height: 844px; flex: none; border-radius: 36px; overflow: hidden; background: #000;
+  border: 10px solid #0a0f15; box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+  transform: translateZ(0);
+}
+.rp-scroll { height: 100%; overflow-y: auto; overscroll-behavior: contain; background: #eef1f4; }
+.rp-scroll .brace-resident { min-height: 100%; }
+
+.rp-side { width: 320px; flex: none; position: sticky; top: 64px; }
+.rp-controls { display: flex; flex-direction: column; gap: 12px; }
+.rp-field { display: flex; flex-direction: column; gap: 6px; font-size: 14px; font-weight: 600; }
+.rp-field select { font: inherit; font-weight: 400; padding: 8px 10px; border-radius: 6px; border: 1px solid #45566b; background: #26323f; color: #fff; }
+.rp-detail { margin: 0; font-size: 13.5px; color: #b5c1cf; }
+.rp-buttons { display: flex; flex-direction: column; gap: 6px; }
+.rp-buttons button {
+  font: inherit; font-size: 14px; text-align: left; padding: 9px 12px; border-radius: 6px; cursor: pointer;
+  border: 1px solid #45566b; background: #26323f; color: #fff;
+}
+.rp-buttons button:hover { background: #304054; }
+.rp-log { margin: 0; padding: 0; list-style: none; font-size: 12.5px; color: #9fb0c3; display: flex; flex-direction: column; gap: 4px; font-variant-numeric: tabular-nums; }
+
+.rp-mobile-controls { display: none; }
+
+/* Real phone or narrow window: no frame, full-bleed app; controls fold into the banner. */
+@media (max-width: 760px) {
+  .rp-page { background: #eef1f4; }
+  .rp-stage { display: block; padding: 0; }
+  .rp-frame { width: auto; height: auto; border: 0; border-radius: 0; box-shadow: none; transform: none; overflow: visible; background: none; }
+  .rp-scroll { height: auto; overflow: visible; }
+  .rp-side { display: none; }
+  .rp-mobile-controls { display: block; margin-top: 4px; }
+  .rp-mobile-controls summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
+  .rp-mobile-controls .rp-controls { padding: 8px 0 6px; color: #3d2a00; }
+  .rp-mobile-controls .rp-detail, .rp-mobile-controls .rp-log { color: #5b4300; }
+  .rp-mobile-controls .rp-field select, .rp-mobile-controls .rp-buttons button { background: #fff6dc; color: #3d2a00; border-color: #d9b85c; }
+}
