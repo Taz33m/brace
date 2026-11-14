@@ -1,0 +1,27 @@
+.brace-recovery-entry { min-height: 100vh; color: #26332d; background: #f4f3ed; }
+.brace-recovery-entry .brace-entry-message { box-sizing: border-box; max-width: 34rem; margin: 0 auto; padding: 4rem 1.5rem; }
+.brace-recovery-entry .brace-entry-message h1 { margin: 0 0 1rem; font-size: 1.65rem; line-height: 1.25; }
+.brace-recovery-entry .brace-entry-message p { line-height: 1.6; }
+.brace-recovery-entry .brace-entry-form { display: grid; gap: .75rem; margin-top: 1.5rem; }
+.brace-recovery-entry .brace-entry-form input,
+.brace-recovery-entry .brace-entry-invitation input { box-sizing: border-box; width: 100%; padding: .8rem; font: inherit; border: 1px solid #8a948d; border-radius: .35rem; background: white; color: #26332d; }
+.brace-recovery-entry .brace-entry-message button,
+.brace-recovery-entry .brace-entry-status button,
+.brace-recovery-entry .brace-entry-invitation button { padding: .75rem 1rem; font: inherit; cursor: pointer; border: 1px solid #304b3b; border-radius: .35rem; background: #304b3b; color: white; }
+.brace-recovery-entry .brace-entry-message button:disabled { opacity: .6; cursor: default; }
+.brace-recovery-entry .brace-entry-form :focus-visible,
+.brace-recovery-entry .brace-entry-status :focus-visible,
+.brace-recovery-entry .brace-entry-invitation :focus-visible { outline: 3px solid #b07822; outline-offset: 3px; }
+.brace-recovery-entry .brace-entry-status { display: flex; gap: 1rem; align-items: center; justify-content: space-between; padding: 1rem; margin: 0; background: #fff0cf; }
+.brace-recovery-entry .brace-entry-invitation { padding: 1rem 1.5rem; border-bottom: 1px solid #8a948d; background: #e7eee5; }
+.brace-recovery-entry .brace-entry-invitation h2 { font-size: 1.1rem; margin: 0; }
+.brace-recovery-entry .brace-entry-invitation button { margin-top: .75rem; }
+.brace-recovery-entry .brace-entry-evidence { padding: 1rem; line-height: 1.5; }
+.brace-recovery-entry .brace-entry-evidence h2 { font-size: 1.05rem; margin: 0 0 .5rem; }
+.brace-recovery-entry .brace-entry-evidence img { display: block; max-width: 100%; max-height: 65vh; object-fit: contain; margin: 1rem auto; }
+.brace-recovery-entry .brace-entry-muted { color: #65716a; }
+.brace-recovery-entry .brace-entry-spatial { margin: 0 1rem 1rem; padding: .75rem 1rem; border-left: 3px solid #8a948d; background: #e9ece5; font-size: .9rem; line-height: 1.5; }
+.brace-recovery-entry .brace-entry-spatial h3 { margin: 0 0 .5rem; font-size: .95rem; }
+.brace-recovery-entry .brace-entry-spatial p { margin: .4rem 0; }
+.brace-recovery-entry .brace-entry-return { text-align: center; padding: 1rem; margin: 0; }
+@media (max-width: 600px) { .brace-recovery-entry .brace-entry-message { padding-top: 2.5rem; } .brace-recovery-entry .brace-entry-status { align-items: stretch; flex-direction: column; } }

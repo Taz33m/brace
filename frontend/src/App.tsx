@@ -1,46 +1,77 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api } from "./api";
 import { BuildingPage } from "./components/BuildingPage";
 import { MapPage } from "./components/MapPage";
 import { VrPage } from "./components/VrPage";
 import type { Scenario } from "./types";
+import { OwnerSignIn, RecoveryEntry, ResidentEntry } from "./recovery/RecoveryEntry";
+import { consumeResidentInvitation, parseAppRoute, prepareHash } from "./recovery/routes";
+import type { AppRoute } from "./recovery/routes";
 
-interface Route { scenario: string | null; step: string | null; building: number | null; vr: boolean }
+type PrepareRoute = Extract<AppRoute, { kind: "prepare" }>;
 
-function parse(): Route {
-  const all = window.location.hash.replace(/^#\/?/, "").split("/").filter(Boolean).map(decodeURIComponent);
-  const vr = all[0] === "vr";   // #/vr/<scenario>/<step>/b/<id> is the headset view of the same building
-  const parts = vr ? all.slice(1) : all;
-  const b = parts.indexOf("b");
-  return {
-    scenario: parts[0] ?? null,
-    step: parts[1] && parts[1] !== "b" && parts[1] !== "-" ? parts[1] : null,
-    building: b >= 0 && parts[b + 1] ? Number(parts[b + 1]) : null,
-    vr,
-  };
+/** Read and scrub invitations before any child can issue a network request. */
+export function captureBrowserRoute(): AppRoute {
+  const route = parseAppRoute(window.location.hash);
+  try {
+    const invitation = consumeResidentInvitation(window.location, window.history);
+    return route.kind === "resident" ? { ...route, invitation_token: invitation } : route;
+  } catch {
+    return { kind: "invalid", message: "This invitation is invalid. Request a new invitation." };
+  }
 }
 
+// React StrictMode invokes initializers twice. The first read must survive URL scrubbing.
+let initialRoute: AppRoute | undefined;
+export function captureInitialRoute(): AppRoute { return initialRoute ??= captureBrowserRoute(); }
+
 export function go(scenario: string, step: string | null, building?: number | null) {
-  window.location.hash = `#/${encodeURIComponent(scenario)}/${step ? encodeURIComponent(step) : "-"}${building ? `/b/${building}` : ""}`;
+  window.location.hash = prepareHash(scenario, step, building ?? null);
 }
 
 export function App() {
-  const [route, setRoute] = useState<Route>(parse());
+  const [route, setRoute] = useState<AppRoute>(captureInitialRoute);
+  useEffect(() => {
+    initialRoute = undefined;
+    const onHash = () => setRoute(captureBrowserRoute());
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+  const consumed = useCallback((invitation: string) => {
+    initialRoute = undefined;
+    setRoute(current => current.kind === "resident" && current.invitation_token === invitation
+      ? { ...current, invitation_token: null } : current);
+  }, []);
+  if (route.kind === "resident") return <ResidentEntry key={route.invitation_token === null ? "resident-session" : `resident-invitation:${route.invitation_token}`}
+    invitation_token={route.invitation_token} on_invitation_consumed={consumed} />;
+  if (route.kind === "recovery") return <RecoveryEntry case_id={route.case_id} />;
+  if (route.kind === "invalid") return <div className="fatal" role="alert">{route.message}</div>;
+  return <PrepareApp route={route} />;
+}
+
+function PrepareApp({ route }: { route: PrepareRoute }) {
   const [config, setConfig] = useState<{ sdk_key: string; agent_ready: boolean } | null>(null);
   const [scenarios, setScenarios] = useState<Scenario[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [needsSignIn, setNeedsSignIn] = useState(false);
+  const [reload, setReload] = useState(0);
 
   useEffect(() => {
-    const onHash = () => setRoute(parse());
-    window.addEventListener("hashchange", onHash);
+    let current = true;
+    setError(null);
     Promise.all([api.config(), api.scenarios()])
-      .then(([c, s]) => { setConfig(c); setScenarios(s); })
-      .catch((e) => setError(e.message === "Failed to fetch" || e.message.includes("Internal")
-        ? "The Brace server is not running. Start it with: uv run uvicorn backend.server:app --port 8001"
-        : `The forecast feeds could not be loaded: ${e.message}`));
-    return () => window.removeEventListener("hashchange", onHash);
-  }, []);
+      .then(([c, s]) => { if (current) { setConfig(c); setScenarios(s); } })
+      .catch((e: unknown) => {
+        if (!current) return;
+        const status = (e as { status?: number })?.status;
+        if (status === 401 || status === 403) { setNeedsSignIn(true); return; }
+        const message = e instanceof Error ? e.message : "The forecast could not be loaded.";
+        setError(`The forecast could not be loaded: ${message}`);
+      });
+    return () => { current = false; };
+  }, [reload]);
 
+  if (needsSignIn) return <OwnerSignIn on_signed_in={() => { setNeedsSignIn(false); setReload(value => value + 1); }} />;
   if (error) return <div className="fatal">{error}</div>;
   if (!config || !scenarios) return <div className="fatal quiet">Loading the forecast…</div>;
   if (scenarios.length === 0) return <div className="fatal">No scenarios are available. Run <code>uv run python -m scripts.fetch_hazards</code> and reload.</div>;

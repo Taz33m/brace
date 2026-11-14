@@ -27,6 +27,8 @@ The default reads local kit/cache data, performs a deterministic financial scree
 
 Add `--agent` to run the configured Claude model and write `assessment.json`. Add `--fetch-sources` separately to allow source requests and missing imagery downloads. No assessment, notice, task, resident invitation, or external message is automatically published.
 
+Add `--register-inputs` to pin the case's source and financial inputs in private `data/recovery/registered-inputs`. Re-registering identical facts is idempotent. Changed sources, dates, or financial assumptions require a reviewed new case/version; this command never silently replaces an existing case's inputs. It does not create a platform database record or grant an owner access.
+
 `--financial-inputs /path/to/local.json` loads the financial assumptions object below. `--snapshot /path/to/owner-snapshot.json` evaluates a reviewed snapshot with existing reports/observations. Property identity, incident, cutoff, and mode must match the selected case. This is a local engineering CLI, not a resident submission API.
 
 The historical Beryl exercise uses current source records and is intentionally labeled a scenario. Strict `historical_replay` rejects sources without established historical availability; current Matterport geometry is not smuggled into that mode. Neither a weather warning nor being near a fire perimeter establishes observed damage.
@@ -82,15 +84,25 @@ The lead supplies `input_provider(snapshot) -> (inputs, inspect_image_callback)`
 
 No new unauthenticated HTTP endpoint was added. Platform router mounting, legacy owner API authentication, and the owner/resident components are the next integration checkpoint once those teammates deliver their exports.
 
+`CaseInputRegistry(root)` supplies `.input_provider(snapshot)` and `.load_inventory(snapshot)`. It allows new resident evidence/reports but rejects changed or removed registered source facts and mismatched property/incident/cutoff/mode. Its immutable local manifest is private and integrity checked; the source assets themselves remain SHA-256 pinned.
+
+`install_recovery(app, store=..., registry=..., platform_router_factory=build_router, resolve_owner=..., resolve_owner_case=...)` is the explicit assembly point in `backend/recovery/runtime.py`. Install before serving. The real store must implement both worker methods above. The case authorizer returns a JSON-compatible OwnerCaseView after checking ownership. The application owns worker shutdown. The installer is deliberately not enabled in `server.py` until the complete platform is ready.
+
 The lead-owned `backend.recovery.integration.install_legacy_owner_gate(app, authorize_owner)` is now available for that checkpoint. Install it with the platform router before startup. The callback receives the request and must establish owner identity and property scope from server state; do not pass a role-only check when access is property-restricted. Its API responses are private/no-store, including legacy images and event streams. Development proxies preserve the original Host/Origin and forward the original scheme, so the platform can validate allowed origins and issue secure phone cookies; trust forwarded headers only from the loopback proxy.
 
 Browser integration is in `frontend/src/recovery/`: `client.ts` implements the shared owner/resident endpoints and reconnecting event streams; `routes.ts` isolates resident routing and scrubs invitation fragments; `owner-controller.ts` protects against stale fetches and keeps idempotency keys across lost command responses. These modules currently import the canonical handoff types until Person 2 installs the identical frontend contract. Run `npm run test:recovery` in `frontend` for transport, routing, and controller checks.
+
+`App.tsx` now dispatches recovery and resident routes before preparation bootstrap. `RecoveryEntry.tsx` loads the named teammate components when present, handles owner sign-in/case state, and exchanges a resident invitation once even under React StrictMode. Missing teammate screens show an unavailable state. The preparation and headset routes remain intact.
 
 ## Image identity and permissions
 
 `EvidenceImages(assets, snapshot['evidence'], allow_network=False)` is the agent image callback. It only accepts registered evidence IDs and trusted-cache files. Local bytes are SHA-256 pinned at inventory creation, bounded in size, decoded, and re-encoded without EXIF. Capture requests require an explicit collection and validate returned collection/date. Arbitrary URLs and paths from report text are never fetched.
 
 Private `assets` descriptors are not browser payloads. Evidence.media remains null until the platform registers an authorized media projection. Its resolver must authorize the case/household first, then map a server-issued media_id to the descriptor. Do not expose absolute paths, sponsor credentials, or an unrestricted legacy image route. Resident-upload imagery requires a separately authorized platform loader; the core does not assume residents can view sponsor interiors.
+
+The lead-owned viewer router exposes `GET /api/recovery/cases/{case_id}/spatial` and `GET /api/recovery/cases/{case_id}/evidence/{evidence_id}/image`, only through a supplied case-owner authorizer. The spatial projection includes case/revision, locations, structures, scans, capture pairing, source limitations, and verified cached `image_evidence_ids`. Images are decoded, size bounded, re-encoded without EXIF, and private/no-store. Missing images stay unavailable; neither route fetches a newer image. Do not pass these owner-only routes to the resident UI.
+
+A cache-only check of the registered Houston exercise returned 247 locations, 24 structures, 10 scans, and 13 cached images through an isolated authorized test router. The aerial was captured February 12, 2026; roof attributes date to December 3, 2023; Matterport capture dates remain unknown. These are scenario inputs, not proof of damage from Beryl in 2024. There is no established before/after capture pair for that case.
 
 ## Financial assumptions input
 
@@ -122,5 +134,7 @@ npm run build
 Domain tests cover temporal/spatial leakage, capture identity, missing prices, allocation, deduplication, finite money, cost completeness, report verification, conflicting bindings, bounded model tools, prompt-supplied invented references, immutable snapshots, and stale commits. Integration tests run a scripted model through the real valuation engine and worker; a corrected measured quantity changes the conditional value, while an unverified report cannot establish a deduction.
 
 Verified on November 14: 186 backend tests passed; frontend typecheck and production build passed. An actual Claude Opus 5.5 run on the Houston cache produced a draft with five verification tasks, six unresolved questions, and one resident notice after inspecting aerial/interior views. A separate Los Angeles data screen loaded all three layers and 17 eligible comparable rows. Strict historical replay rejected unavailable historical records instead of reusing current spatial data. Claude Fable 5.2 independently reviewed the core; its transient-commit retry finding was fixed and regression-tested. These checks do not constitute the still-pending integrated owner/phone walkthrough.
+
+The subsequent lead integration checkpoint passes 261 backend tests and 37 browser-client/entry tests, plus TypeScript and the production build. Coverage includes nested FastAPI router authentication, immutable source registration, sanitized owner-only imagery, mismatched spatial revisions, invitation isolation under StrictMode, and rejection of commands from an old case controller. A localhost browser check confirmed invitation URL scrubbing, isolated resident/recovery entry points, and the existing preparation map/list loading 1,758 buildings. The teammate screens and complete platform still need the integrated workflow walkthrough.
 
 Keep sponsor records, local runs/reviews, photos, keys, and resident information in ignored data paths. Commit code, synthetic tests, and these implementation notes only.

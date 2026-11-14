@@ -40,6 +40,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--agent", action="store_true", help="Run the paid model loop; output stays draft")
     parser.add_argument("--financial-inputs", type=Path, help="Local JSON financial_assumptions object")
     parser.add_argument("--snapshot", type=Path, help="Local owner snapshot, including verified reports")
+    parser.add_argument("--register-inputs", action="store_true",
+                        help="Register immutable case inputs for the authenticated recovery runtime")
     args = parser.parse_args(argv)
     try:
         inventory = load_inventory(args.property_id, incident_at=args.incident_at,
@@ -65,6 +67,12 @@ def main(argv: list[str] | None = None) -> int:
         atomic_json(directory / "inputs.json", inputs)
         atomic_json(directory / "inventory.json", inventory)
         atomic_json(directory / "screen.json", screen)
+        registered_digest = None
+        if args.register_inputs:
+            from backend.recovery.registry import CaseInputRegistry
+
+            registered_digest = CaseInputRegistry(DATA_DIR / "recovery" / "registered-inputs").register(
+                snapshot, inventory, finance)
         result = None
         if args.agent:
             from backend.recovery.domain.agent import RecoveryAgent
@@ -88,6 +96,7 @@ def main(argv: list[str] | None = None) -> int:
                           "valuation_basis": value["basis"],
                           "current_condition": value["current_condition"],
                           "agent_status": result["assessment"]["status"] if result else "not_requested",
+                          "registered_input_digest": registered_digest,
                           "output_directory": str(directory)}, indent=2))
         return 1 if result and result["assessment"]["status"] == "failed" else 0
     except (ValueError, KeyError, OSError) as exc:

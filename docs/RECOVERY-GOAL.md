@@ -22,5 +22,9 @@ Preserve the preparation routes, source dates and spatial uncertainty, honest un
 - `frontend/src/recovery/client.ts`: owner/resident HTTP adapters and resumable fetch-based event streams.
 - `frontend/src/recovery/routes.ts`: preparation/recovery/resident route parsing and invitation cleanup before session exchange.
 - `frontend/src/recovery/owner-controller.ts`: request-race protection, confirmed state, replay-safe commands, and event-driven refresh.
+- `frontend/src/App.tsx` and `recovery/RecoveryEntry.tsx`: isolated owner/resident entry points, owner sign-in, one-use invitation bootstrap, and lazy loading of the teammate-owned components.
+- `backend/recovery/registry.py`: immutable private case inputs, context and source-metadata validation, and the worker input provider.
+- `backend/recovery/evidence_router.py`: owner-scoped spatial manifests and SHA-256-pinned cached images, with no source fetching or filesystem paths in browser payloads.
+- `backend/recovery/runtime.py`: explicit assembly of the platform, worker, evidence router, and legacy owner gate. Refuses a platform without the worker handshake.
 
-These integration helpers do not replace teammate-owned components, persistence, or authentication. The next checkpoint is mounting those exports and enforcing the full owner/household permission model.
+These integration helpers do not replace teammate-owned components, persistence, or authentication. The platform's first branch has arrived with sessions, invitations, and text reports; its worker, upload, event-stream, and review/publication paths are still being completed. The next checkpoint is mounting the complete exports and enforcing the full owner/household permission model.

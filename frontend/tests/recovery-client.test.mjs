@@ -207,3 +207,13 @@ test("invalid frames do not advance replay cursor", async () => {
   assert.ok(calls.every(url => url.endsWith("after=0")));
   assert.equal(errors[0].code, "invalid_stream");
 });
+
+test("owner spatial request is case-scoped and carries cancellation signal", async () => {
+  const abort = new AbortController();
+  let request;
+  const api = createRecoveryClient({ fetch: async (url, init) => { request = { url, init }; return json({ case_id: "case / 1", analysis_revision: 2 }); } });
+  await api.get_spatial("case / 1", abort.signal);
+  assert.equal(request.url, "/api/recovery/cases/case%20%2F%201/spatial");
+  assert.equal(request.init.signal, abort.signal);
+  assert.equal(request.init.credentials, "same-origin");
+});

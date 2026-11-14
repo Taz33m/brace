@@ -13,6 +13,7 @@ import type {
   SupportReceipt,
   UploadedMedia,
 } from "../../../docs/recovery-handoffs/shared-contract";
+import type { RecoverySpatial } from "./spatial";
 
 export class RecoveryApiError extends Error {
   readonly status: number;
@@ -270,6 +271,7 @@ export function createRecoveryClient(options: RecoveryClientOptions = {}) {
     resident_session: (invitation_token: string) => post<{ ok: true }>("/api/resident/session", { invitation_token }),
     get_cases: () => request<{ cases: RecoveryCaseSummary[] }>("/api/recovery/cases"),
     get_case: (case_id: string) => request<OwnerCaseView>(`/api/recovery/cases/${encodeURIComponent(case_id)}`),
+    get_spatial: (case_id: string, signal?: AbortSignal) => request<RecoverySpatial>(`/api/recovery/cases/${encodeURIComponent(case_id)}/spatial`, { signal }),
     command: (case_id: string, command: OwnerCommand, idempotency_key: string) =>
       post<CommandResult>(`/api/recovery/cases/${encodeURIComponent(case_id)}/commands`, command, idempotency_key),
     subscribe_case: (case_id: string, args: RecoverySubscription) =>
