@@ -1,21 +1,18 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { api } from "../api";
 import { CabinWindow, Sky, SplitChars } from "./Cabin";
 import { gsap, prefersReducedMotion, scrollToY } from "./gsap";
 
 /**
- * Before the storm, told by scrolling. Through the cabin window, down through cloud onto Houston, down
- * onto one building, the hours it has, inside one of its homes, and then the live product: the site in
- * three dimensions with the plan on it. Nothing here advances by itself; the scroll is the film's clock,
- * and it runs backwards as well as forwards.
+ * Before the weather arrives, told by scrolling. Through the cabin window, down through cloud onto the
+ * city with every building in the warning lit, down onto one building, what it is worth and the hours it
+ * has, and then the live product: the site in three dimensions with the plan on it. Nothing here advances
+ * by itself; the scroll is the film's clock, and it runs backwards as well as forwards.
+ *
+ * One story, two cities: the hurricane over Houston and the fire weather over Los Angeles are the same
+ * component given a different building, forecast and words.
  */
-const PARKER = 4303509, SCENARIO = "beryl-2024", STEP = "adv33", LATER = "adv37", AFTER = "adv39", SCAN = "39JTmBzqWxr";
-const TOTAL = 36;                                // the length of the ground's timeline, in its own units
-const NOTICE = 4;                                // the state of the live site in which Enter approves the notice
-// One building at three moments. The bar under it is the scroll made visible: each stop is where the scroll puts that moment.
-const STOPS = [{ label: "36 hours", at: 15.5 }, { label: "12 hours", at: 24.7 }, { label: "The morning after", at: 30.7 }];
-const stopAt = (t: number) => (t < 23.4 ? 0 : t < 24.2 ? ((t - 23.4) / 0.8) * 0.5 : t < 29.4 ? 0.5 : t < 30.2 ? 0.5 + ((t - 29.4) / 0.8) * 0.5 : 1);
 const RING = [1, 0.256, 0.064, 0.016];            // each aerial covers this share of the widest one's width, all on one centre
 const rad = (deg: number) => (deg * Math.PI) / 180;
 const clamp = (v: number) => Math.max(0, Math.min(1, v));
@@ -25,25 +22,67 @@ const sum = (n: number) => (n >= 1e9 ? `$${(n / 1e9).toFixed(1)} billion` : n >=
 
 interface Descent { levels: { level: number; bounds: [number, number, number, number]; url: string }[]; site: { bounds: [number, number, number, number]; captured?: string } }
 type Cue = { hash?: string; key?: string; click?: string; text?: RegExp; wait?: number };
+interface Chapter {
+  building: number; scenario: string; step: string;
+  room?: string;                                   // a scan to step inside on the way, where there is one worth the time
+  label: string;                                   // what the section is, for a screen reader
+  hero: { lead: [string, string]; counter: [string, string]; said: string; aside: [string, string]; asideText: string; place: string; statement: string };
+  whisper: string;                                 // the line in the cloud
+  city: string; counted: string;                   // "Houston, Texas", "buildings in the forecast wind field"
+  clock: string;                                   // "hours until the wind arrives"
+  // What the live site shows at each stretch of scroll, counted from where the site comes up. Each state says
+  // everything it needs, so it reads the same scrolling up as down.
+  site: { from: number; cues: Cue[] }[];
+  length: number;                                  // how long the site stays, in the timeline's units
+  notice?: number;                                 // the state in which Enter approves the notice
+  stops?: { label: string; from: number }[];       // one building at several moments: the bar under it
+}
 
-// What the live site shows at each stretch of the scroll. Each state says everything it needs, so it reads the same scrolling up as down.
-const SITE_AT: { from: number; cues: Cue[] }[] = [
-  { from: 0, cues: [{ hash: `#/scene/${SCENARIO}/${STEP}/b/${PARKER}` }, { key: "1" }] },
-  { from: 18.2, cues: [{ hash: `#/scene/${SCENARIO}/${STEP}/b/${PARKER}` }, { key: "2" }] },
-  { from: 21.2, cues: [{ hash: `#/scene/${SCENARIO}/${STEP}/b/${PARKER}` }, { key: "1" }, { click: ".scene-jobs button", text: /evergreen|pine/i, wait: 1500 }] },
-  { from: 24.2, cues: [{ hash: `#/scene/${SCENARIO}/${LATER}/b/${PARKER}` }, { key: "1", wait: 900 }] },
-  { from: 27.2, cues: [{ hash: `#/scene/${SCENARIO}/${LATER}/b/${PARKER}` }, { click: ".scene-jobs button", text: /resident/i, wait: 400 }] },
-  { from: 30.2, cues: [{ hash: `#/scene/${SCENARIO}/${AFTER}/b/${PARKER}` }, { key: "1", wait: 900 }] },
-  { from: 33.2, cues: [{ hash: `#/scene/${SCENARIO}/${AFTER}/b/${PARKER}` }, { key: "3", wait: 700 }] },
-];
+const at = (scenario: string, step: string, building: number) => `#/scene/${scenario}/${step}/b/${building}`;
+const P = 4303509, V = 9519837;
+const HOUSTON: Chapter = {
+  building: P, scenario: "beryl-2024", step: "adv33", room: "39JTmBzqWxr", label: "Houston, then one building",
+  hero: { lead: ["A storm", "is coming"], counter: ["Thirty-nine", "hours out"], said: "A storm is coming. Thirty-nine hours out.", aside: ["Hurricane Beryl,", "July 2024"],
+          asideText: "A replay of the real forecasts, in the order the National Hurricane Center issued them.", place: "Houston, Texas",
+          statement: "reads each forecast against every building in its path, and turns it into the work that still fits before the wind arrives." },
+  whisper: "Every building in its path.", city: "Houston, Texas", counted: "buildings in the forecast wind field", clock: "hours until the wind arrives",
+  site: [
+    { from: 0, cues: [{ hash: at("beryl-2024", "adv33", P) }, { key: "1" }] },
+    { from: 3.2, cues: [{ hash: at("beryl-2024", "adv33", P) }, { key: "2" }] },
+    { from: 6.2, cues: [{ hash: at("beryl-2024", "adv33", P) }, { key: "1" }, { click: ".scene-jobs button", text: /evergreen|pine/i, wait: 1500 }] },
+    { from: 9.2, cues: [{ hash: at("beryl-2024", "adv37", P) }, { key: "1", wait: 900 }] },
+    { from: 12.2, cues: [{ hash: at("beryl-2024", "adv37", P) }, { click: ".scene-jobs button", text: /resident/i, wait: 400 }] },
+    { from: 15.2, cues: [{ hash: at("beryl-2024", "adv39", P) }, { key: "1", wait: 900 }] },
+    { from: 18.2, cues: [{ hash: at("beryl-2024", "adv39", P) }, { key: "3", wait: 700 }] },
+  ],
+  length: 21, notice: 4,
+  stops: [{ label: "36 hours", from: 0 }, { label: "12 hours", from: 9.2 }, { label: "The morning after", from: 15.2 }],
+};
+const LOS_ANGELES: Chapter = {
+  building: V, scenario: "la-red-flag-jan-2025", step: "20250105T2240Z", label: "Los Angeles, then one building",
+  hero: { lead: ["The wind", "is coming"], counter: ["Forty-three", "hours out"], said: "The wind is coming. Forty-three hours out.", aside: ["Santa Ana windstorm,", "January 2025"],
+          asideText: "A replay of the real Red Flag Warnings, in the order the National Weather Service issued them.", place: "Los Angeles, California",
+          statement: "reads each warning against every building inside it, and turns it into the work that still fits before the wind arrives." },
+  whisper: "Every building inside the warning.", city: "Los Angeles, California", counted: "buildings inside the Red Flag Warning", clock: "hours until the Red Flag Warning starts",
+  site: [
+    { from: 0, cues: [{ key: "1" }] },
+    { from: 3.2, cues: [{ key: "1" }, { click: ".scene-jobs button", text: /limbs|within 5 ft/i, wait: 1500 }] },
+    { from: 6.2, cues: [{ key: "1" }, { click: ".scene-jobs button", text: /gutter/i, wait: 1500 }] },
+    { from: 9.2, cues: [{ key: "1" }, { click: ".scene-jobs button", text: /defensible/i, wait: 1500 }] },
+  ],
+  length: 12.5,
+};
 
-export function StormStory() {
+export function StormStory() { return <Before chapter={HOUSTON} />; }
+export function FireStory() { return <Before chapter={LOS_ANGELES} />; }
+
+function Before({ chapter }: { chapter: Chapter }) {
   return (
     <>
-      <Sky />
-      <Hero />
+      <Sky whisper={chapter.whisper} />
+      <Hero copy={chapter.hero} />
       <CloudRise />
-      <Ground />
+      <Ground chapter={chapter} />
       <section className="st-end">
         <h2>Brace</h2>
         <a href="#/">All scenarios</a>
@@ -53,7 +92,7 @@ export function StormStory() {
 }
 
 /** The fly-through, as in the plane project: pinned for two and a half screens of scroll, fully reversible. */
-function Hero() {
+function Hero({ copy: words }: { copy: Chapter["hero"] }) {
   const [ready, setReady] = useState(false);
   const section = useRef<HTMLElement>(null), stage = useRef<HTMLDivElement>(null), zoom = useRef<HTMLDivElement>(null);
   const copy = useRef<HTMLDivElement>(null), cue = useRef<HTMLDivElement>(null), cueInner = useRef<HTMLDivElement>(null);
@@ -112,34 +151,33 @@ function Hero() {
   }, [ready]);
 
   return (
-    <section ref={section} className="st-hero" aria-label="A storm is coming">
+    <section ref={section} className="st-hero" aria-label={words.said}>
       <div ref={stage} className="st-stage">
         <CabinWindow zoom={zoom} onReady={onReady} />
         <div className="st-safe">
           <div ref={copy} className="st-fill st-will">
             <h1 data-hero-lead className="st-lead">
-              <span className="st-sr">A storm is coming</span>
-              <SplitChars text="A storm" className="st-line" /><SplitChars text="is coming" className="st-line st-indent" />
+              <span className="st-sr">{words.said}</span>
+              <SplitChars text={words.lead[0]} className="st-line" /><SplitChars text={words.lead[1]} className="st-line st-indent" />
             </h1>
-            <p data-hero-counter className="st-counter">
-              <span className="st-sr">Thirty-nine hours out</span>
-              <SplitChars text="Thirty-nine" className="st-line st-outdent" /><SplitChars text="hours out" className="st-line" />
+            <p data-hero-counter className="st-counter" aria-hidden="true">
+              <SplitChars text={words.counter[0]} className="st-line st-outdent" /><SplitChars text={words.counter[1]} className="st-line" />
             </p>
             <div ref={aside} className="st-aside">
-              <p className="st-aside-title">Hurricane Beryl,<br />July 2024</p>
+              <p className="st-aside-title">{words.aside[0]}<br />{words.aside[1]}</p>
               <span className="st-rule" />
-              <p className="st-aside-text">A replay of the real forecasts, in the order the National Hurricane Center issued them.</p>
+              <p className="st-aside-text">{words.asideText}</p>
             </div>
           </div>
           <div ref={cue} className="st-cue">
             <div ref={cueInner}>
               <span className="st-cue-line" />
-              <p><span>Scroll to descend</span><span>Houston, Texas</span></p>
+              <p><span>Scroll to descend</span><span>{words.place}</span></p>
             </div>
           </div>
           <div ref={statement} className="st-statement">
             <div className="st-statement-shade" />
-            <p><span className="st-brand">BRACE</span> reads each forecast against every building in its path, and turns it into the work that still fits before the wind arrives.</p>
+            <p><span className="st-brand">BRACE</span> {words.statement}</p>
           </div>
         </div>
       </div>
@@ -177,16 +215,16 @@ function CloudRise() {
 
 /**
  * From cloud to the ground and on into the product, on one pinned stage:
- *   0 to 10   the cloud clears over Houston with every building in the wind field lit, and the view falls onto one of them
- *   8 to 10   the hours that building has
- *  10 to 14   inside one of its homes, as Matterport scanned it
- *  14 to 36   the live site in three dimensions at three moments: 36 hours out, 12 hours out, and the morning after
+ *   0 to 10   the cloud clears over the city with every building in the warning lit, and the view falls onto one of them
+ *   6 to 10   what that building is, what it is worth, why it was picked, and the hours it has
+ *  10 to 14   inside one of its homes, as Matterport scanned it (only where the chapter names a room)
+ *  then       the live site in three dimensions, stepping through the plan as the scroll goes on
  */
-function Ground() {
+function Ground({ chapter: c }: { chapter: Chapter }) {
   const section = useRef<HTMLElement>(null);
   const [descent, setDescent] = useState<Descent | null>(null);
   const [hours, setHours] = useState<number | null>(null);
-  const [homes, setHomes] = useState<{ name: string; units: number | null; built: number | null; rent: string | null; sold: string | null; soldHow: string | null; work: string | null } | null>(null);
+  const [homes, setHomes] = useState<{ name: string; units: number | null; built: number | null; rent: string | null; sold: string | null; soldHow: string | null; work: string | null; why: string[] } | null>(null);
   const [count, setCount] = useState<number | null>(null);
   const [city, setCity] = useState<{ homes: number; sold: number; of: number } | null>(null);
   const [room, setRoom] = useState<{ sweep: string; heading: number; yaw: number } | null>(null);
@@ -198,10 +236,21 @@ function Ground() {
   const live = useRef({ z: 0, pan: 0, inside: 0, site: -1, loaded: false, timers: [] as number[] });
   live.current.loaded = siteLoaded;
 
+  // Where the live site comes up on the timeline: later when there is a room to step inside first.
+  const start = c.room ? 15 : 11.4, total = start + c.length;
+  const stops = useMemo(() => c.stops ?? [], [c]);
+  // Where the handle sits for a point on the timeline: on a stop, sliding to the next over the last stretch before it.
+  const handleAt = useCallback((t: number) => {
+    if (stops.length < 2) return 0;
+    let x = 0;
+    stops.forEach((stop, i) => { if (i) x = Math.max(x, (i - 1 + clamp((t - (start + stop.from - 0.8)) / 0.8)) / (stops.length - 1)); });
+    return x;
+  }, [stops, start]);
+
   useEffect(() => {
     let current = true;
-    fetch(`/api/buildings/${PARKER}/descent`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (current && d) setDescent(d); }).catch(() => {});
-    api.building(PARKER, SCENARIO, STEP).then((b) => {
+    fetch(`/api/buildings/${c.building}/descent`).then((r) => (r.ok ? r.json() : null)).then((d) => { if (current && d) setDescent(d); }).catch(() => {});
+    api.building(c.building, c.scenario, c.step).then((b) => {
       if (!current) return;
       setHours(b.threat.hours_left ?? null);
       const record = b.record as { name?: string; units?: number; year_built?: number };
@@ -211,18 +260,19 @@ function Ground() {
                  rent: b.rent ? `Homes advertised at ${dollars(b.rent.low)} to ${dollars(b.rent.high)} a month` : null,
                  sold: sale?.price ? `Last sold for ${sum(sale.price)}${sale.date ? ` in ${sale.date.slice(0, 4)}` : ""}` : null,
                  soldHow: sale?.price ? (sale.portfolio ? "CoStar sale record: its share of a portfolio sale" : "CoStar sale record") : null,
-                 work: before?.count ? `${dollars(before.cost_low)} to ${dollars(before.cost_high)} of work still fits` : null });
+                 work: before?.count ? `${dollars(before.cost_low)} to ${dollars(before.cost_high)} of work still fits` : null,
+                 why: (b.reasons ?? []).slice(0, 3) });
     }).catch(() => {});
-    api.furnish(PARKER, SCAN).then((r) => { if (current) setRoom({ sweep: r.sweep_id, heading: r.standpoint.h, yaw: r.view.yaw_deg }); }).catch(() => {});
+    if (c.room) api.furnish(c.building, c.room).then((r) => { if (current) setRoom({ sweep: r.sweep_id, heading: r.standpoint.h, yaw: r.view.yaw_deg }); }).catch(() => {});
     return () => { current = false; };
-  }, []);
+  }, [c]);
 
-  // Every building in the forecast wind field that falls inside the widest photograph, as a point of light on it.
+  // Every building in the warning that falls inside the widest photograph, as a point of light on it.
   useEffect(() => {
     const canvas = dots.current, wide = descent?.levels[0]?.bounds;
     if (!canvas || !wide) return;
     let current = true;
-    api.portfolio(SCENARIO, STEP, "", "").then((p) => {
+    api.portfolio(c.scenario, c.step, "", "").then((p) => {
       if (!current) return;
       setCount(p.shown);
       if (p.value.buildings_with_sale) setCity({ homes: p.homes, sold: p.value.last_sale_total, of: p.value.buildings_with_sale });
@@ -240,7 +290,7 @@ function Ground() {
       }
     }).catch(() => {});
     return () => { current = false; };
-  }, [descent]);
+  }, [descent, c]);
 
   // The four photographs sit on one centre, each a quarter the width of the one before. Zooming is scaling them together.
   const zoomTo = useCallback((z: number) => {
@@ -264,14 +314,14 @@ function Ground() {
     if (state === now.site || !now.loaded || !win) return;
     now.site = state;
     now.timers.forEach((t) => window.clearTimeout(t));
-    now.timers = SITE_AT[state].cues.map((cue) => window.setTimeout(() => {
+    now.timers = c.site[state].cues.map((cue) => window.setTimeout(() => {
       try {
         if (cue.hash && win.location.hash !== cue.hash) win.location.hash = cue.hash;
         if (cue.key) win.dispatchEvent(new KeyboardEvent("keydown", { key: cue.key, bubbles: true }));
         if (cue.click) [...win.document.querySelectorAll<HTMLElement>(cue.click)].find((el) => !cue.text || cue.text.test(el.textContent ?? ""))?.click();
       } catch { /* the page went away mid-step */ }
     }, cue.wait ?? 0));
-  }, []);
+  }, [c]);
 
   useEffect(() => {
     const el = section.current;
@@ -285,13 +335,13 @@ function Ground() {
         scrollTrigger: { trigger: el, start: "top top", end: "bottom bottom", scrub: 1, invalidateOnRefresh: true },
         onUpdate: () => {
           const t = timeline.time();
-          let at = 0;
-          SITE_AT.forEach((s, i) => { if (t >= s.from) at = i; });
-          if (t >= 13.6) siteTo(at);
+          let now = 0;
+          c.site.forEach((s, i) => { if (t >= start + s.from) now = i; });
+          if (t >= start - 1.4) siteTo(now);
           // The handle sits on the moment the scroll is in, and slides as the scroll crosses to the next.
-          const x = stopAt(t);
+          const x = handleAt(t);
           if (handle.current && !dragging.current) handle.current.style.left = `${x * 100}%`;
-          scrub.current?.querySelectorAll<HTMLElement>("button").forEach((b, i) => b.setAttribute("aria-pressed", String(Math.round(x * 2) === i)));
+          scrub.current?.querySelectorAll<HTMLElement>("button").forEach((b, i) => b.setAttribute("aria-pressed", String(Math.round(x * (stops.length - 1)) === i)));
         },
       });
       timeline
@@ -302,25 +352,29 @@ function Ground() {
         .fromTo(q("outline"), { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.8 }, 6.6)
         .fromTo(q("place"), { autoAlpha: 0, y: 24, filter: "blur(8px)" }, { autoAlpha: 1, y: 0, filter: "blur(0px)", duration: 0.9 }, 6.8)
         .fromTo(q("dim"), { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.9 }, 7.9)
-        .fromTo(q("backdrop"), { autoAlpha: 0 }, { autoAlpha: 1, duration: 1 }, 10.1)
         .fromTo(q("clock"), { autoAlpha: 0, scale: 0.92, filter: "blur(10px)" }, { autoAlpha: 1, scale: 1, filter: "blur(0px)", ease: "power3.out", duration: 1.1 }, 8)
         .to([q("clock"), q("place")], { autoAlpha: 0, duration: 0.6 }, 10)
-        .fromTo(pano.current, { autoAlpha: 0 }, { autoAlpha: 1, duration: 1 }, 10.1)
-        .fromTo(state, { pan: -30, inside: 0 }, { pan: 30, inside: 1, duration: 4.2 }, 10)
-        .fromTo(q("inside"), { autoAlpha: 0, y: 24, filter: "blur(8px)" }, { autoAlpha: 1, y: 0, filter: "blur(0px)", duration: 0.8 }, 11)
-        .to(q("inside"), { autoAlpha: 0, duration: 0.6 }, 13.2)
-        .to(pano.current, { autoAlpha: 0, duration: 0.7 }, 13.5)
-        .fromTo(frame.current, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.9 }, 14.1)
-        .fromTo(scrub.current, { autoAlpha: 0, y: 14 }, { autoAlpha: 1, y: 0, duration: 0.7 }, 14.9)
-        .to({}, { duration: TOTAL - 15 }, 15);
+        .fromTo(q("backdrop"), { autoAlpha: 0 }, { autoAlpha: 1, duration: 1 }, 10.1);
+      if (c.room) {
+        timeline
+          .fromTo(pano.current, { autoAlpha: 0 }, { autoAlpha: 1, duration: 1 }, 10.1)
+          .fromTo(state, { pan: -30, inside: 0 }, { pan: 30, inside: 1, duration: 4.2 }, 10)
+          .fromTo(q("inside"), { autoAlpha: 0, y: 24, filter: "blur(8px)" }, { autoAlpha: 1, y: 0, filter: "blur(0px)", duration: 0.8 }, 11)
+          .to(q("inside"), { autoAlpha: 0, duration: 0.6 }, 13.2)
+          .to(pano.current, { autoAlpha: 0, duration: 0.7 }, 13.5);
+      }
+      timeline
+        .fromTo(frame.current, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.9 }, start - 0.9)
+        .fromTo(scrub.current, { autoAlpha: 0, y: 14 }, { autoAlpha: 1, y: 0, duration: 0.7 }, start - 0.1)
+        .to({}, { duration: total - start }, start);
     }, el);
     return () => ctx.revert();
-  }, [descent, zoomTo, siteTo]);
+  }, [descent, zoomTo, siteTo, handleAt, c, start, total, stops]);
 
   // The scanned room, as a panorama the scroll turns.
   useEffect(() => {
     const el = pano.current;
-    if (!el || !room) return;
+    if (!el || !room || !c.room) return;
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(el.clientWidth, el.clientHeight);
@@ -330,7 +384,7 @@ function Ground() {
     camera.rotation.order = "YXZ";
     const loader = new THREE.TextureLoader(), FACE = 40, size = FACE * 2.002, group = new THREE.Group();
     const plane = (face: number) => {
-      const tex = loader.load(`/api/buildings/${PARKER}/pano/${SCAN}/${room.sweep}/${face}.jpg?size=2048`);
+      const tex = loader.load(`/api/buildings/${c.building}/pano/${c.room}/${room.sweep}/${face}.jpg?size=2048`);
       tex.colorSpace = THREE.SRGBColorSpace;
       return new THREE.Mesh(new THREE.PlaneGeometry(size, size), new THREE.MeshBasicMaterial({ map: tex, depthTest: false, depthWrite: false }));
     };
@@ -353,25 +407,25 @@ function Ground() {
     };
     draw();
     return () => { cancelAnimationFrame(raf); window.removeEventListener("resize", resize); renderer.dispose(); el.removeChild(renderer.domElement); };
-  }, [room]);
+  }, [room, c]);
 
   // Enter approves the notice when it is the thing on screen. It sends a real message, so nothing else does it.
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (e.key !== "Enter" || live.current.site !== NOTICE) return;
+      if (e.key !== "Enter" || c.notice == null || live.current.site !== c.notice) return;
       try { frame.current?.contentWindow?.document.querySelector<HTMLElement>(".scene-approve")?.click(); } catch { /* not there */ }
     };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
-  }, []);
+  }, [c]);
 
   // Taking the handle, or choosing a stop, moves the scroll to that moment; the scroll then does the rest.
   const goTo = useCallback((stop: number) => {
     const el = section.current;
-    if (!el) return;
+    if (!el || !stops[stop]) return;
     const top = el.getBoundingClientRect().top + window.scrollY;
-    scrollToY(top + (STOPS[stop].at / TOTAL) * (el.offsetHeight - window.innerHeight));
-  }, []);
+    scrollToY(top + ((start + stops[stop].from + 0.5) / total) * (el.offsetHeight - window.innerHeight));
+  }, [stops, start, total]);
   const drag = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     const track = e.currentTarget, box = track.getBoundingClientRect();
     const where = (x: number) => Math.max(0, Math.min(1, (x - box.left) / box.width));
@@ -382,10 +436,10 @@ function Ground() {
     const up = (m: PointerEvent) => {
       track.removeEventListener("pointermove", move); track.removeEventListener("pointerup", up); track.removeEventListener("pointercancel", up);
       dragging.current = false;
-      goTo(Math.round(where(m.clientX) * 2));
+      goTo(Math.round(where(m.clientX) * (stops.length - 1)));
     };
     track.addEventListener("pointermove", move); track.addEventListener("pointerup", up); track.addEventListener("pointercancel", up);
-  }, [goTo]);
+  }, [goTo, stops]);
 
   const site = descent?.site.bounds, last = descent?.levels[3]?.bounds;
   const box = site && last ? {
@@ -394,7 +448,7 @@ function Ground() {
   } : null;
 
   return (
-    <section ref={section} className="st-ground-section" aria-label="Houston, then one building">
+    <section ref={section} className="st-ground-section" style={{ height: `${Math.round(total * 57)}vh` }} aria-label={c.label}>
       <div className="st-stage st-sticky">
         <div ref={ground} className="st-ground">
           {descent?.levels.map((level, i) => (
@@ -407,8 +461,8 @@ function Ground() {
           <div data-g="dim" className="st-dim" />
         </div>
         <div data-g="city" className="st-city">
-          <p className="st-kicker">Houston, Texas</p>
-          {count != null && <p className="st-figure"><strong>{count.toLocaleString("en-US")}</strong> buildings in the forecast wind field</p>}
+          <p className="st-kicker">{c.city}</p>
+          {count != null && <p className="st-figure"><strong>{count.toLocaleString("en-US")}</strong> {c.counted}</p>}
           {city && <p className="st-money">{city.homes.toLocaleString("en-US")} homes. {sum(city.sold)} is what {city.of.toLocaleString("en-US")} of these buildings last sold for.<small>CoStar sale records. Not today's value, and not a loss estimate.</small></p>}
         </div>
         <div data-g="place" className="st-place">
@@ -416,21 +470,22 @@ function Ground() {
           <p>{[homes?.units ? `${homes.units} homes` : null, homes?.built ? `built ${homes.built}` : null].filter(Boolean).join(", ")}</p>
           {homes?.sold && <p className="st-place-rent">{homes.sold}<small>{homes.soldHow}</small></p>}
           {homes?.rent && <p className="st-place-rent">{homes.rent}<small>CoStar apartment listing</small></p>}
+          {!!homes?.why.length && <ul className="st-why">{homes.why.map((w) => <li key={w}>{w}</li>)}</ul>}
         </div>
         {hours != null && (
           <div data-g="clock" className="st-clock">
             <strong>{Math.round(hours)}</strong>
-            <span>hours until the wind arrives</span>
+            <span>{c.clock}</span>
             {homes?.work && <em>{homes.work}</em>}
           </div>
         )}
         <div data-g="backdrop" className="st-backdrop" />
         <div ref={pano} className="st-pano" />
         <p data-g="inside" className="st-inside">Inside one of its homes.<small>Matterport scan</small></p>
-        <iframe ref={frame} className="st-site" title="The Parker at Ellington in three dimensions" src={`/#/scene/${SCENARIO}/${STEP}/b/${PARKER}`} data-shot="site" tabIndex={-1} onLoad={() => setSiteLoaded(true)} />
-        <div ref={scrub} className="st-scrub" role="group" aria-label="The moment shown">
+        <iframe ref={frame} className="st-site" title={`${homes?.name ?? "The building"} in three dimensions`} src={`/${at(c.scenario, c.step, c.building)}`} data-shot="site" tabIndex={-1} onLoad={() => setSiteLoaded(true)} />
+        <div ref={scrub} className="st-scrub" role="group" aria-label="The moment shown" hidden={stops.length < 2}>
           <div className="st-scrub-track" onPointerDown={drag}><i ref={handle} /></div>
-          {STOPS.map((stop, i) => <button key={stop.label} type="button" style={{ left: `${i * 50}%` }} onClick={() => goTo(i)}>{stop.label}</button>)}
+          {stops.map((stop, i) => <button key={stop.label} type="button" style={{ left: `${(i / Math.max(1, stops.length - 1)) * 100}%` }} onClick={() => goTo(i)}>{stop.label}</button>)}
         </div>
         <p className="st-credit">Aerial photographs: Vexcel</p>
       </div>

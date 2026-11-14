@@ -4,17 +4,18 @@ import { api } from "../api";
 import { Sky, CabinWindow } from "./Cabin";
 import { gsap, ScrollTrigger, prefersReducedMotion, smooth } from "./gsap";
 import { DeskStory } from "./DeskStory";
-import { StormStory } from "./StormStory";
+import { FireStory, StormStory } from "./StormStory";
 import "./story.css";
 
-export type StoryId = "storm" | "desk" | "after" | "inside";
+export type StoryId = "storm" | "desk" | "after" | "fire" | "inside";
 
-/** The scenarios, in the order they are told. The home page lists them; each is told by scrolling. */
-export const STORIES: { id: StoryId; title: string; line: string }[] = [
-  { id: "storm", title: "Before the storm", line: "Hurricane Beryl, thirty-nine hours out. One building, measured, and the work that still fits." },
-  { id: "desk", title: "Five buildings, two crews", line: "Not enough crew hours for every roof. Scroll the clock and watch the desk decide who goes where." },
-  { id: "after", title: "After the storm", line: "One room as it was scanned, cleared, and furnished again." },
-  { id: "inside", title: "Ask the building", line: "Ask where something is. The building draws the way and walks you there in the headset." },
+/** The scenarios, by the city they happen in. The home page lists them; each is told by scrolling. */
+export const STORIES: { id: StoryId; where: string; title: string; line: string }[] = [
+  { id: "storm", where: "Houston", title: "Before the storm", line: "Hurricane Beryl, thirty-nine hours out. One building, what it is worth, and the work that still fits." },
+  { id: "desk", where: "Houston", title: "Five buildings, two crews", line: "Not enough crew hours for every roof. Scroll the clock and watch the desk decide who goes where." },
+  { id: "after", where: "Houston", title: "After the storm", line: "One room as it was scanned, cleared, and furnished again." },
+  { id: "fire", where: "Los Angeles", title: "Before the fire weather", line: "A Red Flag Warning, forty-three hours out. What stands within five feet of the walls, and what clearing it costs." },
+  { id: "inside", where: "Princeton", title: "Ask the building", line: "Ask where something is. The building draws the way and walks you there in the headset." },
 ];
 
 /** Smooth scrolling, as in the plane project: the page always starts at the top, and the scroll drives every timeline. */
@@ -55,7 +56,7 @@ export function Story({ id }: { id: StoryId }) {
   return (
     <div className="st" data-story={id}>
       <a className="st-home" href="#/">Brace</a>
-      {id === "storm" ? <StormStory /> : id === "desk" ? <DeskStory /> : id === "after" ? <AfterStory /> : <InsideStory />}
+      {id === "storm" ? <StormStory /> : id === "fire" ? <FireStory /> : id === "desk" ? <DeskStory /> : id === "after" ? <AfterStory /> : <InsideStory />}
     </div>
   );
 }
@@ -122,8 +123,9 @@ export function HomePage() {
           <h1 className="st-lead st-home-mark">Brace</h1>
           <p className="st-home-line">The forecast, turned into work,<br />for every building in its path.</p>
           <nav className="st-menu" aria-label="Scenarios">
-            {STORIES.map((s) => (
+            {STORIES.map((s, i) => (
               <a key={s.id} href={`#/story/${s.id}`}>
+                {(i === 0 || STORIES[i - 1].where !== s.where) && <em>{s.where}</em>}
                 <strong>{s.title}</strong>
                 <span>{s.line}</span>
               </a>

@@ -8,7 +8,7 @@ import { drawKeyedWindow } from "./key-window";
  * its glass cut out so the live sky shows through. The scenes above drive the sky's layers by their
  * data-sky names, exactly as they do there.
  */
-export function Sky() {
+export function Sky({ whisper = "Every building in its path." }: { whisper?: string }) {
   return (
     <div className="st-sky" data-sky-root aria-hidden="true">
       <div data-sky="zoom" className="st-fill st-will">
@@ -25,7 +25,7 @@ export function Sky() {
       <div data-sky="scrim" className="st-sky-scrim" />
       <div data-sky="bank" className="st-sky-bank"><img src="/show/bank.jpg" alt="" /></div>
       <div data-sky="veil" className="st-sky-veil" />
-      <p data-sky="whisper" className="st-sky-whisper">Every building in its path.</p>
+      <p data-sky="whisper" className="st-sky-whisper">{whisper}</p>
     </div>
   );
 }

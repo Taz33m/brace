@@ -96,6 +96,9 @@ html.st-on, html.st-on body, html.st-on #root { height: auto; min-height: 100%; 
 .st-place p { margin: 14px 0 0; font: 300 clamp(1.3rem, 2vw, 2rem)/1.2 var(--heading); color: rgba(243, 236, 224, 0.88); }
 .st-place .st-place-rent { margin-top: 8px; font-size: clamp(1.05rem, 1.5vw, 1.5rem); color: var(--champagne); }
 .st-place-rent small { display: block; margin-top: 8px; font: 500 11px/1 var(--sans); letter-spacing: 0.2em; text-transform: uppercase; color: rgba(243, 236, 224, 0.6); }
+.st-why { margin: 18px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.st-why li { padding-left: 14px; border-left: 1px solid var(--champagne); font: 400 14px/1.35 var(--sans); color: rgba(243, 236, 224, 0.86); }
+.st-why li::first-letter { text-transform: uppercase; }
 .st-clock { right: 6vw; bottom: 13%; text-align: right; transform-origin: 100% 100%; }
 .st-clock strong { display: block; font: 400 clamp(8rem, 21vw, 22rem)/0.8 var(--heading); letter-spacing: -0.03em; color: var(--amber); font-variant-numeric: lining-nums; }
 .st-clock span { display: block; margin-top: 18px; font: 300 clamp(1.5rem, 2.6vw, 2.6rem)/1.1 var(--heading); }
@@ -150,11 +153,12 @@ html.st-on, html.st-on body, html.st-on #root { height: auto; min-height: 100%; 
 .st-home-stage { position: absolute; inset: 0; height: auto; }
 .st-home-mark { top: 12%; }
 .st-home-line { position: absolute; left: 6vw; top: calc(12% + clamp(3.1rem, 7.6vw, 8.8rem) + 22px); margin: 0; font: 300 clamp(1.2rem, 1.7vw, 1.7rem)/1.25 var(--heading); color: rgba(243, 236, 224, 0.85); }
-.st-menu { position: absolute; right: 6vw; bottom: 12%; width: min(27rem, 30vw); display: flex; flex-direction: column; }
-.st-menu a { display: block; padding: 18px 0 19px; border-top: 1px solid rgba(215, 194, 158, 0.35); color: var(--ivory); text-decoration: none; transition: padding-left 300ms ease, color 300ms ease; }
+.st-menu { position: absolute; right: 6vw; bottom: 7%; width: min(27rem, 30vw); display: flex; flex-direction: column; }
+.st-menu em { display: block; margin-bottom: 9px; font: 500 11px/1 var(--sans); font-style: normal; letter-spacing: 0.24em; text-transform: uppercase; color: var(--champagne); }
+.st-menu a { display: block; padding: 13px 0 14px; border-top: 1px solid rgba(215, 194, 158, 0.35); color: var(--ivory); text-decoration: none; transition: padding-left 300ms ease, color 300ms ease; }
 .st-menu a:last-child { border-bottom: 1px solid rgba(215, 194, 158, 0.35); }
-.st-menu strong { display: block; font: 400 clamp(1.7rem, 2.5vw, 2.6rem)/1 var(--heading); }
-.st-menu span { display: block; margin-top: 8px; font: 400 13px/1.5 var(--sans); color: rgba(243, 236, 224, 0.7); }
+.st-menu strong { display: block; font: 400 clamp(1.45rem, 2vw, 2.1rem)/1 var(--heading); }
+.st-menu span { display: block; margin-top: 6px; font: 400 12.5px/1.45 var(--sans); color: rgba(243, 236, 224, 0.7); }
 .st-menu a:hover, .st-menu a:focus-visible { padding-left: 12px; color: var(--champagne); outline: none; }
 .st-home-more { position: absolute; left: 6vw; bottom: 9%; margin: 0; display: flex; gap: 28px; }
 
