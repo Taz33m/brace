@@ -651,7 +651,14 @@ def scene(property_id: int) -> dict | None:
         structures.append({"id": st["id"], "polygon": st.get("polygon"), "roof_height_m": (m.get("roof_height_m") or {}).get("value"),
                            "tallest": tall if tall and tall.get("above_roof_m", 0) >= 1 else None})
     src = heights["source"]
+    # Where each scan sat by its own GPS, and where its floor plan sits once fitted under a roof.
+    fits = [{"scan_id": j["id"], "name": j.get("name"), "roof": j.get("structure"), "moved_m": j["correction"]["shift_m"],
+             "under_roof_before": j["raw"]["inside"], "under_roof_after": j["fitted"]["inside"],
+             "raw": j["raw"]["outline"], "fitted": j["fitted"]["outline"]}
+            for j in (_read(OPEN / "geolocation" / f"{property_id}.json") or {}).get("scans") or []
+            if j.get("status") == "aligned" and j["raw"].get("outline") and len(j["raw"]["outline"]) == len(j["fitted"].get("outline") or [])]
     return {
+        "fits": fits,
         "property_id": property_id, "name": bundle["record"].get("name"), "homes": bundle["record"].get("units"),
         "bounds": heights["bounds"], "rows": heights["rows"], "cols": heights["cols"], "cell_m": heights["cell_m"],
         "heights_url": f"/api/buildings/{property_id}/heights.png", "texture_url": f"/api/buildings/{property_id}/aerial.jpg",

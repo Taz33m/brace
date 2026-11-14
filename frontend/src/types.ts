@@ -302,4 +302,7 @@ export interface SiteScene {
   structures: { id: string; polygon: [number, number][] | null; roof_height_m: number | null;
                 tallest: null | { height_m: number; from_wall_m: number; above_roof_m: number; lon: number; lat: number; what: string | null } }[];
   positions: Record<string, { lon: number; lat: number; scan_id: string; scan_name: string | null }>;
+  /** Each fitted scan: its floor plan where its own GPS put it, and where it sits once fitted under a roof. */
+  fits: { scan_id: string; name: string | null; roof: string | null; moved_m: number; under_roof_before: number; under_roof_after: number;
+          raw: [number, number][]; fitted: [number, number][] }[];
 }

@@ -69,3 +69,17 @@
   .scene-jobs { left: 16px; right: 16px; }
 }
 @media (prefers-reduced-motion: reduce) { .scene-card { animation: none; } }
+
+/* Beat two: the floor plans, first where GPS put them (ember), then under their roofs (white). */
+.scene-home { padding: 8px 14px 9px; border-right: 3px solid var(--ember); text-align: right; background: rgba(11, 15, 20, 0.84); backdrop-filter: blur(4px); white-space: nowrap; }
+.scene-home strong { display: block; font-family: var(--cond); font-size: 38px; font-weight: 700; line-height: 1; color: var(--ember); font-variant-numeric: tabular-nums; }
+.scene-home span { display: block; margin-top: 3px; font-size: 14px; color: rgba(244, 241, 234, 0.8); }
+.scene-home.is-after { border-right-color: var(--paper); }
+.scene-home.is-after strong { color: var(--paper); }
+.scene.is-placing .scene-pin, .scene.is-placing .scene-rule, .scene.is-placing .scene-report, .scene.is-placing .scene-jobs, .scene.is-placing .scene-card { display: none; }
+.scene-beats { position: absolute; right: 28px; bottom: 44px; display: inline-flex; gap: 2px; padding: 3px; border-radius: 999px; background: rgba(244, 241, 234, 0.1); backdrop-filter: blur(6px); }
+.scene-beats button { display: flex; align-items: center; gap: 7px; padding: 6px 13px 6px 6px; border: 0; border-radius: 999px; font: 600 12.5px/1 var(--body); color: rgba(244, 241, 234, 0.7); background: none; cursor: pointer; }
+.scene-beats button[aria-pressed="true"] { color: #14110f; background: var(--paper); }
+.scene-beats kbd { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; font: 700 12px/1 var(--cond); color: var(--paper); background: rgba(244, 241, 234, 0.2); }
+.scene-beats button[aria-pressed="true"] kbd { color: var(--paper); background: #14110f; }
+.scene.is-standing:not(.is-placing) .scene-jobs { right: 300px; }

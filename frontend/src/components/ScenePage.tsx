@@ -27,7 +27,13 @@ interface World {
   terrain: THREE.Mesh | null; marks: THREE.Group; heights: Float32Array | null; started: number; ready: boolean;
   fly: null | { t0: number; ms: number; fromP: THREE.Vector3; toP: THREE.Vector3; fromT: THREE.Vector3; toT: THREE.Vector3 };
   movers: { mesh: THREE.Mesh; from: THREE.Vector3; to: THREE.Vector3; t0: number; ms: number; ring: THREE.Mesh }[];
+  homes: THREE.Group;
+  snap: null | { t0: number; done: boolean;
+    lines: { line: THREE.LineLoop; raw: Float32Array; fit: Float32Array; fill: THREE.Mesh; from: THREE.Vector3; to: THREE.Vector3; turn: number }[] };
 }
+const SNAP_HOLD_MS = 2200, SNAP_MS = 520;
+/** Out fast, a hair past, and back: the way something clicks into place. */
+const click = (t: number) => { const c = 1.9; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
 
 export function ScenePage({ id, scenario, step }: Props) {
   const [b, setB] = useState<Building | null>(null);
@@ -44,6 +50,7 @@ export function ScenePage({ id, scenario, step }: Props) {
   const anchors = useRef(new Map<string, THREE.Vector3>());
   const labels = useRef(new Map<string, HTMLElement>());
   const dispatched = useRef<string | null>(null);
+  const [snapped, setSnapped] = useState<null | "before" | "after">(null);
 
   useEffect(() => {
     let current = true;
@@ -112,7 +119,9 @@ export function ScenePage({ id, scenario, step }: Props) {
     const marks = new THREE.Group();
     marks.visible = false;
     scene.add(marks);
-    const w: World = { renderer, scene, camera, controls, terrain: null, marks, heights: null, started: 0, ready: false, fly: null, movers: [] };
+    const homes = new THREE.Group();
+    scene.add(homes);
+    const w: World = { renderer, scene, camera, controls, terrain: null, marks, heights: null, started: 0, ready: false, fly: null, movers: [], homes, snap: null };
     world.current = w;
 
     // The height grid is a picture: two bytes a cell, centimetres above the ground.
@@ -165,6 +174,22 @@ export function ScenePage({ id, scenario, step }: Props) {
         }
         controls.update();
       }
+      if (w.snap && !w.snap.done) {
+        // The floor plans hang where GPS put them, then click under their roofs.
+        const t = Math.min(1, Math.max(0, (now - w.snap.t0 - SNAP_HOLD_MS) / SNAP_MS)), k = t <= 0 ? 0 : click(t);
+        for (const { line, raw, fit, fill, from, to, turn } of w.snap.lines) {
+          const pos = line.geometry.attributes.position as THREE.BufferAttribute;
+          for (let i = 0; i < raw.length; i++) (pos.array as Float32Array)[i] = raw[i] + (fit[i] - raw[i]) * k;
+          pos.needsUpdate = true;
+          (line.material as THREE.LineBasicMaterial).color.setHex(t >= 1 ? PAPER : EMBER);
+          fill.position.lerpVectors(from, to, k);
+          fill.rotation.y = turn * (1 - k);
+          const paint = fill.material as THREE.MeshBasicMaterial;
+          paint.color.setHex(t >= 1 ? PAPER : EMBER);
+          paint.opacity = t >= 1 ? 0.3 : 0.5;
+        }
+        if (t >= 1) { w.snap.done = true; setSnapped("after"); }
+      }
       for (const m of w.movers) {
         const t = Math.min(1, Math.max(0, (now - m.t0) / m.ms));
         m.mesh.position.lerpVectors(m.from, m.to, ease(t));
@@ -182,7 +207,7 @@ export function ScenePage({ id, scenario, step }: Props) {
         const off = v.z > 1 || Math.abs(v.x) > 1.15 || Math.abs(v.y) > 1.15;
         node.style.opacity = off ? "0" : "1";
         // A measurement sits beside its rule; everything else sits on top of its pin.
-        node.style.transform = `translate(${((v.x + 1) / 2) * wpx}px, ${((1 - v.y) / 2) * hpx}px) ${node.dataset.side === "left" ? "translate(-100%, -50%) translateX(-12px)" : "translate(-50%, -100%)"}`;
+        node.style.transform = `translate(${((v.x + 1) / 2) * wpx}px, ${((1 - v.y) / 2) * hpx}px) ${node.dataset.side === "left" ? "translate(-100%, -50%) translateX(-64px)" : "translate(-50%, -100%)"}`;
       });
     };
     tick();
@@ -216,7 +241,7 @@ export function ScenePage({ id, scenario, step }: Props) {
     if (!w || !stood || !place) return;
     w.marks.clear();
     w.movers = [];
-    for (const key of [...anchors.current.keys()]) anchors.current.delete(key);
+    for (const key of [...anchors.current.keys()]) if (key !== "home") anchors.current.delete(key);
     const line = (from: THREE.Vector3, to: THREE.Vector3, color: number, opacity = 1) =>
       w.marks.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([from, to]), new THREE.LineBasicMaterial({ color, transparent: opacity < 1, opacity })));
 
@@ -257,6 +282,76 @@ export function ScenePage({ id, scenario, step }: Props) {
     }
   }, [stood, place, tall, actions, placed, picked, heightAt, site, step]);
 
+  // The home the story follows: the fitted scan that moved furthest among those under a roof with a tall tree beside it.
+  const home = useMemo(() => {
+    const fits = site?.fits ?? [];
+    const treed = new Set((site?.structures ?? []).filter((st) => st.tallest?.what && /tree|pine/i.test(st.tallest.what)).map((st) => st.id));
+    const by = (list: typeof fits) => [...list].sort((a, b) => b.moved_m - a.moved_m)[0] ?? null;
+    return by(fits.filter((f) => f.roof && treed.has(f.roof))) ?? by(fits);
+  }, [site]);
+
+  // Beat two. Every fitted scan appears where its own GPS put it, hangs there, then clicks under its roof.
+  const snap = useCallback(() => {
+    const w = world.current;
+    if (!w || !w.ready || !site || !place || !home) return;
+    w.homes.clear();
+    setPicked(null); setSaid(null);
+    const roofs = new Map(site.structures.map((st) => [st.id, st.roof_height_m ?? 8]));
+    const lines = site.fits.map((f) => {
+      const y = (roofs.get(f.roof ?? "") ?? 8) + 0.9;
+      const flat = (ring: [number, number][]) => { const a = new Float32Array(ring.length * 3); ring.forEach(([lon, lat], i) => { const [x, z] = place.xz(lon, lat); a.set([x, y, z], i * 3); }); return a; };
+      const raw = flat(f.raw), fit = flat(f.fitted);
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.BufferAttribute(raw.slice(), 3));
+      const line = new THREE.LineLoop(geo, new THREE.LineBasicMaterial({ color: EMBER, depthTest: false }));
+      line.renderOrder = 6;
+      w.homes.add(line);
+      // The floor plan as a sheet of colour, so it reads from across a room. It is the fitted plan, carried
+      // back to where GPS had it by the same shift and turn the fit applied.
+      const middle = (a: Float32Array) => { const c = new THREE.Vector3(); for (let i = 0; i < a.length; i += 3) c.add(new THREE.Vector3(a[i], a[i + 1], a[i + 2])); return c.multiplyScalar(3 / a.length); };
+      const from = middle(raw), to = middle(fit);
+      const shape = new THREE.Shape(f.fitted.map(([lon, lat]) => { const [x, z] = place.xz(lon, lat); return new THREE.Vector2(x - to.x, z - to.z); }));
+      const fill = new THREE.Mesh(new THREE.ShapeGeometry(shape).rotateX(Math.PI / 2),
+        new THREE.MeshBasicMaterial({ color: EMBER, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthTest: false }));
+      fill.renderOrder = 5;
+      const turn = -(Math.atan2(raw[2] - from.z, raw[0] - from.x) - Math.atan2(fit[2] - to.z, fit[0] - to.x));
+      fill.position.copy(from); fill.rotation.y = turn;
+      w.homes.add(fill);
+      if (f === home) {
+        const c = to.clone();
+        anchors.current.set("home", c.clone().setY(y + 2));
+        w.controls.autoRotate = false;
+        // From the east and a little south: the home, its roof and the tree beside it in one frame.
+        w.fly = { t0: performance.now(), ms: 1500, fromP: w.camera.position.clone(), toP: new THREE.Vector3(c.x + 52, y + 66, c.z + 24), fromT: w.controls.target.clone(), toT: c };
+      }
+      return { line, raw, fit, fill, from, to, turn };
+    });
+    w.marks.visible = false;
+    w.snap = { t0: performance.now() + 1500, lines, done: false };
+    setSnapped("before");
+  }, [site, place, home]);
+
+  // Back to the whole site and the plan.
+  const wide = useCallback(() => {
+    const w = world.current;
+    if (!w || !w.ready || !place) return;
+    w.homes.clear(); w.snap = null; w.marks.visible = true;
+    anchors.current.delete("home");
+    setSnapped(null); setPicked(null); setSaid(null);
+    w.fly = { t0: performance.now(), ms: 1500, fromP: w.camera.position.clone(), toP: new THREE.Vector3(place.width * 0.72, 235, place.depth * 0.98), fromT: w.controls.target.clone(), toT: new THREE.Vector3(0, 6, 0) };
+  }, [place]);
+
+  // The presenter drives the beats from the keyboard: 1 the whole site, 2 the snap.
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.metaKey || e.ctrlKey) return;
+      if (e.key === "1") wide();
+      if (e.key === "2") snap();
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, [wide, snap]);
+
   // Choosing a job brings the camera round to it.
   const look = useCallback((a: Action | null) => {
     setPicked(a?.id ?? null);
@@ -277,7 +372,7 @@ export function ScenePage({ id, scenario, step }: Props) {
   const steps = saved.filter((s) => s.step);
 
   return (
-    <div className={`scene${stood ? " is-standing" : ""}`}>
+    <div className={`scene${stood ? " is-standing" : ""}${snapped ? " is-placing" : ""}`}>
       <div className="scene-stage" ref={mount} />
 
       <div className="scene-labels" aria-hidden={!stood}>
@@ -293,6 +388,13 @@ export function ScenePage({ id, scenario, step }: Props) {
             <b>{a.id.replace("A", "")}</b><span>{a.timing === "before_arrival" ? a.crew.split(/[(;,]/)[0].trim() : "after the storm"}</span>
           </button>
         ))}
+        {home && snapped && (
+          <div className={`scene-home is-${snapped}`} data-side="left" ref={(n) => { if (n) labels.current.set("home", n); else labels.current.delete("home"); }}>
+            {snapped === "before"
+              ? <><strong>{Math.round(home.under_roof_before * 100)}%</strong><span>of this home is under a roof, by the scan's own GPS</span></>
+              : <><strong>{metres(home.moved_m)} m</strong><span>moved. Now under roof {home.roof}.</span></>}
+          </div>
+        )}
         {placed.map((r) => (
           <div key={r.id} className="scene-report" ref={(n) => { if (n) labels.current.set(`r:${r.id}`, n); else labels.current.delete(`r:${r.id}`); }}>
             <strong>{r.where!.room}{r.where!.thing ? `, at the ${r.where!.thing}` : ""}</strong>
@@ -342,6 +444,12 @@ export function ScenePage({ id, scenario, step }: Props) {
         ))}
       </nav>
 
+      {stood && home && (
+        <div className="scene-beats" role="group" aria-label="Beats">
+          <button aria-pressed={!snapped} onClick={wide}><kbd>1</kbd>The site</button>
+          <button aria-pressed={!!snapped} onClick={snap}><kbd>2</kbd>Place the homes</button>
+        </div>
+      )}
       {site && <p className="scene-source">Heights: {site.sources.heights}. Photo: {site.sources.photo}. A height model, not a photograph of the walls.</p>}
       {!stood && <p className="scene-wait" role="status">{site ? "" : "Reading the site…"}</p>}
     </div>
