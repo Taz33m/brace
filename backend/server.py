@@ -7,6 +7,7 @@ import json
 import os
 import re
 import threading
+import time
 from collections import Counter
 
 from fastapi import FastAPI, HTTPException, Query, Request
@@ -524,15 +525,42 @@ def _place(model_id: str) -> dict:
 @app.get("/api/places/{model_id}")
 def place(model_id: str) -> dict:
     """A scanned building as a walkable place: levels, typed rooms, and every scan position with what it sees."""
-    return _place(model_id)
+    from . import wayfind, wayfind_look
+    where = _place(model_id)
+    try:
+        wayfind.measured_ways(where, wayfind_look.lifts(where), wayfind.walls(model_id))     # measured once, kept for every question
+    except matterport.MatterportError:
+        pass
+    return where
 
 
 @app.get("/api/places/{model_id}/find")
-def place_find(model_id: str, q: str, start: str | None = None) -> dict:
-    """Where something is in this building, and the way there from a scan position."""
+def place_find(model_id: str, q: str, start: str | None = None, mover: str = "walking", chair_in: float = Query(27.0, ge=18, le=40)) -> dict:
+    """Where something is in this building, and the way there from a scan position, on foot or in a wheelchair."""
     from . import wayfind
     _place(model_id)
-    return wayfind.find(model_id, q, start)
+    if mover not in ("walking", "wheelchair"):
+        raise HTTPException(400, "mover is walking or wheelchair")
+    return wayfind.find(model_id, q, start, mover, chair_in)
+
+
+# What the person in the headset is seeing, for a second screen to show alongside. One per building; newest wins.
+PLACE_LIVE: dict[str, dict] = {}
+
+
+@app.post("/api/places/{model_id}/live")
+def place_live_set(model_id: str, body: dict) -> dict:
+    """The headset says where it is, which way it is looking and what it was last told."""
+    _place(model_id)
+    kept = {k: body.get(k) for k in ("position", "yaw", "pitch", "mover", "chair_in", "answer")}
+    PLACE_LIVE[model_id] = {**kept, "rev": (PLACE_LIVE.get(model_id) or {}).get("rev", 0) + 1, "at": time.time()}
+    return {"ok": True}
+
+
+@app.get("/api/places/{model_id}/live")
+def place_live(model_id: str) -> dict:
+    """What the headset last said, for the second screen."""
+    return PLACE_LIVE.get(model_id) or {"rev": 0}
 
 
 @app.get("/api/places/{model_id}/pano/{sweep_id}/{face}.jpg")

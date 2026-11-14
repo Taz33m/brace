@@ -3,7 +3,7 @@ export type AppRoute =
   | { kind: "prepare"; scenario: string | null; step: string | null; building: number | null; vr: boolean }
   | { kind: "walk"; scenario: string; step: string | null; building: number }
   | { kind: "scene"; scenario: string; step: string | null; building: number }
-  | { kind: "place"; model: string }
+  | { kind: "place"; model: string; watch: boolean }
   | { kind: "furnish"; building: number; scan: string }
   | { kind: "model"; building: number | null }
   | { kind: "recovery"; case_id: string | null }
@@ -80,7 +80,8 @@ export function parseAppRoute(hash: string): AppRoute {
     }
     // A scanned building to find your way in, by its scan id.
     if (prefix === "place") {
-      return parts.length === 2 && /^[A-Za-z0-9]{6,20}$/.test(parts[1]) ? { kind: "place", model: parts[1] } : invalid();
+      const watch = parts.length === 3 && parts[2] === "watch";
+      return (parts.length === 2 || watch) && /^[A-Za-z0-9]{6,20}$/.test(parts[1]) ? { kind: "place", model: parts[1], watch } : invalid();
     }
     // The site model: every gathered address, or one of them.
     if (prefix === "model") {

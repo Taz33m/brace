@@ -314,9 +314,15 @@ export interface Place { model_id: string; name: string; levels: { level: number
 export interface PlaceAnswer {
   found: boolean; asked: string; event: string | null; say: string; place?: string; schedule_source?: string | null;
   room?: { id: string; type: string; typed_by: string | null; confidence: string | null; area_sqft: number; level: string | null; position_id: string; lon: number | null; lat: number | null };
-  route?: null | { positions: string[]; metres: number; says?: string; levels_changed?: number; arrived: boolean;
-                   legs: { from: string; to: string; metres: number; level_change: number; bearing: number | null }[] };
+  mover?: "walking" | "wheelchair"; chair_width_in?: number | null; no_way?: boolean; lifts_found?: number;
+  /** For a wheelchair: what the walking way used that the chair cannot. */
+  changed?: null | { instead_of: string; walking_metres: number; wheelchair_metres: number; walking_positions: string[]; flights_avoided: number; rise_avoided_m: number };
+  route?: null | { mover: string; positions: string[]; metres: number; says?: string; levels_changed?: number; arrived: boolean; lift: boolean;
+                   stairs: null | { flights: number; rise_m: number }; doorways: number; narrowest_doorway_in: number | null; narrowest_passage_m: number | null;
+                   legs: { from: string; to: string; kind: "level" | "slope" | "step" | "stairs" | "lift"; metres: number; rise_m: number; level_change: number; bearing: number | null }[] };
 }
+/** What the headset last reported, for a second screen. */
+export interface PlaceLive { rev: number; position?: string | null; yaw?: number | null; pitch?: number | null; mover?: "walking" | "wheelchair" | null; chair_in?: number | null; answer?: PlaceAnswer | null }
 
 /** One room in three states: as scanned, cleared, and furnished again with generated models. */
 export interface FurnishPiece { name: string; look: string | null; width_m: number; depth_m: number; height_m: number; stands_on_m: number; east_m: number; north_m: number; faces_deg: number; prompt: string; model: string | null }

@@ -44,18 +44,37 @@ function words(text: string, size: number, color = "#ffffff", fill = "rgba(11, 2
   return sprite;
 }
 
-export function PlacePage({ model }: { model: string }) {
+/** What to put in front of someone's eyes: the place, then the way in as few words as carry it. The voice says the rest. */
+function brief(got: PlaceAnswer): string {
+  if (!got.found) return got.say;
+  const way = got.route;
+  if (!way) return got.no_way ? `${got.place}. No step-free way in this scan.` : `${got.event ? `${got.event} is at ${got.place}` : got.place}.`;
+  const metres = `${Math.round(way.metres)} m`;
+  if (got.mover === "wheelchair") {
+    const how = got.changed ? `By the lift instead of the stairs` : way.lift ? "By the lift" : "Step-free";
+    const tight = way.narrowest_passage_m != null ? ` Narrowest point ${way.narrowest_passage_m.toFixed(1)} m; chair ${got.chair_width_in ?? 27} in.` : "";
+    return `${how}: ${metres}, no steps.${tight}`;
+  }
+  const down = way.legs.filter((g) => g.kind === "stairs").reduce((sum, g) => sum + g.rise_m, 0) < 0;
+  const how = way.stairs ? `, ${down ? "down" : "up"} ${way.stairs.flights} flight${way.stairs.flights === 1 ? "" : "s"} of stairs` : way.lift ? ", by the lift" : "";
+  return `${got.event ? `${got.event} is at ${got.place}` : got.place}. ${metres}${how}.`;
+}
+
+const USES_A_CHAIR = /wheel\s*chair|can(?:'|no)?t (?:take|use|do|climb) (?:the )?stairs|step[- ]free|no stairs/i;
+
+export function PlacePage({ model, watch = false }: { model: string; watch?: boolean }) {
   const [place, setPlace] = useState<Place | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [started, setStarted] = useState(false);
-  const [stereo, setStereo] = useState(() => window.matchMedia("(pointer: coarse)").matches);
+  const [started, setStarted] = useState(watch);
+  const [stereo, setStereo] = useState(() => !watch && window.matchMedia("(pointer: coarse)").matches);
+  const [mover, setMover] = useState<"walking" | "wheelchair">("walking");
   const [voiceReady, setVoiceReady] = useState(false);
   const [typed, setTyped] = useState("");
   const [last, setLast] = useState<PlaceAnswer | null>(null);
   const mount = useRef<HTMLDivElement>(null);
   const live = useRef({ stereo });
   live.current.stereo = stereo;
-  const control = useRef<{ ask: (query: string) => Promise<PlaceAnswer> } | null>(null);
+  const control = useRef<{ ask: (query: string) => Promise<PlaceAnswer | { say: string }>; moveBy: (mover: "walking" | "wheelchair", chairIn?: number) => Promise<PlaceAnswer | { say: string }> } | null>(null);
   const voice = useRef<Voice | null>(null);
 
   useEffect(() => { api.place(model).then(setPlace).catch((e) => setError(e.message)); }, [model]);
@@ -87,8 +106,9 @@ export function PlacePage({ model }: { model: string }) {
     // You start upstairs if there is an upstairs: the top level's first position.
     const top = Math.max(...place.levels.map((l) => l.level));
     let here = place.positions.find((p) => p.level === top) ?? place.positions[0];
-    let way: string[] = [];
+    let way: string[] = [], before: string[] = [];     // the way now, and the walking way it replaced
     let answer: PlaceAnswer | null = null;
+    let moving: "walking" | "wheelchair" = "walking", chair = 27, asked = "";
     let targets: { object: THREE.Object3D; go: string }[] = [];
     let caption: THREE.Sprite | null = null, captionUntil = 0, plan: THREE.Sprite | null = null;
 
@@ -115,6 +135,11 @@ export function PlacePage({ model }: { model: string }) {
         const [x, y] = px(p);
         ctx.fillStyle = p.level === here.level ? "rgba(255,255,255,0.5)" : "rgba(255,255,255,0.16)";
         ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fill();
+      }
+      if (before.length > 1) {
+        ctx.strokeStyle = "rgba(255,255,255,0.45)"; ctx.lineWidth = 3; ctx.setLineDash([7, 7]); ctx.beginPath();
+        before.forEach((id, i) => { const p = at.get(id); if (!p) return; const [x, y] = px(p); if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y); });
+        ctx.stroke(); ctx.setLineDash([]);
       }
       if (way.length > 1) {
         ctx.strokeStyle = "#00b0e6"; ctx.lineWidth = 5; ctx.lineJoin = "round"; ctx.lineCap = "round"; ctx.beginPath();
@@ -174,8 +199,10 @@ export function PlacePage({ model }: { model: string }) {
 
       const i = way.indexOf(here.id), next = i >= 0 && i < way.length - 1 ? at.get(way[i + 1])! : null;
       // The way: marks on the floor to the next position, and a ring there to look at.
+      const leg = next ? answer?.route?.legs.find((g) => g.from === here.id && g.to === next.id) ?? null : null;
       if (next) {
-        const end = spot(next);
+        // A lift is reached at its doors, a few steps from here; everything else is walked to where it is.
+        const end = leg?.kind === "lift" && leg.bearing != null ? toward(leg.bearing, 3.2, -EYE_M) : spot(next);
         if (end) {
           const steps = Math.max(3, Math.round(end.length() / 0.9));
           for (let s = 2; s < steps; s++) {
@@ -187,7 +214,8 @@ export function PlacePage({ model }: { model: string }) {
           target.position.copy(end); take.position.copy(end);
           marks.add(target, take);
           targets.push({ object: take, go: next.id });
-          const change = next.level !== here.level ? ((next.level ?? 0) < (here.level ?? 0) ? "Down one level" : "Up one level") : null;
+          const down = leg ? leg.rise_m < 0 : (next.level ?? 0) < (here.level ?? 0);
+          const change = leg?.kind === "lift" ? `Lift, ${down ? "down" : "up"} one level` : leg?.kind === "stairs" ? `Stairs ${down ? "down" : "up"}` : next.level !== here.level ? (down ? "Down one level" : "Up one level") : null;
           if (change) { const tag = words(change, 44, "#ffffff", "rgba(0, 84, 166, 0.9)", 1.6); tag.position.copy(end).setY(end.y + 1.0); marks.add(tag); }
         }
       }
@@ -216,19 +244,37 @@ export function PlacePage({ model }: { model: string }) {
       if (!to) return;
       here = to;
       draw();
+      tell();
       const i = way.indexOf(id);
       if (answer?.room && i === way.length - 1 && way.length > 1) say(`You are at ${answer.place ?? answer.room.type}.`, 7);
     };
 
+    const tell = () => { void api.placeTell(model, { position: here.id, yaw: lookBearing(), pitch: lookPitch(), mover: moving, chair_in: chair, answer }); };
+    const take = (got: PlaceAnswer) => {
+      answer = got.found ? got : null;
+      way = got.route?.positions ?? [];
+      before = got.changed?.walking_positions ?? [];
+      setLast(got); setMover(moving);
+      say(brief(got), 12);
+      draw();
+      tell();
+      return got;
+    };
+    const lookBearing = () => { const f = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion); return ((THREE.MathUtils.radToDeg(Math.atan2(f.x, -f.z)) % 360) + 360) % 360; };
+    const lookPitch = () => THREE.MathUtils.radToDeg(Math.asin(Math.max(-1, Math.min(1, new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion).y))));
     control.current = {
       ask: async (query: string) => {
-        const got = await api.placeFind(model, query, here.id);
-        answer = got.found ? got : null;
-        way = got.route?.positions ?? [];
-        setLast(got);
-        say(got.say);
-        draw();
-        return got;
+        // "I'm in a wheelchair" is not a place to find: it changes how the way to the last place is worked out.
+        if (USES_A_CHAIR.test(query)) return control.current!.moveBy("wheelchair");
+        asked = query;
+        return take(await api.placeFind(model, query, here.id, moving, chair));
+      },
+      moveBy: async (how, chairIn) => {
+        moving = how;
+        if (chairIn && chairIn >= 18 && chairIn <= 40) chair = chairIn;
+        setMover(how);
+        if (!asked) { tell(); return { say: how === "wheelchair" ? "Understood. I will keep every way step-free." : "Understood." }; }
+        return take(await api.placeFind(model, asked, here.id, moving, chair));
       },
     };
 
@@ -271,6 +317,22 @@ export function PlacePage({ model }: { model: string }) {
     window.addEventListener("resize", resize);
 
     draw();
+    let rev = -1, lastTold = 0;
+    const follow = watch ? window.setInterval(() => {
+      api.placeLive(model).then((live) => {
+        if (live.rev === rev) { if (live.yaw != null) camera.rotation.set(rad(live.pitch ?? 0), -rad(live.yaw), 0); return; }
+        rev = live.rev;
+        const to = live.position ? at.get(live.position) : null;
+        if (to) here = to;
+        moving = live.mover ?? "walking";
+        answer = live.answer?.found ? live.answer : null;
+        way = live.answer?.route?.positions ?? [];
+        before = live.answer?.changed?.walking_positions ?? [];
+        setLast(live.answer ?? null); setMover(moving);
+        if (live.yaw != null) camera.rotation.set(rad(live.pitch ?? 0), -rad(live.yaw), 0);
+        draw();
+      }).catch(() => {});
+    }, 250) : 0;
     const clock = new THREE.Clock();
     let gazed: THREE.Object3D | null = null, held = 0, raf = 0;
     const frame = () => {
@@ -287,6 +349,8 @@ export function PlacePage({ model }: { model: string }) {
       progress.geometry.dispose();
       progress.geometry = new THREE.RingGeometry(0.016, 0.021, 40, 1, 0, hit && held > 0 ? Math.min(1, held / DWELL_S) * Math.PI * 2 : 0.001);
       if (caption && now > captionUntil) { camera.remove(caption); caption = null; }
+      // The headset says which way it is looking a few times a second, so the second screen can turn with it.
+      if (!watch && now - lastTold > 300) { lastTold = now; void api.placeTell(model, { position: here.id, yaw: lookBearing(), pitch: lookPitch(), mover: moving, chair_in: chair, answer }); }
       const w = el.clientWidth, h = el.clientHeight;
       renderer.setScissorTest(true);
       const eyes = live.current.stereo ? [[0, w / 2], [w / 2, w / 2]] : [[0, w]];
@@ -302,6 +366,7 @@ export function PlacePage({ model }: { model: string }) {
     frame();
     return () => {
       cancelAnimationFrame(raf);
+      if (follow) window.clearInterval(follow);
       window.removeEventListener("deviceorientation", onOrient);
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
@@ -310,7 +375,7 @@ export function PlacePage({ model }: { model: string }) {
       renderer.dispose();
       el.removeChild(renderer.domElement);
     };
-  }, [place, model]);
+  }, [place, model, watch]);
 
   const start = async () => {
     // iOS only hands over motion data after a tap and an explicit yes.
@@ -321,7 +386,11 @@ export function PlacePage({ model }: { model: string }) {
     if (voice.current || !voiceReady) return;
     voice.current = await openVoice({
       sessionUrl: `/api/places/${model}/voice`,
-      run: async (name, args) => (name === "find_place" && control.current ? control.current.ask(String(args.query ?? "")) : { found: false, say: "I cannot do that here." }),
+      run: async (name, args) => {
+        if (name === "find_place" && control.current) return control.current.ask(String(args.query ?? ""));
+        if (name === "i_move_by" && control.current) return control.current.moveBy(args.mover === "wheelchair" ? "wheelchair" : "walking", Number(args.chair_width_in) || undefined);
+        return { found: false, say: "I cannot do that here." };
+      },
       onState: () => {},
       onCaption: () => {},
       greeting: `Greet the person in one short sentence and tell them they can ask where anything in ${place?.name ?? "the building"} is.`,
@@ -341,13 +410,33 @@ export function PlacePage({ model }: { model: string }) {
           <label><input type="checkbox" checked={stereo} onChange={(e) => setStereo(e.target.checked)} /> Split the screen for a headset</label>
         </div>
       )}
-      {place && started && !stereo && (
+      {place && started && !stereo && !watch && (
         <form className="vr-bar" onSubmit={(e) => { e.preventDefault(); if (typed.trim()) { void control.current?.ask(typed.trim()); setTyped(""); } }}>
           <input value={typed} onChange={(e) => setTyped(e.target.value)} placeholder="Where is the git push-up challenge?" aria-label="Ask where something is" />
           <button>Ask</button>
           <span>{last ? (last.found && last.route ? `${last.route.metres} m` : "") : voiceReady ? "Or just ask aloud" : ""}</span>
+          <button type="button" aria-pressed={mover === "wheelchair"} onClick={() => void control.current?.moveBy(mover === "wheelchair" ? "walking" : "wheelchair")}>
+            {mover === "wheelchair" ? "In a wheelchair" : "Walking"}
+          </button>
           <button type="button" onClick={() => setStereo(true)}>Headset view</button>
         </form>
+      )}
+      {place && watch && (
+        <aside className="place-watch" aria-live="polite">
+          <p className="place-watch-name">{place.name}</p>
+          {!last && <p className="place-watch-say">Waiting for the headset.</p>}
+          {last && <p className="place-watch-say">{last.event ? `${last.event}: ` : ""}<strong>{last.found ? last.place : "not found"}</strong></p>}
+          {last?.route && (
+            <dl>
+              <div><dt>{last.route.lift ? "By the lift" : last.route.stairs ? `Stairs, ${last.route.stairs.flights} flights` : "On the level"}</dt><dd>{Math.round(last.route.metres)} m</dd></div>
+              {last.changed && <div><dt>Stairs avoided</dt><dd>{last.changed.flights_avoided} flights, {last.changed.rise_avoided_m.toFixed(1)} m</dd></div>}
+              {mover === "wheelchair" && last.route.narrowest_passage_m != null && <div><dt>Narrowest point</dt><dd>{last.route.narrowest_passage_m.toFixed(2)} m</dd></div>}
+              {mover === "wheelchair" && <div><dt>Chair</dt><dd>{last.chair_width_in ?? 27} in</dd></div>}
+            </dl>
+          )}
+          {last?.no_way && <p className="place-watch-note">No step-free way in this scan.</p>}
+          {last?.route?.lift && <p className="place-watch-note">The lift was seen in the scan, not ridden.</p>}
+        </aside>
       )}
     </div>
   );

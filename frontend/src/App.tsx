@@ -56,7 +56,7 @@ export function App() {
     <FurnishPage key={route.scan} id={route.building} scan={route.scan} />
   </Suspense>;
   if (route.kind === "place") return <Suspense fallback={<div className="fatal quiet" role="status">Loading the building…</div>}>
-    <PlacePage key={route.model} model={route.model} />
+    <PlacePage key={`${route.model}:${route.watch}`} model={route.model} watch={route.watch} />
   </Suspense>;
   if (route.kind === "model") return <Suspense fallback={<div className="fatal quiet" role="status">Loading the site model…</div>}>
     <SiteModelPage key={route.building ?? "all"} id={route.building} />

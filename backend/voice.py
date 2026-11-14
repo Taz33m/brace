@@ -200,6 +200,10 @@ def place_session(where: dict, schedule: list[dict]) -> dict:
         "When they ask where something is or how to get somewhere, call find_place with their own words. Then answer in one or two short sentences, the name of the place first.",
         "Say only what the tool returns. If it finds nothing, say you do not have it. Never guess a room, a floor or a distance.",
         "After you answer, the way is drawn on the floor in front of them. Tell them to follow it. Do not describe turns yourself.",
+        "The way is first worked out for someone walking. If the person says they use a wheelchair, or cannot take stairs, call i_move_by with wheelchair "
+        "(and the chair's width in inches if they give it). Then say, plainly and without fuss, what changed: what the new way avoids, how it goes, "
+        "and the measurements the tool returns. Never apologise at length and never guess a width. If the tool finds no step-free way, say so honestly.",
+        "A lift the tool mentions was seen in the scan, not ridden. Say it should be checked.",
         f"Rooms Brace has typed in this scan: {rooms}.",
         f"On the schedule you were given: {listed}.",
     ]
@@ -210,7 +214,12 @@ def place_session(where: dict, schedule: list[dict]) -> dict:
                   "output": {"voice": VOICE}},
         "tools": [{"type": "function", "name": "find_place",
                    "parameters": {"type": "object", "properties": {"query": {"type": "string", "description": "What the person asked for, in their words."}}, "required": ["query"]},
-                   "description": "Find an event or a kind of room in this building. Returns the place, the room it is, and the way there from where the person stands."}],
+                   "description": "Find an event or a kind of room in this building. Returns the place, the room it is, and the way there from where the person stands."},
+                  {"type": "function", "name": "i_move_by",
+                   "parameters": {"type": "object", "properties": {"mover": {"type": "string", "enum": ["walking", "wheelchair"]},
+                                                                   "chair_width_in": {"type": "number", "description": "Width of the wheelchair in inches, if the person said."}},
+                                  "required": ["mover"]},
+                   "description": "Set how the person moves and work the way out again for the place they last asked for. Returns the new way and what changed."}],
         "tool_choice": "auto"}}
 
 

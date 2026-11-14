@@ -1,4 +1,4 @@
-import type { Approval, Board, FurnishScene, Place, PlaceAnswer, Building, ClockChange, Facing, FindHit, Measured, Portfolio, ResidentReport, SavedStep, Scenario, ScenarioMap, SiteModel, SiteScene } from "./types";
+import type { Approval, Board, FurnishScene, Place, PlaceAnswer, PlaceLive, Building, ClockChange, Facing, FindHit, Measured, Portfolio, ResidentReport, SavedStep, Scenario, ScenarioMap, SiteModel, SiteScene } from "./types";
 
 async function get<T>(path: string): Promise<T> {
   const r = await fetch(path);
@@ -33,7 +33,11 @@ export const api = {
     return r.json() as Promise<{ started: boolean }>;
   }),
   place: (model: string) => get<Place>(`/api/places/${model}`),
-  placeFind: (model: string, query: string, start: string | null) => get<PlaceAnswer>(`/api/places/${model}/find${q({ q: query, start })}`),
+  placeFind: (model: string, query: string, start: string | null, mover: "walking" | "wheelchair" = "walking", chairIn = 27) =>
+    get<PlaceAnswer>(`/api/places/${model}/find${q({ q: query, start, mover, chair_in: String(chairIn) })}`),
+  placeLive: (model: string) => get<PlaceLive>(`/api/places/${model}/live`),
+  placeTell: (model: string, body: Omit<PlaceLive, "rev">) =>
+    fetch(`/api/places/${model}/live`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).catch(() => undefined),
   placePano: (model: string, position: string, face: number) => `/api/places/${model}/pano/${position}/${face}.jpg?size=1024`,
   scene: (id: number) => get<SiteScene>(`/api/buildings/${id}/scene`),
   siteModel: (id: number) => get<SiteModel>(`/api/buildings/${id}/site-model`),
