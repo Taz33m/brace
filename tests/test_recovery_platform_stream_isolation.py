@@ -4,6 +4,8 @@ from __future__ import annotations
 import asyncio
 import json
 
+import pytest
+
 from backend.recovery.platform.router import event_stream
 from tests.test_recovery_platform_api import store, world  # noqa: F401 (fixtures)
 from tests.test_recovery_platform_support import OWNER, report
@@ -92,3 +94,29 @@ def test_already_revoked_session_does_not_read_events(store, world, monkeypatch)
         return [event async for event in event_stream(store, token, "resident", 0, None, poll_seconds=.001)]
 
     assert asyncio.run(drain()) == []
+
+
+@pytest.mark.parametrize("replacement_after_revocation", [False, True])
+def test_valid_invitation_does_not_replay_other_invitation_revocation(store, world, replacement_after_revocation):
+    household, _, resident, other_resident = world
+    revoked_token = _session(store, household)
+    if not replacement_after_revocation:
+        valid_token = _session(store, household)
+    _revoke(store)
+    if replacement_after_revocation:
+        valid_token = _session(store, household)
+    assert store.resolve_session(revoked_token) is None
+    assert store.resolve_session(valid_token) is not None
+    receipt = store.append_report(resident, report("Report after the old invitation was revoked"), "after-reinvite-report")
+
+    async def read_next():
+        stream = event_stream(store, valid_token, "resident", 0, None, poll_seconds=.001)
+        try:
+            return await asyncio.wait_for(stream.__anext__(), .5)
+        finally:
+            await stream.aclose()
+
+    event = json.loads(asyncio.run(read_next())["data"])
+    assert event["type"] == "report.updated"
+    assert event["entity_id"] == receipt.report.report_id
+    assert not any(event.type == "session.revoked" for event in store.events_after(other_resident, 0))

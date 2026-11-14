@@ -257,6 +257,9 @@ export function RecoveryEntry({ case_id }: { case_id: string | null }) {
     {spatialError && <div className="brace-entry-status" role="alert"><span>{spatialError}</span><button type="button" onClick={retry}>Reload evidence</button></div>}
     {spatialLoading && <p className="brace-entry-status" role="status">Loading registered spatial evidence…</p>}
     {currentView.connection === "reconnecting" && snapshot && <p className="brace-entry-status" role="status">Reconnecting to case updates…</p>}
+    {snapshot && <div className="brace-entry-access-shortcut"><span>Private resident spaces</span>
+      <button type="button" onClick={() => document.getElementById("brace-households-title")?.scrollIntoView({ behavior: "smooth", block: "start" })}>Manage resident access ↓</button>
+    </div>}
     <EntryBoundary key={`workspace:${openId ?? "cases"}`}><Suspense fallback={<EntryMessage title="Opening recovery workspace…" />}>
       {Workspace ? <Workspace {...props} /> : <>
         {cases.length > 1 && <nav className="brace-entry-status" aria-label="Recovery case selection">
@@ -274,7 +277,8 @@ export function RecoveryEntry({ case_id }: { case_id: string | null }) {
       </>}
     </Suspense></EntryBoundary>
     {snapshot && <HouseholdOnboarding key={`households:${snapshot.case.case_id}`} snapshot={snapshot} busy={currentView.busy}
-      on_command={command} on_session_expired={() => setNeedsSignIn(true)} />}
+      on_command={command} on_session_expired={() => setNeedsSignIn(true)}
+      on_access_revoked={id => setInvitation(value => value?.household_id === id ? null : value)} />}
     {snapshot && <DraftNotices key={`notices:${snapshot.case.case_id}`} snapshot={snapshot} busy={currentView.busy}
       on_published={retry} on_session_expired={() => setNeedsSignIn(true)} />}
     {snapshot && <SupportInbox key={`support:${snapshot.case.case_id}`} snapshot={snapshot} busy={currentView.busy}

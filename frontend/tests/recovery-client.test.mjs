@@ -214,6 +214,19 @@ test("session.revoked event expires and closes the stream", async () => {
   assert.equal(calls, 1);
 });
 
+test("resident access revocation refreshes the owner without expiring their session", async () => {
+  const states = [], received = [];
+  const api = createRecoveryClient({ fetch: async () => stream([
+    frame(event(1, { type: "session.revoked" })), frame(event(2)),
+  ], { open: true }) });
+  const stop = api.subscribe_case("case / 1", { after: 0,
+    on_event: value => received.push(value.event_id), on_connection: value => states.push(value) });
+  await until(() => received.length === 2);
+  stop();
+  assert.deepEqual(states, ["connected"]);
+  assert.deepEqual(received, [1, 2]);
+});
+
 test("invalid frames do not advance replay cursor", async () => {
   const calls = [];
   const errors = [];

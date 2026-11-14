@@ -23,7 +23,8 @@ from starlette.concurrency import run_in_threadpool
 
 from . import models as m
 from . import uploads
-from .households import CreateHouseholdInput, CreateHouseholdResult
+from .households import (CreateHouseholdInput, CreateHouseholdResult, HouseholdAccessListing,
+                         RevokeHouseholdAccessInput, RevokeHouseholdAccessResult)
 from .auth import LOCAL_OWNER_ID, Actor, check_owner_secret
 from .errors import PlatformError, unauthenticated
 from .store import OWNER_SESSION_TTL, RESIDENT_SESSION_TTL, CaseStore
@@ -129,6 +130,11 @@ async def event_stream(store: CaseStore, token: str, role: str, cursor: int, cas
                     yield notice
                 return
             cursor = event.event_id
+            # Revocation notices belong to the invalidated session, not every
+            # invitation for its household. A replacement (or another valid)
+            # invitation must not expire when replaying this household event.
+            if actor.role == "resident" and event.type == "session.revoked":
+                continue
             yield {"id": str(event.event_id), "data": event.model_dump_json()}
         if not events:
             await asyncio.sleep(poll_seconds)
@@ -223,6 +229,16 @@ def build_router(store: CaseStore, assessment_launcher: Optional[AssessmentLaunc
     def create_household(case_id: str, body: CreateHouseholdInput, request: Request,
                          idempotency_key: str = Header(min_length=8, max_length=200)):
         return store.create_household(owner(request), case_id, body, idempotency_key)
+
+    @router.get("/api/recovery/cases/{case_id}/households/access", response_model=HouseholdAccessListing)
+    def household_access(case_id: str, request: Request):
+        return store.household_access(owner(request), case_id)
+
+    @router.post("/api/recovery/cases/{case_id}/households/{household_id}/revoke-access",
+                 response_model=RevokeHouseholdAccessResult)
+    def revoke_household_access(case_id: str, household_id: str, body: RevokeHouseholdAccessInput,
+                                request: Request, idempotency_key: str = Header(min_length=8, max_length=200)):
+        return store.revoke_household_access(owner(request), case_id, household_id, body, idempotency_key)
 
     @router.post("/api/recovery/cases/{case_id}/commands", response_model=m.CommandResult)
     def command(case_id: str, body: m.OwnerCommand, request: Request,

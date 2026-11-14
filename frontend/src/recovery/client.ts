@@ -23,6 +23,17 @@ export interface HouseholdReceipt {
   analysis_revision: number;
   duplicate: boolean;
 }
+export interface HouseholdAccessView {
+  case_id: string;
+  case_revision: number;
+  households: { household_id: string; unit_label: string | null; active_session_count: number;
+    active_invitation_count: number;
+    invitations: { invitation_id: string; created_at: string; expires_at: string; revoked_at: string | null }[] }[];
+}
+export interface RevokeAccessReceipt {
+  case_id: string; household_id: string; case_revision: number; analysis_revision: number;
+  revoked_invitation_count: number; revoked_session_count: number; duplicate: boolean;
+}
 
 export class RecoveryApiError extends Error {
   readonly status: number;
@@ -232,7 +243,7 @@ export function createRecoveryClient(options: RecoveryClientOptions = {}) {
             lastCursor = event.event_id;
             delay = initialDelay;
             args.on_event(event);
-            if (event.type === "session.revoked") { connection("expired"); stop(); }
+            if (event.type === "session.revoked" && caseId === undefined) { connection("expired"); stop(); }
           });
           while (!stopped) {
             const { done, value } = await activeReader.read();
@@ -283,6 +294,10 @@ export function createRecoveryClient(options: RecoveryClientOptions = {}) {
     get_spatial: (case_id: string, signal?: AbortSignal) => request<RecoverySpatial>(`/api/recovery/cases/${encodeURIComponent(case_id)}/spatial`, { signal }),
     create_household: (case_id: string, input: HouseholdInput, idempotency_key: string) =>
       post<HouseholdReceipt>(`/api/recovery/cases/${encodeURIComponent(case_id)}/households`, input, idempotency_key),
+    get_household_access: (case_id: string, signal?: AbortSignal) =>
+      request<HouseholdAccessView>(`/api/recovery/cases/${encodeURIComponent(case_id)}/households/access`, { signal }),
+    revoke_household_access: (case_id: string, household_id: string, input: { expected_revision: number }, key: string) =>
+      post<RevokeAccessReceipt>(`/api/recovery/cases/${encodeURIComponent(case_id)}/households/${encodeURIComponent(household_id)}/revoke-access`, input, key),
     command: (case_id: string, command: OwnerCommand, idempotency_key: string) =>
       post<CommandResult>(`/api/recovery/cases/${encodeURIComponent(case_id)}/commands`, command, idempotency_key),
     subscribe_case: (case_id: string, args: RecoverySubscription) =>

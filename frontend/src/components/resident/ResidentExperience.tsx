@@ -175,10 +175,10 @@ function TopBar({ home, back, busy, screenTitle }: { home: ResidentHome; back: (
       <div className="r-where">
         <div className="r-property">{home.property_name}</div>
         {home.unit_confirmed && home.unit_label ? (
-          <div className="r-unit">Unit {home.unit_label}</div>
+          <div className="r-unit">{home.unit_label}</div>
         ) : (
           <div className="r-unit unconfirmed">
-            {home.unit_label ? `Unit ${home.unit_label} — not confirmed` : "Unit not confirmed"}
+            {home.unit_label ? `${home.unit_label} — not confirmed` : "Unit not confirmed"}
           </div>
         )}
       </div>

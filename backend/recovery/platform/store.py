@@ -333,9 +333,74 @@ class CaseStore:
         """Owner listing for revocation; never includes token material."""
         with self._read() as conn:
             self._owner_case(conn, actor, case_id)
-            return [dict(r) for r in conn.execute(
-                "SELECT invitation_id, household_id, created_at, expires_at, revoked_at FROM invitations "
-                "WHERE case_id = ? ORDER BY created_at, rowid", (case_id,))]
+            return self._invitation_rows(conn, case_id)
+
+    @staticmethod
+    def _invitation_rows(conn, case_id: str) -> list[dict]:
+        return [dict(r) for r in conn.execute(
+            "SELECT invitation_id, household_id, created_at, expires_at, revoked_at FROM invitations "
+            "WHERE case_id = ? ORDER BY created_at, rowid", (case_id,))]
+
+    def household_access(self, actor: Actor, case_id: str):
+        """One authorized snapshot of access counts and non-secret link history."""
+        from .households import HouseholdAccessListing
+
+        with self._read() as conn:
+            case = self._owner_case(conn, actor, case_id)
+            now = self.now()
+            invitations: dict[str, list[dict]] = {}
+            for invitation in self._invitation_rows(conn, case_id):
+                household_id = invitation.pop("household_id")
+                invitations.setdefault(household_id, []).append(invitation)
+            active_sessions = {row["household_id"]: row["count"] for row in conn.execute(
+                "SELECT s.household_id, COUNT(*) AS count FROM sessions s JOIN invitations i "
+                "ON i.invitation_id = s.invitation_id AND i.case_id = s.case_id "
+                "AND i.household_id = s.household_id WHERE s.case_id = ? AND s.role = 'resident' "
+                "AND s.revoked_at IS NULL AND s.expires_at > ? AND i.revoked_at IS NULL "
+                "GROUP BY s.household_id", (case_id, now))}
+            households = []
+            for household in conn.execute("SELECT household_id, unit_label FROM households WHERE case_id = ? "
+                                          "ORDER BY created_at, rowid", (case_id,)):
+                links = invitations.get(household["household_id"], [])
+                households.append({"household_id": household["household_id"], "unit_label": household["unit_label"],
+                    "active_session_count": active_sessions.get(household["household_id"], 0),
+                    "active_invitation_count": sum(link["revoked_at"] is None and link["expires_at"] > now for link in links),
+                    "invitations": links})
+            return HouseholdAccessListing(case_id=case_id, case_revision=case["case_revision"], households=households)
+
+    def revoke_household_access(self, actor: Actor, case_id: str, household_id: str,
+                                request, idempotency_key: str):
+        """Revoke current links/sessions atomically; keep household data and retry receipt."""
+        from .households import RevokeHouseholdAccessInput, RevokeHouseholdAccessResult
+
+        body = RevokeHouseholdAccessInput.model_validate(request)
+        key = self._check_key(idempotency_key)
+        operation = f"revoke-household-access:{case_id}:{household_id}"
+        body_hash = hash_token(dumps(body))
+        with self._write() as conn:
+            case = self._owner_case(conn, actor, case_id)
+            self._household(conn, case_id, household_id)
+            replay = self._replay(conn, actor, operation, key, body_hash)
+            if replay is not None:
+                return RevokeHouseholdAccessResult(**{**replay, "duplicate": True})
+            self._check_revision(case, body.expected_revision)
+            now = self.now()
+            sessions = conn.execute(
+                "UPDATE sessions SET revoked_at = ? WHERE role = 'resident' AND case_id = ? "
+                "AND household_id = ? AND revoked_at IS NULL AND expires_at > ?",
+                (now, case_id, household_id, now)).rowcount
+            invitations = conn.execute(
+                "UPDATE invitations SET revoked_at = ? WHERE case_id = ? AND household_id = ? "
+                "AND revoked_at IS NULL", (now, case_id, household_id)).rowcount
+            case_revision, analysis_revision = self._bump(conn, case_id)
+            self._event(conn, case_id, "household.access_revoked", entity_id=household_id)
+            self._event(conn, case_id, "session.revoked", audience="households", households=[household_id],
+                        entity_id=household_id, public_summary="Resident access revoked")
+            result = RevokeHouseholdAccessResult(case_id=case_id, household_id=household_id,
+                case_revision=case_revision, analysis_revision=analysis_revision,
+                revoked_invitation_count=invitations, revoked_session_count=sessions, duplicate=False)
+            self._remember(conn, actor, operation, key, body_hash, result)
+            return result
 
     def revoke_invitation(self, actor: Actor, case_id: str, invitation_id: str) -> None:
         now = self.now()

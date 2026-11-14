@@ -30,3 +30,4 @@
 @media (max-width: 600px) { .brace-recovery-entry .brace-entry-message { padding-top: 2.5rem; } .brace-recovery-entry .brace-entry-status { align-items: stretch; flex-direction: column; } }
 .brace-entry-source-workspace { margin: 24px auto; max-width: 1100px; padding: 0 24px; }
 .brace-entry-source-workspace > p { color: #64716a; font-size: 13px; line-height: 1.5; }
+.brace-entry-access-shortcut{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:12px 24px;background:#e7eee5;font-size:13px}.brace-entry-access-shortcut button{padding:10px 14px;border:1px solid #819685;border-radius:8px;background:white;color:#284d36;font:inherit;font-weight:600;cursor:pointer}.brace-entry-access-shortcut button:focus-visible{outline:3px solid #8eb877;outline-offset:3px}

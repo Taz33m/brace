@@ -33,3 +33,38 @@ class CreateHouseholdResult(Wire):
     case_revision: int
     analysis_revision: int
     duplicate: bool
+
+
+class InvitationAccess(Wire):
+    invitation_id: str
+    created_at: str
+    expires_at: str
+    revoked_at: str | None
+
+
+class HouseholdAccess(Wire):
+    household_id: str
+    unit_label: str | None
+    active_session_count: int
+    active_invitation_count: int
+    invitations: list[InvitationAccess]
+
+
+class HouseholdAccessListing(Wire):
+    case_id: str
+    case_revision: int
+    households: list[HouseholdAccess]
+
+
+class RevokeHouseholdAccessInput(Wire):
+    expected_revision: int = Field(ge=1, strict=True)
+
+
+class RevokeHouseholdAccessResult(Wire):
+    case_id: str
+    household_id: str
+    case_revision: int
+    analysis_revision: int
+    revoked_invitation_count: int
+    revoked_session_count: int
+    duplicate: bool
