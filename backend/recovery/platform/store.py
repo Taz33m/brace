@@ -407,6 +407,197 @@ class CaseStore:
     def _cmd_create_invitation(self, actor, case_id, command: m.CreateInvitation, **_) -> m.CommandResult:
         return self.create_invitation(actor, case_id, command.household_id, command.expected_revision)
 
+    @contextmanager
+    def _owner_edit(self, actor: Actor, case_id: str, expected_revision: int):
+        with self._write() as conn:
+            row = self._owner_case(conn, actor, case_id)
+            self._check_revision(row, expected_revision)
+            yield conn
+
+    def _result(self, conn, case_id: str, run_id: Optional[str] = None) -> m.CommandResult:
+        row = conn.execute("SELECT case_revision, analysis_revision FROM cases WHERE case_id = ?",
+                           (case_id,)).fetchone()
+        return m.CommandResult(case_revision=row["case_revision"], analysis_revision=row["analysis_revision"],
+                               run_id=run_id, invitation_token=None, invitation_expires_at=None)
+
+    @staticmethod
+    def _require_case_evidence(conn, case_id: str, evidence_ids: list[str]) -> None:
+        for evidence_id in evidence_ids:
+            if conn.execute("SELECT 1 FROM evidence WHERE evidence_id = ? AND case_id = ?",
+                            (evidence_id, case_id)).fetchone() is None:
+                raise invalid("Evidence must be registered on this case.", "evidence_unavailable")
+
+    # observations
+
+    def _cmd_review_observation(self, actor, case_id, command: m.ReviewObservation, **_) -> m.CommandResult:
+        with self._owner_edit(actor, case_id, command.expected_revision) as conn:
+            row = conn.execute("SELECT * FROM observations WHERE observation_id = ? AND case_id = ?",
+                               (command.observation_id, case_id)).fetchone()
+            if row is None:
+                raise not_found("This observation")
+            if command.status not in OBSERVATION_TRANSITIONS[row["status"]]:
+                raise PlatformError(409, "invalid_transition",
+                                    f"An observation cannot move from {row['status']} to {command.status}.")
+            note = command.note.strip()
+            if command.status in ("verified", "dismissed") and not note:
+                raise invalid("A review note is required.", "note_required")
+            if command.status == "verified" and not command.evidence_ids:
+                raise invalid("Verification needs an evidence basis.", "evidence_required")
+            self._require_case_evidence(conn, case_id, command.evidence_ids)
+            obs = json.loads(row["json"])
+            obs["status"] = command.status
+            obs["evidence_ids"] = list(dict.fromkeys(obs["evidence_ids"] + command.evidence_ids))
+            obs["verification_note"] = note or obs["verification_note"]
+            obs["verified_by"] = actor.actor_id if command.status == "verified" else None
+            obs["updated_at"] = self.now()
+            version = row["version"] + 1
+            conn.execute("UPDATE observations SET status = ?, version = ?, json = ? WHERE observation_id = ?",
+                         (command.status, version, dumps(obs), command.observation_id))
+            conn.execute("INSERT INTO observation_versions VALUES (?,?,?,?,?)",
+                         (command.observation_id, version, dumps(obs), actor.actor_id, self.now()))
+            self._bump(conn, case_id, analysis=True)
+            self._event(conn, case_id, "observation.updated", entity_id=command.observation_id)
+            if row["report_id"]:
+                self._event(conn, case_id, "report.updated", audience="households",
+                            households=[row["household_id"]], entity_id=row["report_id"],
+                            public_summary="Report status changed")
+            return self._result(conn, case_id)
+
+    def add_evidence(self, actor: Actor, case_id: str, evidence: m.Evidence, expected_revision: int) -> m.CommandResult:
+        """Lead domain operation: register dated evidence (inspection, cost source, ...)."""
+        with self._owner_edit(actor, case_id, expected_revision) as conn:
+            if conn.execute("SELECT 1 FROM evidence WHERE evidence_id = ?", (evidence.evidence_id,)).fetchone():
+                raise PlatformError(409, "evidence_exists", "This evidence is already registered.")
+            conn.execute("INSERT INTO evidence VALUES (?,?,?,?,?)",
+                         (evidence.evidence_id, case_id, None, dumps(evidence), self.now()))
+            self._bump(conn, case_id, analysis=True)
+            self._event(conn, case_id, "evidence.added", entity_id=evidence.evidence_id)
+            return self._result(conn, case_id)
+
+    # tasks
+
+    def _insert_task(self, conn, case_id: str, *, title: str, scope: str, household_ids: list[str],
+                     location: Optional[dict] = None, evidence_ids: list[str] = (),
+                     assignee_label: Optional[str] = None, actor_id: str, task_id: Optional[str] = None) -> str:
+        for hh in household_ids:
+            self._household(conn, case_id, hh)
+        task = m.RecoveryTask(
+            task_id=task_id or new_id("task"), revision=1, title=title, scope=scope, status="proposed",
+            location=location, evidence_ids=list(evidence_ids), household_ids=list(household_ids),
+            assignee_label=assignee_label, confirmation_source=None, confirmed_schedule=None,
+            completion_evidence_ids=[], updated_at=self.now(), superseded_scope=None)
+        conn.execute("INSERT INTO tasks VALUES (?,?,?,?,?,?)",
+                     (task.task_id, case_id, 1, "proposed", dumps(task), task.updated_at))
+        conn.execute("INSERT INTO task_versions VALUES (?,?,?,?,?,?)",
+                     (task.task_id, 1, dumps(task), actor_id, None, task.updated_at))
+        return task.task_id
+
+    def add_task_proposal(self, actor: Actor, case_id: str, *, title: str, scope: str,
+                          household_ids: list[str], location: Optional[m.LocationRef] = None,
+                          evidence_ids: list[str] = (), assignee_label: Optional[str] = None) -> str:
+        """Lead/owner operation; proposals are owner-only until approved."""
+        with self._write() as conn:
+            self._owner_case(conn, actor, case_id)
+            task_id = self._insert_task(conn, case_id, title=title, scope=scope, household_ids=household_ids,
+                                        location=location.model_dump(mode="json") if location else None,
+                                        evidence_ids=list(evidence_ids), assignee_label=assignee_label,
+                                        actor_id=actor.actor_id)
+            self._bump(conn, case_id)
+            self._event(conn, case_id, "task.updated", entity_id=task_id)
+            return task_id
+
+    def _save_task(self, conn, case_id: str, task: dict, actor: Actor, note: Optional[str],
+                   *, analysis: bool = False) -> None:
+        task["revision"] += 1
+        task["updated_at"] = self.now()
+        conn.execute("UPDATE tasks SET revision = ?, status = ?, json = ?, updated_at = ? WHERE task_id = ?",
+                     (task["revision"], task["status"], dumps(task), task["updated_at"], task["task_id"]))
+        conn.execute("INSERT INTO task_versions VALUES (?,?,?,?,?,?)",
+                     (task["task_id"], task["revision"], dumps(task), actor.actor_id, note, task["updated_at"]))
+        self._bump(conn, case_id, analysis=analysis)
+        visible = task["status"] != "proposed" and task["household_ids"]
+        self._event(conn, case_id, "task.updated", audience="households" if visible else "owner",
+                    households=task["household_ids"] if visible else None, entity_id=task["task_id"],
+                    public_summary="Repair task updated" if visible else None)
+
+    def _task_row(self, conn, case_id: str, task_id: str) -> dict:
+        row = conn.execute("SELECT json FROM tasks WHERE task_id = ? AND case_id = ?", (task_id, case_id)).fetchone()
+        if row is None:
+            raise not_found("This task")
+        return json.loads(row["json"])
+
+    def _cmd_transition_task(self, actor, case_id, command: m.TransitionTask, **_) -> m.CommandResult:
+        with self._owner_edit(actor, case_id, command.expected_revision) as conn:
+            task = self._task_row(conn, case_id, command.task_id)
+            if command.expected_task_revision != task["revision"]:
+                raise PlatformError(409, "task_revision_conflict", "This task changed. Reload before editing it.",
+                                    retryable=True, current_revision=conn.execute(
+                                        "SELECT case_revision FROM cases WHERE case_id = ?", (case_id,)).fetchone()[0])
+            if command.status not in TASK_TRANSITIONS[task["status"]]:
+                raise PlatformError(409, "invalid_transition",
+                                    f"A task cannot move from {task['status']} to {command.status}.")
+            note = command.note.strip()
+            if command.status == "accepted":
+                source = (command.confirmation_source or "").strip()
+                if not source:
+                    raise invalid("Record who confirmed acceptance and how.", "confirmation_required")
+                task["confirmation_source"] = source
+            if command.status == "completion_submitted":
+                if not command.evidence_ids:
+                    raise invalid("Completion needs evidence.", "evidence_required")
+                self._require_case_evidence(conn, case_id, command.evidence_ids)
+                task["completion_evidence_ids"] = list(command.evidence_ids)
+            if command.status in ("verified", "cancelled") and not note:
+                raise invalid("A note is required for this step.", "note_required")
+            task["status"] = command.status
+            self._save_task(conn, case_id, task, actor, note or None, analysis=command.status == "verified")
+            return self._result(conn, case_id)
+
+    def revise_task_scope(self, actor: Actor, case_id: str, task_id: str, scope: str,
+                          expected_revision: int) -> m.CommandResult:
+        """Changed accepted scope: new revision, acknowledgment required again, old scope kept."""
+        if not scope.strip():
+            raise invalid("Scope cannot be empty.")
+        with self._owner_edit(actor, case_id, expected_revision) as conn:
+            task = self._task_row(conn, case_id, task_id)
+            if task["status"] in ("verified", "cancelled"):
+                raise PlatformError(409, "invalid_transition", "A finished task cannot change scope.")
+            task["superseded_scope"] = task["scope"]
+            task["scope"] = scope.strip()
+            if task["status"] in ("accepted", "in_progress", "completion_submitted"):
+                task["status"], task["confirmation_source"], task["confirmed_schedule"] = "approved", None, None
+                task["completion_evidence_ids"] = []
+            self._save_task(conn, case_id, task, actor, "Scope changed")
+            return self._result(conn, case_id)
+
+    # notices
+
+    def _cmd_publish_notice(self, actor, case_id, command: m.PublishNotice, **_) -> m.CommandResult:
+        title, body = command.title.strip(), command.body.strip()
+        if not title or not body or len(title) > 200 or len(body) > 4000:
+            raise invalid("A notice needs a title (up to 200 characters) and a body (up to 4000).")
+        if len(command.source_ids) > 50:
+            raise invalid("Too many sources.")
+        with self._owner_edit(actor, case_id, command.expected_revision) as conn:
+            if command.household_ids is not None:
+                if not command.household_ids:
+                    raise invalid("Choose at least one household, or send to everyone.")
+                for hh in command.household_ids:
+                    if conn.execute("SELECT 1 FROM households WHERE household_id = ? AND case_id = ?",
+                                    (hh, case_id)).fetchone() is None:
+                        raise invalid("A household is not on this case.", "household_unavailable")
+            now = self.now()
+            published = m.PublishedNotice(notice_id=new_id("ntc"), title=title, body=body, published_at=now,
+                                          published_by=actor.actor_id, source_ids=command.source_ids)
+            households = list(dict.fromkeys(command.household_ids)) if command.household_ids is not None else None
+            conn.execute("INSERT INTO notices VALUES (?,?,?,?,?,?)",
+                         (published.notice_id, case_id, "published",
+                          json.dumps(households) if households is not None else None, dumps(published), now))
+            self._bump(conn, case_id)
+            self._event(conn, case_id, "notice.published", audience="case" if households is None else "households",
+                        households=households, entity_id=published.notice_id, public_summary="New notice")
+            return self._result(conn, case_id)
+
     # ------------------------------------------------------------------ idempotency
 
     @staticmethod
@@ -651,6 +842,24 @@ class CaseStore:
             return [self._event_model(r) for r in rows
                     if r["audience"] == "case" or actor.household_id in json.loads(r["households_json"] or "[]")]
 
+
+OBSERVATION_TRANSITIONS = {
+    "reported": {"under_review", "verified", "dismissed"},
+    "under_review": {"verified", "dismissed"},
+    "verified": {"under_review"},   # correction: reopen; prior versions are kept
+    "dismissed": {"under_review"},
+}
+
+# 05-SHARED-CONTRACT.md "States": strict chain; any nonterminal state may be cancelled.
+TASK_TRANSITIONS = {
+    "proposed": {"approved", "cancelled"},
+    "approved": {"accepted", "cancelled"},
+    "accepted": {"in_progress", "cancelled"},
+    "in_progress": {"completion_submitted", "cancelled"},
+    "completion_submitted": {"verified", "cancelled"},
+    "verified": set(),
+    "cancelled": set(),
+}
 
 MEDIA_ID = re.compile(r"med_[0-9a-f]{20}")
 
