@@ -251,7 +251,8 @@ export function ScenePage({ id, scenario, step }: Props) {
   }, [after, saved, id, scenario.id]);
   const plan = after ? earlier?.plan ?? null : b?.plan ?? null;
   const actions = useMemo(() => (plan?.actions ?? []).filter((a) => a.site && (!after || a.timing === "after_event")), [plan, after]);
-  const placed = useMemo(() => reports.filter((r) => r.where?.position_id && site?.positions[r.where.position_id]), [reports, site]);
+  // A report of storm damage belongs to the morning after: before the storm it is not on the site. A request for help is shown at every moment.
+  const placed = useMemo(() => reports.filter((r) => after && r.where?.position_id && site?.positions[r.where.position_id]), [reports, site, after]);
 
   // --- what is planned: a pin for every job, and a crew on its way to each one that still fits -------
   useEffect(() => {
@@ -522,7 +523,7 @@ export function ScenePage({ id, scenario, step }: Props) {
       )}
 
       <nav className="scene-jobs" aria-label="The plan">
-        {responses.map((r) => (
+        {responses.filter((r) => after || r.kind === "person").map((r) => (
           <button key={r.id} className="is-resident" aria-pressed={r.report_id === seen} title="Added because a resident said so"
                   onClick={() => { const report = reports.find((x) => x.id === r.report_id); if (!report) return; if (r.report_id === seen) setSeen(null); else if (placed.includes(report)) open(report); else { setSeen(report.id); setPicked(null); setSaid(null); } }}>
             <b>{r.id}</b>{r.title}
