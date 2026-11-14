@@ -83,7 +83,7 @@ def test_the_schedule_multiplies_one_home_across_the_property_and_says_so(run, t
     (tmp_path / "openings").mkdir(); (tmp_path / "openings" / "u1.json").write_text("[]")
     monkeypatch.setattr(flood, "site", lambda pid: {"name": "Hill Court", "address": "1 Hill Rd", "homes": 10, "bounds": [0, 0, 1, 1], "aerial": {"width": 1, "height": 1},
                                                     "buildings": [{"id": "A", "polygon": [], "trees_within_5ft_percent": 20.0}, {"id": "B", "polygon": [], "trees_within_5ft_percent": 80.0}]})
-    monkeypatch.setattr(schedule.portfolio, "rent", lambda pid: {"low": 2000, "high": 2500})
+    monkeypatch.setattr(schedule.portfolio, "floor_plans", lambda pid: [])
     s = schedule.schedule(7)
     kitchen = s["buildings"][1]["units"][0]["rooms"][0]
     assert [b["id"] for b in s["buildings"]] == ["B", "A"] and s["buildings"][0]["exposure_rank"] == 1                       # the building with more brush at its walls ranks first
@@ -94,10 +94,24 @@ def test_the_schedule_multiplies_one_home_across_the_property_and_says_so(run, t
     assert home_total == {"low": 600 + 5 * 210, "high": 1200 + 5 * 210, "lines": 14, "lines_priced": 4}                      # the fridge and three rooms of flooring; nothing else is priced
     assert s["total"]["low"] == home_total["low"] * 10 and s["home"]["multiplied_by"] == 10 and s["buildings"][1]["units"][0]["extrapolated"] is True
     assert sum(b["homes_assumed"] for b in s["buildings"]) == 10 and s["buildings"][1]["homes_assumed"] > s["buildings"][0]["homes_assumed"]
-    assert s["lost_rent_per_month"]["low"] == 20_000 and s["lost_rent_per_month"]["high"] == 25_000 and s["numbers"]["minutes"] == 3.0 and s["numbers"]["model_cost_usd"] is None and s["numbers"]["prices_confirmed"] == 2
+    assert s["lost_rent_per_month"] is None and s["kinds_of_home"][0]["homes"] == 10 and s["numbers"]["minutes"] == 3.0                 # no listing: no rent is known, and it is not made up and s["numbers"]["model_cost_usd"] is None and s["numbers"]["prices_confirmed"] == 2
     assert [r["name"] for r in s["buildings"][1]["units"][0]["rooms"]] == ["Kitchen", "Bedroom", "Closet", "Throughout the home"] and s["buildings"][1]["units"][0]["rooms"][2]["read"] is False
 
 
 def test_a_scan_nobody_has_read_has_no_schedule(run):
     with pytest.raises(schedule.ScheduleError):
         schedule.home(7, "u1")
+
+
+def test_the_listings_kinds_of_home_set_the_multiplication_and_an_unscanned_kind_is_scaled_and_says_so(monkeypatch):
+    plans = [{"name": "1 Bedroom", "beds": 1, "baths": 1, "homes": 59, "sqft_low": 675, "sqft_high": 775, "rent_low": 2095, "rent_high": 2195},
+             {"name": "2 Bedroom", "beds": 2, "baths": 1, "homes": 73, "sqft_low": 775, "sqft_high": 775, "rent_low": 2613, "rent_high": 2613}]
+    monkeypatch.setattr(schedule.portfolio, "floor_plans", lambda pid: plans)
+    unit = {"name": "2BR, 1BA - 775SF", "floor_sqft": 714, "total": {"low": 10_000, "high": 20_000}}
+    one, two = schedule.kinds_of_home(7, unit, 268)                                                   # the record's 268 is not used when the listing describes the homes
+    assert two["scanned"] and two["per_home"] == {"low": 10_000, "high": 20_000} and (two["low"], two["high"]) == (730_000, 1_460_000) and two["basis"] == "the scanned home"
+    assert not one["scanned"] and one["per_home"] == {"low": 9_355, "high": 18_710} and "scaled by floor area (725 sq ft against 775)" in one["basis"]
+    assert schedule._beds_baths("2BR, 1 1/2BA - 830 SF") == (2.0, 1.5) and schedule._beds_baths("Leasing Office") == (None, None)
+    monkeypatch.setattr(schedule.portfolio, "floor_plans", lambda pid: [])
+    only = schedule.kinds_of_home(7, unit, 268)
+    assert len(only) == 1 and only[0]["homes"] == 268 and only[0]["rent_low"] is None

@@ -13,8 +13,9 @@ interface Room { name: string; area_sqft: number | null; read: boolean; items: L
 interface Unit { scan_id: string; name: string; scan_date: string | null; rooms: Room[]; total: Money; multiplied_by: number; statement: string | null }
 interface Building { id: string; exposure_rank: number; brush_within_5ft_percent: number | null; in_fire_zone: boolean | null; homes_assumed: number; polygon: [number, number][]; total: Money; units: Unit[] }
 interface Schedule {
-  property: { id: number; name: string; address: string | null; homes: number; scenario: string; scan_date: string | null; bounds: [number, number, number, number]; aerial: { width: number; height: number } };
+  property: { id: number; name: string; address: string | null; homes: number; homes_on_record: number; scenario: string; scan_date: string | null; bounds: [number, number, number, number]; aerial: { width: number; height: number } };
   total: Money; home: { name: string; total: Money; multiplied_by: number };
+  kinds_of_home: { name: string; homes: number; per_home: Money; low: number | null; high: number | null; basis: string; scanned: boolean }[];
   lost_rent_per_month: { low: number; high: number; how: string } | null;
   numbers: { scans_read: number; rooms_read: number; views_looked_at: number; items_named: number; prices_confirmed: number; minutes: number | null };
   buildings: Building[]; assumptions: string[]; not_counted: string[];
@@ -76,8 +77,15 @@ export function ScheduleTree({ site }: { site: number }) {
         <div className="sc-total">
           <strong>{range(data.total)}</strong>
           <span>to put back what the owner owns inside{data.lost_rent_per_month ? `, and ${short(data.lost_rent_per_month.low)} to ${short(data.lost_rent_per_month.high)} of rent for each month empty` : ""}</span>
-          <em>One scanned home, {range(data.home.total)}, times {data.home.multiplied_by.toLocaleString("en-US")} homes. An extrapolation.{partial ? ` ${data.total.lines_priced} of ${data.total.lines} lines have a confirmed price.` : ""}</em>
+          {partial && <em>{data.total.lines_priced} of {data.total.lines} lines have a confirmed price.</em>}
         </div>
+        <table className="sc-kinds"><tbody>
+          {data.kinds_of_home.map((k) => (
+            <tr key={k.name} title={k.basis}>
+              <th>{k.homes} x {k.name}</th><td>{range(k.per_home)} each</td><td>{k.scanned ? "the scanned home" : "scaled from the scanned home"}</td><td>{range(k)}</td>
+            </tr>
+          ))}
+        </tbody></table>
 
         <ol className="sc-list">
           {data.buildings.map((b) => {

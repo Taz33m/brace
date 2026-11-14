@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 
 from . import flood, insurer_file, inventory_agent, matterport, openings, portfolio
 from .config import CACHE_DIR
@@ -85,6 +86,39 @@ def _share(weights: list[float], whole: int) -> list[int]:
     return out
 
 
+def _beds_baths(name: str | None) -> tuple[float | None, float | None]:
+    """'2BR, 1BA - 775SF' says two bedrooms and one bathroom."""
+    beds, baths = re.search(r"(\d+(?:\.\d+)?)\s*BR", name or "", re.I), re.search(r"(\d+(?:\s*1/2|\.\d+)?)\s*BA", name or "", re.I)
+    return (float(beds.group(1)) if beds else None, float(baths.group(1).replace(" 1/2", ".5")) if baths else None)
+
+
+def kinds_of_home(property_id: int, unit: dict, record_homes: int) -> list[dict]:
+    """How one scanned home becomes a figure for the property, one row for each kind of home.
+
+    The community's Apartments.com listing says what kinds of home there are and how many of each. The kind that matches
+    the scanned home takes its figure as it stands. A kind that was not scanned takes that figure scaled by floor area,
+    and says so. With no listing, every home on the property record is taken to be like the scanned one.
+    """
+    plans = portfolio.floor_plans(property_id)
+    total = unit["total"]
+    if not plans:
+        return [{"name": "Every home on the record", "homes": record_homes, "per_home": {"low": total["low"], "high": total["high"]}, **_times(total, record_homes),
+                 "basis": "the scanned home; the record does not say what kinds of home there are", "scanned": False, "rent_low": None, "rent_high": None}]
+    beds, baths = _beds_baths(unit["name"])
+    same = [p for p in plans if p["beds"] == beds and (baths is None or p["baths"] == baths)]
+    like = min(same, key=lambda p: abs(((p["sqft_low"] or 0) + (p["sqft_high"] or 0)) / 2 - unit["floor_sqft"])) if same else None
+    size = lambda p: ((p["sqft_low"] or 0) + (p["sqft_high"] or 0)) / 2
+    base = size(like) if like and size(like) else unit["floor_sqft"]
+    rows = []
+    for p in plans:
+        k = 1.0 if p is like else (size(p) / base if size(p) and base else 1.0)
+        per = {"low": round(total["low"] * k) if total["low"] is not None else None, "high": round(total["high"] * k) if total["high"] is not None else None}
+        rows.append({"name": p["name"], "homes": p["homes"], "per_home": per, **_times(per, p["homes"]), "scanned": p is like,
+                     "basis": "the scanned home" if p is like else f"the scanned home's figure scaled by floor area ({size(p):,.0f} sq ft against {base:,.0f}); no home of this kind was scanned",
+                     "rent_low": p["rent_low"], "rent_high": p["rent_high"]})
+    return rows
+
+
 def home(property_id: int, scan_id: str) -> dict:
     """One scanned home as rooms and lines: the fit-out the agent read, and the building work its measurements call for."""
     inv = inventory_agent.saved(scan_id)
@@ -139,7 +173,12 @@ def schedule(property_id: int, scan_id: str | None = None) -> dict:
     if not scan_id:
         raise ScheduleError("no scan at this property has been read yet")
     unit = home(property_id, scan_id)
-    homes = s["homes"] or 0
+    record_homes = s["homes"] or 0
+    kinds = kinds_of_home(property_id, unit, record_homes)
+    homes = sum(k["homes"] for k in kinds)
+    priced = [k for k in kinds if k["low"] is not None]
+    total = {"low": sum(k["low"] for k in priced) if priced else None, "high": sum(k["high"] for k in priced) if priced else None}
+    each = {"low": total["low"] / homes if total["low"] is not None and homes else None, "high": total["high"] / homes if total["high"] is not None and homes else None}
     sizes = {st["id"]: st.get("footprint_sqft") or 0 for st in bundle["structures"]}
     rows = sorted(s["buildings"], key=lambda b: -(b.get("trees_within_5ft_percent") or 0))
     shares = dict(zip([b["id"] for b in rows], _share([sizes.get(b["id"], 0) for b in rows], homes)))
@@ -147,33 +186,36 @@ def schedule(property_id: int, scan_id: str | None = None) -> dict:
     for rank, b in enumerate(rows, 1):
         n = shares[b["id"]]
         buildings.append({"id": b["id"], "exposure_rank": rank, "brush_within_5ft_percent": b.get("trees_within_5ft_percent"), "in_fire_zone": None, "homes_assumed": n,
-                          "polygon": b["polygon"], "total": _times(unit["total"], n),
-                          "units": [{**unit, "multiplied_by": n, "extrapolated": True}] if b["id"] == unit["under_roof"] else []})
-    try:
-        rent = portfolio.rent(property_id)
-    except (KeyError, ValueError):
-        rent = None
+                          "polygon": b["polygon"], "total": {"low": round(each["low"] * n) if each["low"] is not None else None, "high": round(each["high"] * n) if each["high"] is not None else None},
+                          "units": [{**unit, "multiplied_by": next((k["homes"] for k in kinds if k["scanned"]), n), "extrapolated": True}] if b["id"] == unit["under_roof"] else []})
+    rented = [k for k in kinds if k["rent_low"] and k["rent_high"]]
     try:
         price_run = json.loads(PRICES.read_text())
     except (OSError, ValueError):
         price_run = {}
-    used = {l["source_url"] and (l["what"] if l["from"].startswith("read") else l["what"]) for room in unit["rooms"] for l in room["items"] if l["low"] is not None}
+    used = {l["what"] for room in unit["rooms"] for l in room["items"] if l["low"] is not None}
     confirmed = len(used)      # the kinds of line on this schedule that carry a confirmed price
     seconds = (unit.get("seconds") or 0) + (price_run.get("seconds") or 0)
+    listed = bool(portfolio.floor_plans(property_id))
     return {
-        "property": {"id": property_id, "name": s["name"], "address": s["address"], "homes": homes, "scenario": "fire reaches the building", "scan_date": unit["scan_date"],
-                     "bounds": s["bounds"], "aerial": s["aerial"]},
-        "total": {**_times(unit["total"], homes), "lines": unit["total"]["lines"], "lines_priced": unit["total"]["lines_priced"]},
+        "property": {"id": property_id, "name": s["name"], "address": s["address"], "homes": homes, "homes_on_record": record_homes, "scenario": "fire reaches the building",
+                     "scan_date": unit["scan_date"], "bounds": s["bounds"], "aerial": s["aerial"]},
+        "total": {**total, "lines": unit["total"]["lines"], "lines_priced": unit["total"]["lines_priced"]},
         "home": {"name": unit["name"], "total": unit["total"], "multiplied_by": homes},
-        "lost_rent_per_month": ({"low": round(rent["low"] * homes), "high": round(rent["high"] * homes), "how": f"{homes:,} homes x the asking rent, ${rent['low']:,.0f} to ${rent['high']:,.0f} a month"}
-                                if rent and homes else None),
+        "kinds_of_home": kinds,
+        "lost_rent_per_month": ({"low": round(sum(k["rent_low"] * k["homes"] for k in rented)), "high": round(sum(k["rent_high"] * k["homes"] for k in rented)),
+                                 "how": "; ".join(f"{k['homes']} x ${k['rent_low']:,.0f}" + (f" to ${k['rent_high']:,.0f}" if k["rent_high"] != k["rent_low"] else "") for k in rented) + " a month, asking rents"}
+                                if rented else None),
         "numbers": {"scans_read": 1, "rooms_read": unit["numbers"]["rooms_read"], "views_looked_at": unit["numbers"]["views_looked_at"], "items_named": unit["numbers"]["items_named"],
                     "prices_confirmed": confirmed, "minutes": round(seconds / 60, 1) if seconds else None, "model_cost_usd": None},
         "buildings": buildings,
         "assumptions": [
             "The scenario is stated, not forecast: fire reaches the building and the fit-out of its homes is a total loss.",
-            f"One scanned home stands for all {homes:,} homes at the property. That is an extrapolation: homes differ in size and finish.",
-            "Homes are shared among the buildings by roof area, because the record gives a count for the property, not for each building.",
+            (f"The kinds of home and how many of each are from the community's Apartments.com listing: {homes:,} homes. The kind that was scanned takes the scanned home's figure; a kind that was not is scaled by floor area. Both are extrapolations."
+             + (f" CoStar's property record gives {record_homes:,}; the schedule counts only the homes the listing describes." if record_homes and record_homes != homes else "")
+             if listed else f"The record does not say what kinds of home there are, so all {homes:,} are taken to be like the scanned one. That is an extrapolation."),
+            "Homes are shared among the buildings by roof area, because no source gives a count for each building.",
+            "Rent is the listing's asking rent for each kind of home, not a lease.",
             "Fit-out was named and counted by an agent looking at the scan's own pictures. Each line says where it was seen.",
             "Floor, wall and door quantities are Matterport's measurements of the scan. Doorways are taken out of the walls. Ceilings are not counted.",
             "A line is priced only when a fetch of the page confirmed the price. Where a page gives a range, both ends are carried through.",

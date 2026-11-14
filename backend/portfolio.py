@@ -194,6 +194,31 @@ def rent(property_id: int) -> dict | None:
     return _RENTS.get(int(property_id))
 
 
+_PLANS: dict[int, list[dict]] | None = None
+
+
+def floor_plans(property_id: int) -> list[dict]:
+    """The kinds of home a community lists, from its Apartments.com listing in the kit: bedrooms, bathrooms, size, how many
+    there are and what they are advertised at. Empty when it has no listing. Counts are the listing's, which can differ
+    from the property record's."""
+    global _PLANS
+    if _PLANS is None:
+        found: dict[int, list[dict]] = {}
+        try:
+            with open(KIT_DIR / "data" / "apartment-listing.jsonl") as f:
+                for line in f:
+                    r = json.loads(line)
+                    plans = [{"name": m.get("name"), "beds": m.get("numBeds"), "baths": m.get("numBaths"), "homes": m.get("numUnits"),
+                              "sqft_low": m.get("minSquareFeet"), "sqft_high": m.get("maxSquareFeet"), "rent_low": m.get("minRent"), "rent_high": m.get("maxRent")}
+                             for m in r.get("apartmentModels") or [] if m.get("numUnits")]
+                    if r.get("propertyId") and plans:
+                        found[int(r["propertyId"])] = plans
+        except OSError:
+            pass
+        _PLANS = found
+    return _PLANS.get(int(property_id), [])
+
+
 def homes_available_near(property_id: int, within_km: float = 3.0, limit: int = 4) -> list[dict]:
     """Where a household could go if its home cannot be lived in: apartment communities with homes listed as
     available, this one first and then the nearest, each with its asking rents.
