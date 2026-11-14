@@ -492,6 +492,17 @@ export function ScenePage({ id, scenario, step }: Props) {
           <h2>“{shown.text.replace(/^Support request \([^)]*\):\s*/, "")}”</h2>
           {shown.where && <p className="scene-who">{shown.where.room}{shown.where.thing ? `, at the ${shown.where.thing}` : ""}{shown.where.scan_name ? `. ${shown.where.scan_name}` : ""}</p>}
           {added && <p className="scene-added"><strong>Added to the work</strong>{added.title}. {added.who.replace(/^./, (c) => c.toUpperCase())}, {added.when}.</p>}
+          {added?.kind === "inspect" && housing.length > 0 && (
+            <div className="scene-housing">
+              <strong>If this home cannot be lived in</strong>
+              <ul>
+                {housing.slice(0, 3).map((h) => (
+                  <li key={h.property_id}><span>{h.same_community ? "Here" : `${h.name}, ${h.km.toFixed(1)} km`}</span><b>{h.available} homes free, {costRange(h.low, h.high)} a month</b></li>
+                ))}
+              </ul>
+              <p className="scene-basis">Homes listed as available and their asking rents, from CoStar apartment listings. Not a reservation.</p>
+            </div>
+          )}
           {shown.check && (
             <>
               <p className={`scene-verdict is-${shown.check.verdict}`}>{shown.check.says}</p>
@@ -506,17 +517,6 @@ export function ScenePage({ id, scenario, step }: Props) {
               </ul>
               {shown.check.before?.basis && <p className="scene-basis">{String(shown.check.before.basis)}</p>}
             </>
-          )}
-          {added?.kind === "inspect" && housing.length > 0 && (
-            <div className="scene-housing">
-              <strong>If this home cannot be lived in</strong>
-              <ul>
-                {housing.slice(0, 3).map((h) => (
-                  <li key={h.property_id}><span>{h.same_community ? "Here" : `${h.name}, ${h.km.toFixed(1)} km`}</span><b>{h.available} homes free, {costRange(h.low, h.high)} a month</b></li>
-                ))}
-              </ul>
-              <p className="scene-basis">Homes listed as available and their asking rents, from CoStar apartment listings. Not a reservation.</p>
-            </div>
           )}
         </aside>
       )}

@@ -96,7 +96,7 @@ button.scene-report { display: block; border: 0; border-left: 3px solid var(--em
 .scene-verdict.is-fits { background: rgba(88, 211, 155, 0.2); }
 .scene-verdict.is-wrong_place { background: rgba(255, 122, 60, 0.2); }
 .scene-before { margin: 12px 0 0; }
-.scene-before img { display: block; width: 100%; aspect-ratio: 3 / 2; object-fit: cover; border-radius: 8px; background: #05070a; }
+.scene-before img { display: block; width: 100%; aspect-ratio: 2 / 1; object-fit: cover; border-radius: 8px; background: #05070a; }
 .scene-before figcaption, .scene-basis { margin-top: 6px; font-size: 11.5px; line-height: 1.35; color: rgba(244, 241, 234, 0.6); }
 
 /* People first: a resident's own request for help sits under the clock at every moment. */
@@ -105,14 +105,16 @@ button.scene-report { display: block; border: 0; border-left: 3px solid var(--em
 .scene-asks strong { display: block; font-family: var(--cond); font-size: 17px; line-height: 1.1; color: var(--ember); }
 .scene.is-placing .scene-asks { display: none; }
 .scene-check { max-height: calc(100vh - 220px); overflow-y: auto; scrollbar-width: none; }
-.scene-check .scene-measured li { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.scene-check .scene-measured li { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 
 /* Work that a resident's own words added leads the row, in the colour of a report. */
 .scene-jobs button.is-resident { border-color: rgba(255, 122, 60, 0.55); }
 .scene-jobs button.is-resident b { color: #14110f; background: var(--ember); width: auto; min-width: 24px; padding: 0 6px; border-radius: 12px; }
 .scene-added { margin-top: 12px; padding: 10px 12px; border-radius: 8px; font-size: 14.5px; line-height: 1.35; background: rgba(255, 122, 60, 0.16); }
 .scene-added strong, .scene-housing > strong { display: block; margin-bottom: 3px; font-size: 11.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ember); }
-.scene-housing { margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(244, 241, 234, 0.14); }
+.scene-housing { margin-top: 12px; padding: 10px 12px; border-radius: 8px; background: rgba(0, 176, 230, 0.12); }
+.scene-check h2 { font-size: 22px; }
+.scene-check .scene-basis { margin-top: 5px; }
 .scene-housing > strong { color: var(--sky); }
 .scene-housing ul { margin: 6px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 5px; }
 .scene-housing li { display: flex; justify-content: space-between; gap: 12px; font-size: 13.5px; line-height: 1.3; }
