@@ -54,6 +54,8 @@ interface Chapter {
   stops?: { label: string; from: number }[];       // one building at several moments: the bar under it
 }
 
+// A job of the plan on the live site. Not the jobs residents' words added, which sit in the same row.
+const JOB = ".scene-jobs button:not(.is-resident)";
 const at = (scenario: string, step: string, building: number) => `#/scene/${scenario}/${step}/b/${building}`;
 const P = 4303509, V = 9519837, G = 1507455;
 const HOUSTON: Chapter = {
@@ -65,10 +67,10 @@ const HOUSTON: Chapter = {
   site: [
     { from: 0, cues: [{ hash: at("beryl-2024", "adv33", P) }, { key: "1" }] },
     { from: 3.2, cues: [{ hash: at("beryl-2024", "adv33", P) }, { key: "2" }] },
-    { from: 6.2, cues: [{ hash: at("beryl-2024", "adv33", P) }, { key: "1" }, { click: ".scene-jobs button", text: /evergreen|pine/i, wait: 1500 }] },
+    { from: 6.2, cues: [{ hash: at("beryl-2024", "adv33", P) }, { key: "1" }, { click: JOB, text: /evergreen|pine/i, wait: 1500 }] },
     { from: 9.2, cues: [{ hash: at("beryl-2024", "adv33", P) }, { key: "1" }] },
     { from: 12.4, cues: [{ hash: at("beryl-2024", "adv37", P) }, { key: "1", wait: 900 }] },
-    { from: 15.4, cues: [{ hash: at("beryl-2024", "adv37", P) }, { click: ".scene-jobs button", text: /resident/i, wait: 400 }] },
+    { from: 15.4, cues: [{ hash: at("beryl-2024", "adv37", P) }, { click: JOB, text: /resident/i, wait: 400 }] },
     { from: 18.4, cues: [{ hash: at("beryl-2024", "adv39", P) }, { key: "1", wait: 900 }] },
     { from: 21.4, cues: [{ hash: at("beryl-2024", "adv39", P) }, { key: "3", wait: 700 }] },
   ],
@@ -83,9 +85,9 @@ const LOS_ANGELES: Chapter = {
   whisper: "Every building inside the warning.", city: "Los Angeles, California", counted: "buildings inside the Red Flag Warning", clock: "hours until the Red Flag Warning starts",
   site: [
     { from: 0, cues: [{ key: "1" }] },
-    { from: 3.2, cues: [{ key: "1" }, { click: ".scene-jobs button", text: /limbs|within 5 ft/i, wait: 1500 }] },
-    { from: 6.2, cues: [{ key: "1" }, { click: ".scene-jobs button", text: /gutter/i, wait: 1500 }] },
-    { from: 9.2, cues: [{ key: "1" }, { click: ".scene-jobs button", text: /defensible/i, wait: 1500 }] },
+    { from: 3.2, cues: [{ key: "1" }, { click: JOB, text: /limbs|within 5 ft/i, wait: 1500 }] },
+    { from: 6.2, cues: [{ key: "1" }, { click: JOB, text: /gutter/i, wait: 1500 }] },
+    { from: 9.2, cues: [{ key: "1" }, { click: JOB, text: /defensible/i, wait: 1500 }] },
   ],
   length: 12.5,
 };
@@ -95,9 +97,9 @@ const HOUSTON_WATER: Chapter = {
   hero: { ...HOUSTON.hero, lead: ["The water", "is coming"], said: "The water is coming. Thirty-nine hours out." },
   site: [
     { from: 0, cues: [{ key: "1" }] },
-    { from: 3.2, cues: [{ key: "1" }, { click: ".scene-jobs button", text: /channel|south lot/i, wait: 1500 }] },
-    { from: 6.2, cues: [{ key: "1" }, { click: ".scene-jobs button", text: /ground-floor/i, wait: 1500 }] },
-    { from: 9.2, cues: [{ key: "1" }, { click: ".scene-jobs button", text: /open roof bay/i, wait: 1500 }] },
+    { from: 3.2, cues: [{ key: "1" }, { click: JOB, text: /channel|south lot/i, wait: 1500 }] },
+    { from: 6.2, cues: [{ key: "1" }, { click: JOB, text: /ground-floor/i, wait: 1500 }] },
+    { from: 9.2, cues: [{ key: "1" }, { click: JOB, text: /open roof bay/i, wait: 1500 }] },
   ],
   length: 12.5, notice: undefined, decide: undefined, stops: undefined,
 };
