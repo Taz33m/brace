@@ -112,7 +112,7 @@ export function HomePage() {
         <CabinWindow />
         <div className="st-safe">
           <h1 className="st-lead st-home-mark">Brace</h1>
-          <p className="st-home-line">Do nothing, and the flood costs this much.<br />Spend this, and it costs less.</p>
+          <p className="st-home-line">What a flood costs if you do nothing, and what a budget buys.</p>
           <nav className="st-menu" aria-label="Start">
             <a href="#/flood"><strong>Flood test</strong></a>
           </nav>

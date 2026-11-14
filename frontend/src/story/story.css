@@ -165,7 +165,7 @@ html.st-on, html.st-on body, html.st-on #root { height: auto; min-height: 100%; 
 .st-homepage { position: fixed; inset: 0; overflow: hidden; }
 .st-home-stage { position: absolute; inset: 0; height: auto; }
 .st-home-mark { top: 12%; }
-.st-home-line { position: absolute; left: 6vw; top: calc(12% + clamp(3.1rem, 7.6vw, 8.8rem) + 22px); margin: 0; font: 300 clamp(1.2rem, 1.7vw, 1.7rem)/1.25 var(--heading); color: rgba(243, 236, 224, 0.85); }
+.st-home-line { max-width: 24vw; position: absolute; left: 6vw; top: calc(12% + clamp(3.1rem, 7.6vw, 8.8rem) + 22px); margin: 0; font: 300 clamp(1.2rem, 1.7vw, 1.7rem)/1.25 var(--heading); color: rgba(243, 236, 224, 0.85); }
 .st-menu { position: absolute; right: 6vw; bottom: 7%; width: min(27rem, 30vw); display: flex; flex-direction: column; }
 .st-menu em { display: block; margin-bottom: 9px; font: 500 11px/1 var(--sans); font-style: normal; letter-spacing: 0.24em; text-transform: uppercase; color: var(--champagne); }
 .st-menu a { display: block; padding: 13px 0 14px; border-top: 1px solid rgba(215, 194, 158, 0.35); color: var(--ivory); text-decoration: none; transition: padding-left 300ms ease, color 300ms ease; }
