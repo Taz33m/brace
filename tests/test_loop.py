@@ -6,7 +6,7 @@ from fastapi import Request
 
 from backend import site_model
 from backend.recovery.site_activity import case_activity
-from tests.test_preparation_approval import PATH, bridge  # noqa: F401  (bridge is a fixture)
+from tests.test_preparation_approval import PATH, SCENARIO, bridge  # noqa: F401  (bridge is a fixture)
 
 
 def test_approval_reaches_the_resident_and_the_residents_answer_comes_back_placed(bridge, tmp_path, monkeypatch):
@@ -23,6 +23,10 @@ def test_approval_reaches_the_resident_and_the_residents_answer_comes_back_place
     @app.get("/api/test/buildings/{building_id}/reports")
     def reports(building_id: int, request: Request):
         return site_model.place(building_id, case_activity(request, building_id))
+
+    @app.get("/api/test/planner/{scenario}")
+    def planner_reports(scenario: str, request: Request):
+        return case_activity(request, 7, scenario=scenario, reports_only=True, replay=True)
 
     # 1. Nothing has reached the resident, and nothing has come back.
     assert resident.get("/api/resident/home").json()["notices"] == []
@@ -47,6 +51,12 @@ def test_approval_reaches_the_resident_and_the_residents_answer_comes_back_place
     placed = back["The bedroom window is letting water in"]["where"]
     assert placed["room"] == "Bedroom" and placed["thing"] == "window" and placed["placed_by"] == "description"
     assert back["I need help getting down"]["where"] is None
+    assert resident.post("/api/resident/reports",
+                         json={"category": "water", "text": "Water under the balcony door",
+                               "selected_location_id": None, "observed_at": None, "upload_ids": []},
+                         headers={"Idempotency-Key": "loop-test-0003"}).status_code == 200
+    assert [row["text"] for row in owner.get(f"/api/test/planner/{SCENARIO}").json()] == ["Water under the balcony door"]
+    assert owner.get("/api/test/planner/another-storm").json() == []
 
     # 6. A resident of another building's case sees none of it, and a resident cannot read the owner's side.
     assert bridge["other"].get("/api/resident/home").json()["notices"] == []

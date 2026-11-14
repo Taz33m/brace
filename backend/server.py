@@ -495,15 +495,15 @@ def voice_notes(building: int, scenario: str, step: str | None = None, view: str
 class Run:
     """A live plan: a worker thread appending events that any number of streams can follow."""
 
-    def __init__(self, site: Site, threat: dict):
+    def __init__(self, site: Site, threat: dict, resident_reports: list[dict]):
         self.events: list[dict] = []
         self.done = False
         self.lock = threading.Lock()
-        threading.Thread(target=self._work, args=(site, threat), daemon=True).start()
+        threading.Thread(target=self._work, args=(site, threat, resident_reports), daemon=True).start()
 
-    def _work(self, site: Site, threat: dict) -> None:
+    def _work(self, site: Site, threat: dict, resident_reports: list[dict]) -> None:
         try:
-            Planner(site, threat, emit=self._emit).run()
+            Planner(site, threat, emit=self._emit, resident_reports=resident_reports).run()
         except Exception as e:  # constructing the client can fail before the loop's own handling
             self._emit({"type": "error", "t": 0, "message": str(e)})
             self._emit({"type": "done", "t": 0, "stop": "error", "plan": None})
@@ -519,14 +519,21 @@ RUNS: dict[tuple[int, str], Run] = {}
 
 
 @app.post("/api/buildings/{property_id}/plan")
-def start_plan(property_id: int, scenario: str, step: str | None = None) -> dict:
+def start_plan(property_id: int, scenario: str, request: Request, step: str | None = None) -> dict:
     sc = _scenario(scenario)
     step_id = _step(sc, step)
     s = _site(property_id)
     key = (property_id, _plan_key(scenario, step_id))
     run = RUNS.get(key)
     if run is None or run.done:
-        RUNS[key] = Run(s, screen.threat_for(scenario, step_id, s.d["record"]))
+        from .recovery.site_activity import case_activity
+
+        threat = screen.threat_for(scenario, step_id, s.d["record"])
+        reports = case_activity(request, property_id, scenario=scenario, reports_only=True, replay=bool(threat.get("replay")))
+        reports = sorted(reports, key=lambda row: row["at"], reverse=True)[:20]
+        inputs = [{"id": row["id"], "reported_at": row["at"], "text": row["text"][:1000],
+                   "review_status": row["status"]} for row in reports]
+        RUNS[key] = Run(s, threat, inputs)
         return {"started": True}
     return {"started": False, "running": True}
 
