@@ -1,0 +1,540 @@
+/* Brace recovery workspace: the foundation layer.
+   A port of Standard Response's paper look onto Brace's own faces (Barlow, Barlow Condensed).
+   Every selector starts with .brace-recovery so the preparation screens keep their behaviour.
+   The global `button` rule in styles.css still reaches in here, so every scoped button class sets
+   its own border, radius and background, and its own hover. */
+
+.brace-recovery {
+  /* Paper and ink: warm paper canvas, near-white floating cards. */
+  --r-canvas: #f8f6f1;
+  --r-surface: #fefdfb;
+  --r-sunk: #f1eee9;
+  --r-line: #e2dfd9;
+  --r-line-strong: #c6c2bb;
+  --r-ink: #221d19;
+  --r-ink-muted: #625b55;
+  /* Brace's signal colours, each with one meaning. */
+  --r-signal: #cf4a1a; /* hazard or attention */
+  --r-danger: #b81f35; /* errors only */
+  --r-verified: #16756d; /* verified only */
+  --r-pending: #c99408; /* pending or under review */
+  --r-info: #1d5fbf; /* info, links, focus */
+  --r-radius: 14px;
+  --r-radius-sm: 8px;
+  --r-shadow-float: 0 1px 2px rgba(60, 44, 28, 0.08), 0 6px 20px rgba(60, 44, 28, 0.1);
+  --r-face-body: "Barlow", "Helvetica Neue", Arial, sans-serif;
+  --r-face-display: "Barlow Condensed", "Arial Narrow", sans-serif;
+
+  /* Extras (not part of the brief's required list; safe to use). */
+  --r-muted-mark: #9a938b;
+  --r-pending-ink: #835f00; /* gold dark enough for text on paper */
+  --r-signal-soft: #fbe9e1;
+  --r-danger-soft: #fbe8eb;
+  --r-pending-soft: #fbf1d3;
+  --r-ink-hover: #3b342e;
+  --r-hatch: repeating-linear-gradient(135deg, currentColor 0 1.5px, transparent 1.5px 7px);
+  --r-ease: cubic-bezier(0.2, 0, 0, 1);
+
+  font-family: var(--r-face-body);
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--r-ink);
+  background: var(--r-canvas);
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---------- shared utilities ---------- */
+.brace-recovery .r-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+/* Hatching marks something that no longer holds: changed scope, stale or superseded. */
+.brace-recovery .r-hatch { background-image: var(--r-hatch); }
+.brace-recovery .r-figure { font-family: var(--r-face-display); font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+.brace-recovery .r-display { font-family: var(--r-face-display); font-weight: 700; font-size: 30px; line-height: 1.05; }
+.brace-recovery .r-title { font-family: var(--r-face-display); font-weight: 700; font-size: 22px; line-height: 1.15; }
+.brace-recovery .r-heading { font-family: var(--r-face-display); font-weight: 600; font-size: 18px; line-height: 1.2; }
+.brace-recovery .r-small { font-size: 13px; line-height: 1.4; }
+.brace-recovery .r-caption { font-size: 12px; line-height: 1.3; }
+.brace-recovery .r-muted { color: var(--r-ink-muted); }
+.brace-recovery .r-card {
+  background: var(--r-surface);
+  color: var(--r-ink);
+  border-radius: var(--r-radius);
+  box-shadow: var(--r-shadow-float);
+}
+
+/* Focus is always visible, for keyboard users only. */
+.brace-recovery :focus-visible { outline: 2px solid var(--r-info); outline-offset: 2px; }
+.brace-recovery :focus:not(:focus-visible) { outline: none; }
+
+/* ---------- Panel ---------- */
+.brace-recovery .r-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--r-surface);
+  color: var(--r-ink);
+  border-radius: var(--r-radius);
+  box-shadow: var(--r-shadow-float);
+}
+.brace-recovery .r-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 46px;
+  padding: 4px 16px 0;
+}
+.brace-recovery .r-panel.is-collapsible .r-panel-head { padding-right: 6px; }
+.brace-recovery .r-panel.is-collapsed .r-panel-head { padding-bottom: 4px; }
+.brace-recovery .r-panel-title {
+  margin: 0;
+  min-width: 0;
+  font-family: var(--r-face-display);
+  font-weight: 700;
+  font-size: 19px;
+  line-height: 1.2;
+  letter-spacing: 0.005em;
+}
+.brace-recovery .r-panel-aside {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: none;
+  color: var(--r-ink-muted);
+  font-size: 13px;
+}
+.brace-recovery .r-panel-body { padding: 4px 16px 16px; min-width: 0; }
+
+/* Icon-only button (collapse caret, dismiss). */
+.brace-recovery .r-icon-btn {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  border-radius: var(--r-radius-sm);
+  background: transparent;
+  color: var(--r-ink-muted);
+  cursor: pointer;
+  transition: background-color 150ms var(--r-ease), color 150ms var(--r-ease);
+}
+.brace-recovery .r-icon-btn:hover:not(:disabled) { background: var(--r-sunk); color: var(--r-ink); }
+.brace-recovery .r-icon-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.brace-recovery .r-icon-btn svg { width: 16px; height: 16px; display: block; }
+.brace-recovery .r-caret { transition: transform 150ms var(--r-ease); }
+.brace-recovery .r-panel.is-collapsed .r-caret { transform: rotate(-90deg); }
+
+/* ---------- Button ---------- */
+.brace-recovery .r-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 34px;
+  margin: 0;
+  padding: 6px 14px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: var(--r-sunk);
+  color: var(--r-ink);
+  font-family: var(--r-face-body);
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: none;
+  transition: background-color 150ms var(--r-ease), color 150ms var(--r-ease), border-color 150ms var(--r-ease);
+}
+.brace-recovery .r-btn:hover:not(:disabled) { background: var(--r-line); border-color: transparent; }
+.brace-recovery .r-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.brace-recovery .r-btn[aria-busy="true"] { opacity: 0.8; cursor: progress; }
+
+.brace-recovery .r-btn--primary { background: var(--r-ink); border-color: var(--r-ink); color: var(--r-surface); }
+.brace-recovery .r-btn--primary:hover:not(:disabled) { background: var(--r-ink-hover); border-color: var(--r-ink-hover); }
+
+.brace-recovery .r-btn--default { background: var(--r-surface); border-color: var(--r-line-strong); color: var(--r-ink); }
+.brace-recovery .r-btn--default:hover:not(:disabled) { background: var(--r-sunk); border-color: var(--r-ink-muted); }
+
+.brace-recovery .r-btn--quiet { background: transparent; border-color: transparent; color: var(--r-ink-muted); }
+.brace-recovery .r-btn--quiet:hover:not(:disabled) { background: var(--r-sunk); border-color: transparent; color: var(--r-ink); }
+
+.brace-recovery .r-btn--danger { background: var(--r-surface); border-color: var(--r-danger); color: var(--r-danger); }
+.brace-recovery .r-btn--danger:hover:not(:disabled) { background: var(--r-danger-soft); border-color: var(--r-danger); }
+
+.brace-recovery .r-spinner {
+  display: inline-block;
+  flex: none;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  animation: r-spin 800ms linear infinite;
+}
+@keyframes r-spin { to { transform: rotate(360deg); } }
+
+/* ---------- SegmentedControl: a sunken pill group, active segment is a dark ink pill ---------- */
+.brace-recovery .r-seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 100%;
+  flex: none;
+  padding: 2px;
+  border-radius: 12px;
+  background: var(--r-sunk);
+  overflow-x: auto;
+}
+.brace-recovery .r-seg-btn {
+  display: inline-flex;
+  align-items: center;
+  height: 30px;
+  margin: 0;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--r-ink);
+  font-family: var(--r-face-body);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 150ms var(--r-ease), color 150ms var(--r-ease);
+}
+.brace-recovery .r-seg-btn:hover:not(:disabled) { background: var(--r-surface); }
+.brace-recovery .r-seg-btn[aria-pressed="true"],
+.brace-recovery .r-seg-btn[aria-pressed="true"]:hover:not(:disabled) { background: var(--r-ink); color: var(--r-surface); }
+.brace-recovery .r-seg-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+/* .r-seg scrolls sideways on narrow widths, and a scroll container clips on every side, so the ring is drawn
+   inside the segment (as on tabs). A paper band inside the ring keeps it readable on the dark active pill. */
+.brace-recovery .r-seg-btn:focus-visible { outline-offset: -2px; box-shadow: inset 0 0 0 4px var(--r-surface); }
+
+/* ---------- Tabs ---------- */
+.brace-recovery .r-tabs {
+  display: flex;
+  gap: 2px;
+  min-width: 0;
+  overflow-x: auto;
+  box-shadow: inset 0 -1px 0 var(--r-line);
+}
+.brace-recovery .r-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  margin: 0;
+  padding: 10px 12px 9px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--r-ink-muted);
+  font-family: var(--r-face-display);
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 150ms var(--r-ease), box-shadow 150ms var(--r-ease);
+}
+.brace-recovery .r-tab:hover:not(:disabled) { background: transparent; color: var(--r-ink); box-shadow: inset 0 -2px 0 var(--r-line-strong); }
+.brace-recovery .r-tab[aria-selected="true"],
+.brace-recovery .r-tab[aria-selected="true"]:hover:not(:disabled) { color: var(--r-ink); box-shadow: inset 0 -2px 0 var(--r-ink); }
+.brace-recovery .r-tab:focus-visible { outline-offset: -2px; }
+.brace-recovery .r-tab-count {
+  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--r-sunk);
+  color: var(--r-ink);
+  font-family: var(--r-face-body);
+  font-size: 11.5px;
+  font-weight: 700;
+  line-height: 1.3;
+  text-align: center;
+}
+.brace-recovery .r-tab[aria-selected="true"] .r-tab-count { background: var(--r-ink); color: var(--r-surface); }
+.brace-recovery .r-tabpanel { min-width: 0; }
+.brace-recovery .r-tabpanel[hidden] { display: none; }
+.brace-recovery .r-tabpanel:focus-visible { outline-offset: -2px; }
+
+/* ---------- StatusMark: compact 9px marks, always with a text label ---------- */
+.brace-recovery .r-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--r-ink);
+}
+.brace-recovery .r-status-label { min-width: 0; }
+.brace-recovery .r-mark {
+  display: inline-block;
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  color: var(--r-tone, var(--r-ink));
+}
+.brace-recovery .r-tone-neutral { --r-tone: var(--r-ink); }
+.brace-recovery .r-tone-pending { --r-tone: var(--r-pending); }
+.brace-recovery .r-tone-verified { --r-tone: var(--r-verified); }
+.brace-recovery .r-tone-attention { --r-tone: var(--r-signal); }
+.brace-recovery .r-tone-danger { --r-tone: var(--r-danger); }
+.brace-recovery .r-tone-muted { --r-tone: var(--r-muted-mark); }
+.brace-recovery .r-tone-info { --r-tone: var(--r-info); }
+.brace-recovery .r-status.r-tone-muted { color: var(--r-ink-muted); }
+.brace-recovery .r-status.r-tone-danger { color: var(--r-danger); }
+.brace-recovery .r-mark--filled { background: currentColor; }
+.brace-recovery .r-mark--hollow { background: transparent; box-shadow: inset 0 0 0 1.5px currentColor; }
+.brace-recovery .r-mark--ring {
+  background: radial-gradient(circle, currentColor 0 1.6px, transparent 2.1px);
+  box-shadow: inset 0 0 0 1.5px currentColor;
+}
+.brace-recovery .r-mark--hatched {
+  background-image: repeating-linear-gradient(135deg, currentColor 0 1.2px, transparent 1.2px 3.2px);
+  box-shadow: inset 0 0 0 1.2px currentColor;
+}
+
+/* ---------- EvidenceBadge ---------- */
+.brace-recovery .r-evidence {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  max-width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 3px 9px;
+  border: 0;
+  border-radius: var(--r-radius-sm);
+  background: var(--r-sunk);
+  color: var(--r-ink);
+  font-family: var(--r-face-body);
+  font-size: 12.5px;
+  font-weight: 400;
+  line-height: 1.35;
+  text-align: left;
+  vertical-align: middle;
+}
+.brace-recovery .r-evidence-kind {
+  flex: none;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--r-ink-muted);
+}
+.brace-recovery .r-evidence-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.brace-recovery .r-evidence-date { flex: none; color: var(--r-ink-muted); white-space: nowrap; }
+.brace-recovery button.r-evidence { cursor: pointer; transition: background-color 150ms var(--r-ease), color 150ms var(--r-ease); }
+.brace-recovery button.r-evidence:hover:not(:disabled) { background: var(--r-line); }
+.brace-recovery .r-evidence.is-selected,
+.brace-recovery button.r-evidence[aria-pressed="true"],
+.brace-recovery button.r-evidence[aria-pressed="true"]:hover:not(:disabled) { background: var(--r-ink); color: var(--r-surface); }
+.brace-recovery .r-evidence.is-selected .r-evidence-kind,
+.brace-recovery .r-evidence.is-selected .r-evidence-date { color: rgba(255, 255, 255, 0.72); }
+
+/* ---------- Ranges: a thin line spans low to high, a dot marks the point ---------- */
+.brace-recovery .r-range-track { position: relative; display: block; height: 16px; min-width: 60px; }
+.brace-recovery .r-range-axis { position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: var(--r-line); }
+.brace-recovery .r-range-span {
+  position: absolute;
+  top: 50%;
+  height: 4px;
+  min-width: 4px;
+  border-radius: 999px;
+  background: rgba(34, 29, 25, 0.45);
+  transform: translateY(-50%);
+}
+.brace-recovery .r-range-dot {
+  position: absolute;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--r-ink);
+  box-shadow: 0 0 0 2px var(--r-surface);
+  transform: translate(-50%, -50%);
+}
+.brace-recovery .r-range-track.is-unavailable .r-range-axis { display: none; }
+.brace-recovery .r-range-hatch {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 8px;
+  border-radius: 3px;
+  color: var(--r-line-strong);
+  background-image: var(--r-hatch);
+  transform: translateY(-50%);
+}
+.brace-recovery .r-range-track.is-emphasis { height: 22px; }
+.brace-recovery .r-range-track.is-emphasis .r-range-span { height: 7px; }
+.brace-recovery .r-range-track.is-emphasis .r-range-dot { width: 15px; height: 15px; }
+
+.brace-recovery .r-range-list { display: grid; min-width: 0; }
+.brace-recovery .r-range-row {
+  display: grid;
+  grid-template-columns: minmax(0, 9rem) minmax(60px, 1fr) auto;
+  align-items: center;
+  gap: 2px 12px;
+  padding: 6px 0;
+  min-width: 0;
+}
+/* Labels wrap rather than truncate: in a narrow column ("Current condition" at 1100-1300px) the readout
+   keeps its width and the label takes two lines. A single word longer than the column breaks as a last resort. */
+.brace-recovery .r-range-label {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: break-word;
+  line-height: 1.25;
+  font-size: 13px;
+  color: var(--r-ink-muted);
+}
+.brace-recovery .r-range-readout { font-size: 13px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.brace-recovery .r-range-row.is-emphasis .r-range-label { color: var(--r-ink); font-weight: 700; }
+.brace-recovery .r-range-row.is-emphasis .r-range-readout { font-family: var(--r-face-display); font-size: 18px; font-weight: 700; }
+.brace-recovery .r-range-row.is-unavailable .r-range-readout { color: var(--r-ink-muted); font-weight: 600; }
+.brace-recovery .r-range-note { grid-column: 1 / -1; font-size: 12px; line-height: 1.35; color: var(--r-ink-muted); }
+
+/* ---------- EmptyState ---------- */
+.brace-recovery .r-empty {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 24px 16px;
+  text-align: center;
+  color: var(--r-ink-muted);
+  font-size: 13px;
+}
+.brace-recovery .r-empty-title { margin: 0; color: var(--r-ink); font-size: 14px; font-weight: 600; }
+.brace-recovery .r-empty-body { max-width: 44ch; }
+.brace-recovery .r-empty-action { margin-top: 6px; }
+
+/* ---------- ChangedBanner: paper with a hatched strip along the top ---------- */
+.brace-recovery .r-changed {
+  --r-changed-tone: var(--r-signal);
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0 14px 12px;
+  border-radius: var(--r-radius-sm);
+  background: #f4f0e6;
+  color: var(--r-ink);
+  box-shadow: inset 0 0 0 1px var(--r-line);
+}
+.brace-recovery .r-changed--stale { --r-changed-tone: var(--r-pending); }
+.brace-recovery .r-changed--superseded { --r-changed-tone: var(--r-ink-muted); }
+.brace-recovery .r-changed-strip {
+  display: block;
+  height: 10px;
+  margin: 0 -14px 8px;
+  color: var(--r-changed-tone);
+  background-image: var(--r-hatch);
+}
+.brace-recovery .r-changed-title {
+  margin: 0;
+  font-family: var(--r-face-display);
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1.15;
+}
+.brace-recovery .r-changed-prev {
+  font-weight: 600;
+  color: var(--r-ink-muted);
+  text-decoration: line-through;
+  text-decoration-thickness: 2px;
+  overflow-wrap: anywhere;
+}
+.brace-recovery .r-changed-body { font-size: 13.5px; color: var(--r-ink); }
+.brace-recovery .r-changed-action { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* ---------- InlineError ---------- */
+.brace-recovery .r-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  padding: 9px 8px 9px 12px;
+  border-radius: var(--r-radius-sm);
+  background: var(--r-danger-soft);
+  color: #7e1022;
+  box-shadow: inset 3px 0 0 var(--r-danger);
+  font-size: 13.5px;
+}
+.brace-recovery .r-error-glyph {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  border-radius: 50%;
+  background: var(--r-danger);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+}
+.brace-recovery .r-error-text { flex: 1; min-width: 0; padding-top: 1px; overflow-wrap: anywhere; }
+.brace-recovery .r-error-text strong { font-weight: 700; }
+.brace-recovery .r-error-actions { display: flex; align-items: center; gap: 4px; flex: none; }
+.brace-recovery .r-error .r-btn { min-height: 28px; padding: 3px 10px; font-size: 13px; }
+.brace-recovery .r-error .r-icon-btn { width: 28px; height: 28px; color: #7e1022; }
+.brace-recovery .r-error .r-icon-btn:hover:not(:disabled) { background: rgba(184, 31, 53, 0.12); color: #7e1022; }
+
+/* ---------- FixtureBanner: conspicuous, preview only ---------- */
+.brace-recovery .r-fixture {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: var(--r-radius-sm);
+  background: var(--r-pending-soft);
+  color: var(--r-ink);
+  box-shadow: inset 0 0 0 2px var(--r-ink);
+}
+.brace-recovery .r-fixture-hatch { flex: none; width: 36px; color: var(--r-ink); background-image: var(--r-hatch); }
+.brace-recovery .r-fixture-text {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 14px;
+  font-family: var(--r-face-display);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  text-align: center;
+}
+
+/* ---------- Reduced motion: every animation and transition is off ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .brace-recovery *,
+  .brace-recovery *::before,
+  .brace-recovery *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+  .brace-recovery .r-spinner { border-right-color: currentColor; opacity: 0.5; }
+}
