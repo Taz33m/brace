@@ -69,15 +69,20 @@ function kindFromStatus(status: number | null): ResidentError["kind"] {
 export function toResidentError(e: unknown): ResidentError {
   const rawStatus = statusOf(e);
   const env = envelope(e);
+  // status 0 is the client's "no HTTP response" marker; it is a network failure only when it carries
+  // no other meaning (client.ts also uses status 0 for local validation like invalid_idempotency_key).
   const isNetwork =
-    rawStatus === 0 || env?.code === "network_error" ||
+    env?.code === "network_error" || (rawStatus === 0 && !env) ||
     (rawStatus == null && !env &&
       (e instanceof TypeError ||
         (typeof DOMException !== "undefined" && e instanceof DOMException && (e.name === "AbortError" || e.name === "TimeoutError")) ||
         (typeof navigator !== "undefined" && navigator.onLine === false)));
   const status = rawStatus === 0 ? null : rawStatus;
   const kind: ResidentError["kind"] =
-    isNetwork ? "network" : env?.code === "session_expired" ? "expired" : kindFromStatus(status);
+    isNetwork ? "network"
+      : env?.code === "session_expired" ? "expired"
+        : rawStatus === 0 && env ? (env.retryable ? "unknown" : "invalid")
+          : kindFromStatus(status);
   const fb = FALLBACK[kind];
   return {
     kind,

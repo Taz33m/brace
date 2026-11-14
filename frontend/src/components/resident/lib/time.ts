@@ -27,7 +27,9 @@ export function formatWhen(value: string | null | undefined, now: Date = new Dat
 /** "just now", "4 min ago", "2 h ago", else formatWhen. For "last updated" lines. */
 export function formatAgo(value: string | null | undefined, now: Date = new Date()): string {
   const d = parseWhen(value);
-  if (!d) return "Unknown";
+  if (!d || !value) return "Unknown";
+  // A date-only source has no time of day; "just now" / "4 min ago" would invent precision.
+  if (DATE_ONLY.test(value)) return formatWhen(value, now);
   const s = Math.round((now.getTime() - d.getTime()) / 1000);
   if (s < 45) return "just now";
   if (s < 3600) return `${Math.round(s / 60)} min ago`;

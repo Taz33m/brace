@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReportReceipt, ResidentApi, ResidentHome, SupportReceipt } from "./contract";
 import { useResidentSession, type Connection } from "./useResidentSession";
+import { createSubmissionKeeper } from "./lib/idempotency";
 import { emptyReportDraft, emptySupportDraft, type ReportDraft, type Screen, type SupportDraft } from "./screens/types";
 import { HomeScreen } from "./screens/HomeScreen";
 import { ReportFlow } from "./screens/ReportFlow";
@@ -37,6 +38,10 @@ export function ResidentExperience({ api, on_session_expired }: ResidentExperien
   const [reportDraft, setReportDraft] = useState<ReportDraft>(emptyReportDraft);
   const [supportDraft, setSupportDraft] = useState<SupportDraft>(emptySupportDraft);
   const mainRef = useRef<HTMLDivElement>(null);
+  // Idempotency state lives beside the drafts: leaving a flow mid-retry must not mint a new key.
+  const reportKeeper = useRef(createSubmissionKeeper());
+  const supportKeeper = useRef(createSubmissionKeeper());
+  const reportNowStamp = useRef<string | null>(null);
 
   const go = useCallback((next: Screen) => {
     setScreen(next);
@@ -55,6 +60,7 @@ export function ResidentExperience({ api, on_session_expired }: ResidentExperien
       d.photos.forEach((p) => p.preview_url && URL.revokeObjectURL(p.preview_url));
       return emptyReportDraft();
     });
+    reportNowStamp.current = null;
   }, []);
 
   const onReportSubmitted = useCallback((receipt: ReportReceipt) => {
@@ -105,6 +111,8 @@ export function ResidentExperience({ api, on_session_expired }: ResidentExperien
               connection={session.connection}
               draft={reportDraft}
               set_draft={setReport}
+              keeper={reportKeeper.current}
+              now_stamp={reportNowStamp}
               on_submitted={onReportSubmitted}
               on_cancel={() => go({ name: "home" })}
               on_expired={session.expire}
@@ -120,6 +128,7 @@ export function ResidentExperience({ api, on_session_expired }: ResidentExperien
               connection={session.connection}
               draft={supportDraft}
               set_draft={setSupport}
+              keeper={supportKeeper.current}
               on_submitted={onSupportSubmitted}
               on_cancel={() => go({ name: "home" })}
               on_expired={session.expire}

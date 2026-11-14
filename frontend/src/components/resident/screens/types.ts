@@ -5,6 +5,7 @@
  */
 import type { ReportInput, ReportReceipt, ResidentApi, ResidentHome, SupportInput, SupportReceipt } from "../contract";
 import type { Connection } from "../useResidentSession";
+import type { SubmissionKeeper } from "../lib/idempotency";
 
 export type Screen =
   | { name: "home" }
@@ -72,6 +73,10 @@ export interface ReportFlowProps {
   connection: Connection;
   draft: ReportDraft;
   set_draft: (update: (d: ReportDraft) => ReportDraft) => void;
+  /** Shell-owned, so a retry after leaving and re-entering the screen reuses the same key. */
+  keeper: SubmissionKeeper;
+  /** Shell-owned "just now" stamp, reused across retries of the same intended report. */
+  now_stamp: { current: string | null };
   /** Server confirmed the report. Shell clears the draft, refreshes home, shows the receipt. */
   on_submitted: (receipt: ReportReceipt) => void;
   on_cancel: () => void;
@@ -91,6 +96,8 @@ export interface SupportFlowProps {
   connection: Connection;
   draft: SupportDraft;
   set_draft: (update: (d: SupportDraft) => SupportDraft) => void;
+  /** Shell-owned, so a retry after leaving and re-entering the screen reuses the same key. */
+  keeper: SubmissionKeeper;
   on_submitted: (receipt: SupportReceipt) => void;
   on_cancel: () => void;
   on_expired: () => void;
