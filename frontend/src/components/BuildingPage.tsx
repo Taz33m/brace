@@ -354,7 +354,14 @@ export function BuildingPage({ id, scenario, step, sdkKey, agentReady, voiceRead
                  onReplay={() => listen(api.streamUrl(id, scenario.id, step, true, worn || conversation.get().on ? 2 : 5), "replaying")} onShow={show} onZoom={setZoom} />
 
       <ConversationPanel ready={voiceReady} />
-      <ReportsFeed id={id} />
+      <ReportsFeed id={id} onOpen={(r) => {
+        if (!r.where) return;
+        // Stand where the scan saw the thing the resident named, facing it; bring the headset along.
+        const deg = r.where.bearing_deg;
+        const direction = deg == null ? "north" : (["north", "east", "south", "west"] as const)[Math.round(deg / 90) % 4];
+        tour.current?.lookFrom(r.where.scan_id, r.where.position_id, direction, `Resident: ${r.where.room ?? "reported here"}`);
+        tell({ scan_id: r.where.scan_id, sweep_id: r.where.position_id, bearing: deg ?? null });
+      }} />
       {headset && (
         <div className="lightbox" role="dialog" aria-label="Open in a phone headset" onClick={() => setHeadset(null)}>
           <div className="headset-card" onClick={(e) => e.stopPropagation()}>

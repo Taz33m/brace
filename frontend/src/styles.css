@@ -302,3 +302,5 @@ code { font-family: ui-monospace, Menlo, monospace; font-size: 0.9em; background
 .reports-feed li.is-fresh { animation: report-arrive 900ms ease both; }
 @keyframes report-arrive { from { opacity: 0; transform: translateY(10px); background: #ffe9a8; } to { opacity: 1; transform: none; background: transparent; } }
 @media (prefers-reduced-motion: reduce) { .reports-feed li.is-fresh { animation: none; } }
+.reports-feed li.can-open { cursor: pointer; }
+.reports-feed li.can-open:hover strong { color: #0054a6; text-decoration: underline; }

@@ -6,7 +6,7 @@ const POLL_MS = 4000;
 
 /** What residents of this building have reported, as it lands: each one filed against the room and fixture it names.
     It reads the site model, so the owner sees the after side in the same place as the before side. */
-export function ReportsFeed({ id }: { id: number }) {
+export function ReportsFeed({ id, onOpen }: { id: number; onOpen?: (r: ResidentReport) => void }) {
   const [reports, setReports] = useState<ResidentReport[]>([]);
   const [fresh, setFresh] = useState<string | null>(null);
   const known = useRef<Set<string> | null>(null);
@@ -31,7 +31,8 @@ export function ReportsFeed({ id }: { id: number }) {
       <h3>From residents <span>{reports.length}</span></h3>
       <ul>
         {[...reports].reverse().slice(0, 3).map((r) => (
-          <li key={r.id} className={r.id === fresh ? "is-fresh" : ""}>
+          <li key={r.id} className={`${r.id === fresh ? "is-fresh" : ""}${r.where && onOpen ? " can-open" : ""}`}
+              onClick={() => { if (r.where && onOpen) onOpen(r); }} title={r.where && onOpen ? "Open this room in the scan" : undefined}>
             <strong>{r.where ? `${r.where.room ?? "A room"}${r.where.thing ? `, at the ${r.where.thing}` : ""}` : "Not matched to a scanned room"}</strong>
             <p>“{r.text}”</p>
             <small>{r.where ? `${r.where.scan_name}${r.where.placed_by ? ", placed from the resident's words" : ""}. ` : ""}{r.status ? `${r.status.replace(/\.$/, "")}.` : "Reported, not yet reviewed."}</small>
