@@ -83,3 +83,18 @@
 .scene-beats kbd { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; font: 700 12px/1 var(--cond); color: var(--paper); background: rgba(244, 241, 234, 0.2); }
 .scene-beats button[aria-pressed="true"] kbd { color: var(--paper); background: #14110f; }
 .scene.is-standing:not(.is-placing) .scene-jobs { right: 300px; }
+
+/* The morning after, and a resident's report checked against the scan. */
+.scene-clock strong.is-after { font-size: clamp(30px, 3.6vw, 52px); color: var(--paper); }
+button.scene-report { display: block; border: 0; border-left: 3px solid var(--ember); color: inherit; font: inherit; text-align: left; cursor: pointer; pointer-events: auto; }
+.scene-report.is-open { border-left-color: var(--sky); }
+.scene-report em { display: inline-block; margin-top: 6px; padding: 3px 8px 4px; border-radius: 999px; font: 700 11.5px/1 var(--body); font-style: normal; letter-spacing: 0.03em; color: #0b0f14; background: var(--quiet); }
+.scene-report em.is-fits { background: #58d39b; }
+.scene-report em.is-wrong_place { background: var(--ember); }
+.scene-check .scene-when { color: var(--ember); }
+.scene-verdict { margin-top: 12px; padding: 10px 12px; border-radius: 8px; font-size: 15px; line-height: 1.35; background: rgba(154, 161, 171, 0.18); }
+.scene-verdict.is-fits { background: rgba(88, 211, 155, 0.2); }
+.scene-verdict.is-wrong_place { background: rgba(255, 122, 60, 0.2); }
+.scene-before { margin: 12px 0 0; }
+.scene-before img { display: block; width: 100%; aspect-ratio: 3 / 2; object-fit: cover; border-radius: 8px; background: #05070a; }
+.scene-before figcaption, .scene-basis { margin-top: 6px; font-size: 11.5px; line-height: 1.35; color: rgba(244, 241, 234, 0.6); }

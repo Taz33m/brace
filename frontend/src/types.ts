@@ -277,7 +277,14 @@ export type StageKey = "join" | "classify" | "inventory" | "expose" | "surface" 
 export interface Stage { key: StageKey; problem: string; job: string; state: "ready" | "partial" | "not_run"; number: number; unit: string; headline: string; limits?: string }
 export interface SiteFact extends Measured { stage: StageKey; scan_id?: string; structure?: string; report?: boolean }
 export interface ReportPlace { scan_id: string; scan_name: string; room: string | null; thing: string | null; position_id: string | null; bearing_deg?: number | null; matched_on?: string[]; placed_by?: string }
-export interface ResidentReport { id: string; at: string; text: string; scan_id: string | null; where: ReportPlace | null; status: string }
+/** A resident's report checked against the scan, which was made before the storm. The verdict is decided by code from what the scan holds. */
+export interface ReportCheck {
+  verdict: "fits" | "wrong_place" | "cannot_tell"; says: string;
+  because: { text?: string; value?: string; src?: string[] }[];
+  view: { scan_id: string; position_id: string; bearing_deg: number } | null;
+  before: (Record<string, unknown> & { basis?: string }) | null;
+}
+export interface ResidentReport { id: string; at: string; text: string; scan_id: string | null; where: ReportPlace | null; status: string; check?: ReportCheck | null }
 export interface SiteModel {
   property_id: number; name: string; address: string; assembled_at: string;
   stages: Stage[]; facts: SiteFact[]; reports: ResidentReport[];

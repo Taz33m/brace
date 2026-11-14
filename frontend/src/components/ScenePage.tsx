@@ -32,6 +32,7 @@ interface World {
     lines: { line: THREE.LineLoop; raw: Float32Array; fit: Float32Array; fill: THREE.Mesh; from: THREE.Vector3; to: THREE.Vector3; turn: number }[] };
 }
 const SNAP_HOLD_MS = 2200, SNAP_MS = 520;
+const VERDICT = { fits: "Fits the scan", wrong_place: "Not where the scan has it", cannot_tell: "The scan cannot say" } as const;
 /** Out fast, a hair past, and back: the way something clicks into place. */
 const click = (t: number) => { const c = 1.9; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
 
@@ -51,6 +52,8 @@ export function ScenePage({ id, scenario, step }: Props) {
   const labels = useRef(new Map<string, HTMLElement>());
   const dispatched = useRef<string | null>(null);
   const [snapped, setSnapped] = useState<null | "before" | "after">(null);
+  const [earlier, setEarlier] = useState<Building | null>(null);     // the last plan made before the storm, for the morning after
+  const [seen, setSeen] = useState<string | null>(null);              // the resident's report that is open
 
   useEffect(() => {
     let current = true;
@@ -232,7 +235,18 @@ export function ScenePage({ id, scenario, step }: Props) {
     return [...seen.values()];
   }, [site]);
 
-  const actions = useMemo(() => (b?.plan?.actions ?? []).filter((a) => a.site), [b]);
+  // The morning after: the storm has arrived and no new plan is made. What is on the ground is the work the
+  // last plan left for after it, now due, and what residents have reported.
+  const after = !!b && !b.plan && (b.threat.hours_left ?? 1) <= 0;
+  useEffect(() => {
+    const last = saved.filter((x) => x.step).slice(-1)[0];
+    if (!after || !last) { setEarlier(null); return; }
+    let current = true;
+    api.building(id, scenario.id, last.step).then((d) => { if (current) setEarlier(d); }).catch(() => {});
+    return () => { current = false; };
+  }, [after, saved, id, scenario.id]);
+  const plan = after ? earlier?.plan ?? null : b?.plan ?? null;
+  const actions = useMemo(() => (plan?.actions ?? []).filter((a) => a.site && (!after || a.timing === "after_event")), [plan, after]);
   const placed = useMemo(() => reports.filter((r) => r.where?.position_id && site?.positions[r.where.position_id]), [reports, site]);
 
   // --- what is planned: a pin for every job, and a crew on its way to each one that still fits -------
@@ -258,7 +272,7 @@ export function ScenePage({ id, scenario, step }: Props) {
     const now = performance.now();
     actions.forEach((a, i) => {
       const [x, z] = place.xz(a.site!.lon, a.site!.lat), ground = heightAt(a.site!.lon, a.site!.lat);
-      const live = a.timing === "before_arrival", color = a.id === picked ? SKY : live ? AMBER : QUIET;
+      const live = after || a.timing === "before_arrival", color = a.id === picked ? SKY : live ? AMBER : QUIET;
       const base = new THREE.Vector3(x, ground + 0.3, z), top = new THREE.Vector3(x, ground + PIN_M, z);
       line(base, top, color, live ? 1 : 0.6);
       anchors.current.set(`a:${a.id}`, top);
@@ -280,7 +294,7 @@ export function ScenePage({ id, scenario, step }: Props) {
       line(new THREE.Vector3(x, ground, z), new THREE.Vector3(x, ground + PIN_M + 6, z), EMBER);
       anchors.current.set(`r:${r.id}`, new THREE.Vector3(x, ground + PIN_M + 6, z));
     }
-  }, [stood, place, tall, actions, placed, picked, heightAt, site, step]);
+  }, [stood, place, tall, actions, placed, picked, heightAt, site, step, after]);
 
   // The home the story follows: the fitted scan that moved furthest among those under a roof with a tall tree beside it.
   const home = useMemo(() => {
@@ -337,25 +351,36 @@ export function ScenePage({ id, scenario, step }: Props) {
     if (!w || !w.ready || !place) return;
     w.homes.clear(); w.snap = null; w.marks.visible = true;
     anchors.current.delete("home");
-    setSnapped(null); setPicked(null); setSaid(null);
+    setSnapped(null); setPicked(null); setSaid(null); setSeen(null);
     w.fly = { t0: performance.now(), ms: 1500, fromP: w.camera.position.clone(), toP: new THREE.Vector3(place.width * 0.72, 235, place.depth * 0.98), fromT: w.controls.target.clone(), toT: new THREE.Vector3(0, 6, 0) };
   }, [place]);
 
-  // The presenter drives the beats from the keyboard: 1 the whole site, 2 the snap.
+  // A resident's report, opened: the camera goes to the room it names and the check against the scan comes up.
+  const open = useCallback((r: ResidentReport) => {
+    setSeen(r.id); setPicked(null); setSaid(null);
+    const w = world.current, to = anchors.current.get(`r:${r.id}`);
+    if (!w || !to) return;
+    const away = w.camera.position.clone().sub(w.controls.target).setY(0).normalize().multiplyScalar(130);
+    w.controls.autoRotate = false;
+    w.fly = { t0: performance.now(), ms: 1400, fromP: w.camera.position.clone(), toP: to.clone().add(away).setY(to.y + 85), fromT: w.controls.target.clone(), toT: to.clone().setY(to.y - 14) };
+  }, []);
+
+  // The presenter drives the beats from the keyboard: 1 the whole site, 2 the snap, 3 the first report.
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.metaKey || e.ctrlKey) return;
       if (e.key === "1") wide();
       if (e.key === "2") snap();
+      if (e.key === "3") { const first = placed.find((r) => r.check?.verdict === "fits") ?? placed[0]; if (first) open(first); }
     };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
-  }, [wide, snap]);
+  }, [wide, snap, open, placed]);
 
   // Choosing a job brings the camera round to it.
   const look = useCallback((a: Action | null) => {
     setPicked(a?.id ?? null);
-    setSaid(null);
+    setSaid(null); setSeen(null);
     const w = world.current;
     if (!w || !a?.site || !place) return;
     const [x, z] = place.xz(a.site.lon, a.site.lat);
@@ -367,7 +392,9 @@ export function ScenePage({ id, scenario, step }: Props) {
 
   if (error) return <div className="fatal" role="alert">{error}</div>;
   const chosen = actions.find((a) => a.id === picked) ?? null;
-  const notice = b?.plan?.messages.find((m) => m.kind === "notice" && chosen && m.action_ids.includes(chosen.id)) ?? null;
+  const notice = (!after && b?.plan?.messages.find((m) => m.kind === "notice" && chosen && m.action_ids.includes(chosen.id))) || null;
+  const shown = placed.find((r) => r.id === seen) ?? null;
+  const due = after ? earlier?.plan?.totals.after_event ?? null : null;
   const left = b?.threat.hours_left ?? null;
   const steps = saved.filter((s) => s.step);
 
@@ -383,9 +410,9 @@ export function ScenePage({ id, scenario, step }: Props) {
           </div>
         ))}
         {actions.map((a) => (
-          <button key={a.id} className={`scene-pin is-${a.timing}${a.id === picked ? " is-picked" : ""}`} onClick={() => look(a.id === picked ? null : a)}
+          <button key={a.id} className={`scene-pin is-${after ? "before_arrival" : a.timing}${a.id === picked ? " is-picked" : ""}`} onClick={() => look(a.id === picked ? null : a)}
                   ref={(n) => { if (n) labels.current.set(`a:${a.id}`, n); else labels.current.delete(`a:${a.id}`); }}>
-            <b>{a.id.replace("A", "")}</b><span>{a.timing === "before_arrival" ? a.crew.split(/[(;,]/)[0].trim() : "after the storm"}</span>
+            <b>{a.id.replace("A", "")}</b><span>{after || a.timing === "before_arrival" ? a.crew.split(/[(;,]/)[0].trim() : "after the storm"}</span>
           </button>
         ))}
         {home && snapped && (
@@ -396,10 +423,12 @@ export function ScenePage({ id, scenario, step }: Props) {
           </div>
         )}
         {placed.map((r) => (
-          <div key={r.id} className="scene-report" ref={(n) => { if (n) labels.current.set(`r:${r.id}`, n); else labels.current.delete(`r:${r.id}`); }}>
+          <button key={r.id} className={`scene-report${r.id === seen ? " is-open" : ""}`} onClick={() => (r.id === seen ? setSeen(null) : open(r))}
+                  ref={(n) => { if (n) labels.current.set(`r:${r.id}`, n); else labels.current.delete(`r:${r.id}`); }}>
             <strong>{r.where!.room}{r.where!.thing ? `, at the ${r.where!.thing}` : ""}</strong>
             <span>“{r.text.replace(/^Support request \([^)]*\):\s*/, "")}”</span>
-          </div>
+            {r.check && <em className={`is-${r.check.verdict}`}>{VERDICT[r.check.verdict]}</em>}
+          </button>
         ))}
       </div>
 
@@ -410,8 +439,17 @@ export function ScenePage({ id, scenario, step }: Props) {
       </header>
 
       <div className="scene-clock">
-        <strong>{hoursText(left)}</strong>
-        <span>{left == null ? "" : left <= 0 ? "conditions are here" : "until the wind arrives"}{left != null && left > 0 ? `. ${hoursText(Math.max(0, left - 6))} of safe working time` : ""}</span>
+        {after ? (
+          <>
+            <strong className="is-after">The morning after</strong>
+            <span>{b?.observed_rain ? `${b.observed_rain.inches} inches of rain fell here, as observed` : "The storm has arrived"}{due?.count ? `. ${due.count} jobs now due, ${costRange(due.cost_low, due.cost_high)}` : ""}</span>
+          </>
+        ) : (
+          <>
+            <strong>{hoursText(left)}</strong>
+            <span>{left == null ? "" : left <= 0 ? "conditions are here" : "until the wind arrives"}{left != null && left > 0 ? `. ${hoursText(Math.max(0, left - 6))} of safe working time` : ""}</span>
+          </>
+        )}
         {steps.length > 1 && (
           <div className="scene-steps" role="group" aria-label="Forecast step">
             {steps.map((s) => (
@@ -422,8 +460,8 @@ export function ScenePage({ id, scenario, step }: Props) {
       </div>
 
       {chosen && (
-        <aside className={`scene-card is-${chosen.timing}`}>
-          <p className="scene-when">{chosen.timing === "before_arrival" ? "Before the storm" : chosen.timing === "after_event" ? "After the storm" : "Later"}</p>
+        <aside className={`scene-card is-${after ? "before_arrival" : chosen.timing}`}>
+          <p className="scene-when">{after ? "Due now" : chosen.timing === "before_arrival" ? "Before the storm" : chosen.timing === "after_event" ? "After the storm" : "Later"}</p>
           <h2>{chosen.title}</h2>
           <p className="scene-who">{chosen.crew.split(/[(;]/)[0].trim()}, {chosen.hours_of_work} hours, {costRange(chosen.cost_low, chosen.cost_high)}</p>
           {(measured[chosen.id] ?? []).length > 0 && (
@@ -436,9 +474,34 @@ export function ScenePage({ id, scenario, step }: Props) {
         </aside>
       )}
 
+      {shown && !chosen && (
+        <aside className="scene-card scene-check">
+          <p className="scene-when">A resident reports</p>
+          <h2>“{shown.text.replace(/^Support request \([^)]*\):\s*/, "")}”</h2>
+          <p className="scene-who">{shown.where!.room}{shown.where!.thing ? `, at the ${shown.where!.thing}` : ""}{shown.where!.scan_name ? `. ${shown.where!.scan_name}` : ""}</p>
+          {shown.check && (
+            <>
+              <p className={`scene-verdict is-${shown.check.verdict}`}>{shown.check.says}</p>
+              {shown.check.view && (
+                <figure className="scene-before">
+                  <img src={`/api/buildings/${id}/reports/${shown.id}/before.jpg`} alt="" />
+                  <figcaption>The scan, before the storm</figcaption>
+                </figure>
+              )}
+              <ul className="scene-measured">
+                {Object.entries(shown.check.before ?? {}).filter(([k, v]) => typeof v === "string" && v && !/basis|position|scan|bearing/.test(k)).map(([k, v]) => (
+                  <li key={k}><strong>{k.replace(/_/g, " ")}</strong>{String(v)}</li>
+                ))}
+              </ul>
+              {shown.check.before?.basis && <p className="scene-basis">{String(shown.check.before.basis)}</p>}
+            </>
+          )}
+        </aside>
+      )}
+
       <nav className="scene-jobs" aria-label="The plan">
         {actions.map((a) => (
-          <button key={a.id} className={`is-${a.timing}`} aria-pressed={a.id === picked} onClick={() => look(a.id === picked ? null : a)}>
+          <button key={a.id} className={`is-${after ? "before_arrival" : a.timing}`} aria-pressed={a.id === picked} onClick={() => look(a.id === picked ? null : a)}>
             <b>{a.id.replace("A", "")}</b>{short(a)}
           </button>
         ))}

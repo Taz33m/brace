@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { api } from "../api";
 import { CabinWindow, Sky, SplitChars } from "./Cabin";
-import { gsap, prefersReducedMotion } from "./gsap";
+import { gsap, prefersReducedMotion, scrollToY } from "./gsap";
 
 /**
  * Before the storm, told by scrolling. Through the cabin window, down through cloud onto Houston, down
@@ -10,7 +10,12 @@ import { gsap, prefersReducedMotion } from "./gsap";
  * three dimensions with the plan on it. Nothing here advances by itself; the scroll is the film's clock,
  * and it runs backwards as well as forwards.
  */
-const PARKER = 4303509, SCENARIO = "beryl-2024", STEP = "adv33", LATER = "adv37", SCAN = "39JTmBzqWxr";
+const PARKER = 4303509, SCENARIO = "beryl-2024", STEP = "adv33", LATER = "adv37", AFTER = "adv39", SCAN = "39JTmBzqWxr";
+const TOTAL = 36;                                // the length of the ground's timeline, in its own units
+const NOTICE = 4;                                // the state of the live site in which Enter approves the notice
+// One building at three moments. The bar under it is the scroll made visible: each stop is where the scroll puts that moment.
+const STOPS = [{ label: "36 hours", at: 15.5 }, { label: "12 hours", at: 24.7 }, { label: "The morning after", at: 30.7 }];
+const stopAt = (t: number) => (t < 23.4 ? 0 : t < 24.2 ? ((t - 23.4) / 0.8) * 0.5 : t < 29.4 ? 0.5 : t < 30.2 ? 0.5 + ((t - 29.4) / 0.8) * 0.5 : 1);
 const RING = [1, 0.256, 0.064, 0.016];            // each aerial covers this share of the widest one's width, all on one centre
 const rad = (deg: number) => (deg * Math.PI) / 180;
 const clamp = (v: number) => Math.max(0, Math.min(1, v));
@@ -25,6 +30,8 @@ const SITE_AT: { from: number; cues: Cue[] }[] = [
   { from: 21.2, cues: [{ hash: `#/scene/${SCENARIO}/${STEP}/b/${PARKER}` }, { key: "1" }, { click: ".scene-jobs button", text: /evergreen|pine/i, wait: 1500 }] },
   { from: 24.2, cues: [{ hash: `#/scene/${SCENARIO}/${LATER}/b/${PARKER}` }, { key: "1", wait: 900 }] },
   { from: 27.2, cues: [{ hash: `#/scene/${SCENARIO}/${LATER}/b/${PARKER}` }, { click: ".scene-jobs button", text: /resident/i, wait: 400 }] },
+  { from: 30.2, cues: [{ hash: `#/scene/${SCENARIO}/${AFTER}/b/${PARKER}` }, { key: "1", wait: 900 }] },
+  { from: 33.2, cues: [{ hash: `#/scene/${SCENARIO}/${AFTER}/b/${PARKER}` }, { key: "3", wait: 700 }] },
 ];
 
 export function StormStory() {
@@ -170,7 +177,7 @@ function CloudRise() {
  *   0 to 10   the cloud clears over Houston with every building in the wind field lit, and the view falls onto one of them
  *   8 to 10   the hours that building has
  *  10 to 14   inside one of its homes, as Matterport scanned it
- *  14 to 30   the live site in three dimensions, stepping through the plan as the scroll goes on
+ *  14 to 36   the live site in three dimensions at three moments: 36 hours out, 12 hours out, and the morning after
  */
 function Ground() {
   const section = useRef<HTMLElement>(null);
@@ -183,6 +190,7 @@ function Ground() {
   const rings = useRef<(HTMLDivElement | null)[]>([]);
   const dots = useRef<HTMLCanvasElement>(null), ground = useRef<HTMLDivElement>(null);
   const pano = useRef<HTMLDivElement>(null), frame = useRef<HTMLIFrameElement>(null);
+  const scrub = useRef<HTMLDivElement>(null), handle = useRef<HTMLElement>(null), dragging = useRef(false);
   const live = useRef({ z: 0, pan: 0, inside: 0, site: -1, loaded: false, timers: [] as number[] });
   live.current.loaded = siteLoaded;
 
@@ -271,6 +279,10 @@ function Ground() {
           let at = 0;
           SITE_AT.forEach((s, i) => { if (t >= s.from) at = i; });
           if (t >= 13.6) siteTo(at);
+          // The handle sits on the moment the scroll is in, and slides as the scroll crosses to the next.
+          const x = stopAt(t);
+          if (handle.current && !dragging.current) handle.current.style.left = `${x * 100}%`;
+          scrub.current?.querySelectorAll<HTMLElement>("button").forEach((b, i) => b.setAttribute("aria-pressed", String(Math.round(x * 2) === i)));
         },
       });
       timeline
@@ -290,7 +302,8 @@ function Ground() {
         .to(q("inside"), { autoAlpha: 0, duration: 0.6 }, 13.2)
         .to(pano.current, { autoAlpha: 0, duration: 0.7 }, 13.5)
         .fromTo(frame.current, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.9 }, 14.1)
-        .to({}, { duration: 15 }, 15);
+        .fromTo(scrub.current, { autoAlpha: 0, y: 14 }, { autoAlpha: 1, y: 0, duration: 0.7 }, 14.9)
+        .to({}, { duration: TOTAL - 15 }, 15);
     }, el);
     return () => ctx.revert();
   }, [descent, zoomTo, siteTo]);
@@ -336,12 +349,34 @@ function Ground() {
   // Enter approves the notice when it is the thing on screen. It sends a real message, so nothing else does it.
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (e.key !== "Enter" || live.current.site !== SITE_AT.length - 1) return;
+      if (e.key !== "Enter" || live.current.site !== NOTICE) return;
       try { frame.current?.contentWindow?.document.querySelector<HTMLElement>(".scene-approve")?.click(); } catch { /* not there */ }
     };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
   }, []);
+
+  // Taking the handle, or choosing a stop, moves the scroll to that moment; the scroll then does the rest.
+  const goTo = useCallback((stop: number) => {
+    const el = section.current;
+    if (!el) return;
+    const top = el.getBoundingClientRect().top + window.scrollY;
+    scrollToY(top + (STOPS[stop].at / TOTAL) * (el.offsetHeight - window.innerHeight));
+  }, []);
+  const drag = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const track = e.currentTarget, box = track.getBoundingClientRect();
+    const where = (x: number) => Math.max(0, Math.min(1, (x - box.left) / box.width));
+    dragging.current = true;
+    track.setPointerCapture(e.pointerId);
+    if (handle.current) handle.current.style.left = `${where(e.clientX) * 100}%`;
+    const move = (m: PointerEvent) => { if (handle.current) handle.current.style.left = `${where(m.clientX) * 100}%`; };
+    const up = (m: PointerEvent) => {
+      track.removeEventListener("pointermove", move); track.removeEventListener("pointerup", up); track.removeEventListener("pointercancel", up);
+      dragging.current = false;
+      goTo(Math.round(where(m.clientX) * 2));
+    };
+    track.addEventListener("pointermove", move); track.addEventListener("pointerup", up); track.addEventListener("pointercancel", up);
+  }, [goTo]);
 
   const site = descent?.site.bounds, last = descent?.levels[3]?.bounds;
   const box = site && last ? {
@@ -381,6 +416,10 @@ function Ground() {
         <div ref={pano} className="st-pano" />
         <p data-g="inside" className="st-inside">Inside one of its homes.<small>Matterport scan</small></p>
         <iframe ref={frame} className="st-site" title="The Parker at Ellington in three dimensions" src={`/#/scene/${SCENARIO}/${STEP}/b/${PARKER}`} data-shot="site" tabIndex={-1} onLoad={() => setSiteLoaded(true)} />
+        <div ref={scrub} className="st-scrub" role="group" aria-label="The moment shown">
+          <div className="st-scrub-track" onPointerDown={drag}><i ref={handle} /></div>
+          {STOPS.map((stop, i) => <button key={stop.label} type="button" style={{ left: `${i * 50}%` }} onClick={() => goTo(i)}>{stop.label}</button>)}
+        </div>
         <p className="st-credit">Aerial photographs: Vexcel</p>
       </div>
     </section>

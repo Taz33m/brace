@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import Lenis from "lenis";
 import { api } from "../api";
 import { Sky, CabinWindow } from "./Cabin";
-import { gsap, ScrollTrigger, prefersReducedMotion } from "./gsap";
+import { gsap, ScrollTrigger, prefersReducedMotion, smooth } from "./gsap";
 import { DeskStory } from "./DeskStory";
 import { StormStory } from "./StormStory";
 import "./story.css";
@@ -29,6 +29,7 @@ function useSmoothScroll() {
     if (!prefersReducedMotion()) {
       lenis = new Lenis({ duration: 1.25, easing: (t: number) => Math.min(1, 1.001 - Math.pow(2, -10 * t)), smoothWheel: true, wheelMultiplier: 0.9 });
       lenis.on("scroll", ScrollTrigger.update);
+      smooth.lenis = lenis;
       gsap.ticker.add(tick);
       gsap.ticker.lagSmoothing(0);
     }
@@ -36,6 +37,7 @@ function useSmoothScroll() {
       document.documentElement.classList.remove("st-on");
       gsap.ticker.remove(tick);
       gsap.ticker.lagSmoothing(500, 33);
+      smooth.lenis = null;
       lenis?.destroy();
       window.scrollTo(0, 0);
     };
