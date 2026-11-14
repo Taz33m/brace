@@ -14,8 +14,10 @@ import hashlib
 import json
 import re
 import sqlite3
+import time
 import uuid
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable, Iterator, Optional
@@ -35,6 +37,8 @@ OWNER_EVENT_WINDOW = 100
 INVITATION_TTL = timedelta(hours=72)
 RESIDENT_SESSION_TTL = timedelta(days=30)
 OWNER_SESSION_TTL = timedelta(hours=12)
+ORPHAN_MIN_AGE = timedelta(minutes=10)
+IDEMPOTENCY_RETENTION = timedelta(days=7)
 
 
 def _utc_now() -> datetime:
@@ -66,6 +70,8 @@ class CaseStore:
         finally:
             conn.close()
         self.recover_interrupted_runs()
+        self.sweep_orphan_media()
+        self.purge_expired()
 
     # ------------------------------------------------------------------ plumbing
 
@@ -277,11 +283,12 @@ class CaseStore:
     # ------------------------------------------------------------------ invitations / sessions
 
     def create_invitation(self, actor: Actor, case_id: str, household_id: str, expected_revision: int,
-                          *, ttl: timedelta = INVITATION_TTL) -> m.CommandResult:
+                          *, ttl: timedelta = INVITATION_TTL, idem: Optional["_Idem"] = None) -> m.CommandResult:
         token = new_token()
         expires = (self.clock() + ttl).astimezone(timezone.utc).isoformat()
         with self._write() as conn:
             row = self._owner_case(conn, actor, case_id)
+            self._replay_command(conn, idem)
             self._check_revision(row, expected_revision)
             self._household(conn, case_id, household_id)
             invitation_id = new_id("inv")
@@ -290,8 +297,10 @@ class CaseStore:
                           self.now(), expires))
             case_rev, analysis_rev = self._bump(conn, case_id)
             self._event(conn, case_id, "invitation.created", entity_id=invitation_id)
-        return m.CommandResult(case_revision=case_rev, analysis_revision=analysis_rev, run_id=None,
-                               invitation_token=token, invitation_expires_at=expires)
+            result = m.CommandResult(case_revision=case_rev, analysis_revision=analysis_rev, run_id=None,
+                                     invitation_token=token, invitation_expires_at=expires)
+            self._record_command(conn, idem, result)
+        return result
 
     def invitations(self, actor: Actor, case_id: str) -> list[dict]:
         """Owner listing for revocation; never includes token material."""
@@ -377,49 +386,78 @@ class CaseStore:
                       *, launcher=None) -> m.CommandResult:
         """Typed dispatch of OwnerCommand. Never an arbitrary method or tool executor.
 
-        The Idempotency-Key is optional here: expected_revision already rejects a blind
-        replay. When supplied, a replay returns the original result (minus any token).
+        The Idempotency-Key is optional: expected_revision already rejects a blind replay.
+        When supplied, the replay check and the receipt live in the command's own write
+        transaction, so a receipt exists exactly when the mutation committed. Replays are
+        checked before the revision (a successful first attempt already advanced it).
         """
-        operation = f"command:{case_id}"
-        body_hash = hash_token(dumps(command))
-        if idempotency_key is not None:
-            key = self._check_key(idempotency_key)
-            with self._read() as conn:
-                self._owner_case(conn, actor, case_id)
-                stored = self._replay(conn, actor, operation, key, body_hash)
-            if stored is not None:
-                if command.type == "create_invitation":
-                    raise PlatformError(409, "invitation_already_issued",
-                                        "This invitation was already created. Create a new one if the link was lost.")
-                return m.CommandResult(**stored)
         handler = getattr(self, "_cmd_" + command.type, None)
         if handler is None:
             raise PlatformError(422, "unsupported_command", "This command is not available yet.")
-        result: m.CommandResult = handler(actor, case_id, command, launcher=launcher)
+        idem = None
         if idempotency_key is not None:
-            redacted = result.model_copy(update={"invitation_token": None})
+            idem = _Idem(actor, f"command:{case_id}", self._check_key(idempotency_key),
+                         hash_token(dumps(command)), command.type)
+        if command.type == "start_assessment":
+            return self._start_with_receipt(actor, case_id, command, idem, launcher)
+        try:
+            return handler(actor, case_id, command, launcher=launcher, idem=idem)
+        except _Replayed as replayed:
+            return replayed.result
+
+    def _start_with_receipt(self, actor, case_id, command, idem, launcher) -> m.CommandResult:
+        """start_assessment depends on the launcher outcome after commit, and is already
+        deduplicated by its active run, so its receipt is recorded after launch."""
+        if idem is not None:
+            with self._read() as conn:
+                self._owner_case(conn, actor, case_id)
+                stored = self._replay(conn, actor, idem.operation, idem.key, idem.body_hash)
+            if stored is not None:
+                return m.CommandResult(**stored)
+        result = self._cmd_start_assessment(actor, case_id, command, launcher=launcher)
+        if idem is not None:
             with self._write() as conn:
                 try:
-                    self._remember(conn, actor, operation, idempotency_key, body_hash, redacted)
+                    self._remember(conn, actor, idem.operation, idem.key, idem.body_hash, result)
                 except sqlite3.IntegrityError:
                     pass  # a concurrent identical request recorded it first
         return result
 
-    def _cmd_create_invitation(self, actor, case_id, command: m.CreateInvitation, **_) -> m.CommandResult:
-        return self.create_invitation(actor, case_id, command.household_id, command.expected_revision)
+    def _replay_command(self, conn, idem: Optional["_Idem"]) -> None:
+        if idem is None:
+            return
+        stored = self._replay(conn, idem.actor, idem.operation, idem.key, idem.body_hash)
+        if stored is None:
+            return
+        if idem.command_type == "create_invitation":
+            raise PlatformError(409, "invitation_already_issued",
+                                "This invitation was already created. Create a new one if the link was lost.")
+        raise _Replayed(m.CommandResult(**stored))
+
+    def _record_command(self, conn, idem: Optional["_Idem"], result: m.CommandResult) -> None:
+        if idem is not None:  # raw invitation tokens are never stored, here or anywhere
+            self._remember(conn, idem.actor, idem.operation, idem.key, idem.body_hash,
+                           result.model_copy(update={"invitation_token": None}))
+
+    def _cmd_create_invitation(self, actor, case_id, command: m.CreateInvitation, idem=None, **_) -> m.CommandResult:
+        return self.create_invitation(actor, case_id, command.household_id, command.expected_revision, idem=idem)
 
     @contextmanager
-    def _owner_edit(self, actor: Actor, case_id: str, expected_revision: int):
+    def _owner_edit(self, actor: Actor, case_id: str, expected_revision: int, idem: Optional["_Idem"] = None):
         with self._write() as conn:
             row = self._owner_case(conn, actor, case_id)
+            self._replay_command(conn, idem)
             self._check_revision(row, expected_revision)
             yield conn
 
-    def _result(self, conn, case_id: str, run_id: Optional[str] = None) -> m.CommandResult:
+    def _result(self, conn, case_id: str, run_id: Optional[str] = None,
+                idem: Optional["_Idem"] = None) -> m.CommandResult:
         row = conn.execute("SELECT case_revision, analysis_revision FROM cases WHERE case_id = ?",
                            (case_id,)).fetchone()
-        return m.CommandResult(case_revision=row["case_revision"], analysis_revision=row["analysis_revision"],
-                               run_id=run_id, invitation_token=None, invitation_expires_at=None)
+        result = m.CommandResult(case_revision=row["case_revision"], analysis_revision=row["analysis_revision"],
+                                 run_id=run_id, invitation_token=None, invitation_expires_at=None)
+        self._record_command(conn, idem, result)
+        return result
 
     @staticmethod
     def _require_case_evidence(conn, case_id: str, evidence_ids: list[str]) -> None:
@@ -430,8 +468,8 @@ class CaseStore:
 
     # observations
 
-    def _cmd_review_observation(self, actor, case_id, command: m.ReviewObservation, **_) -> m.CommandResult:
-        with self._owner_edit(actor, case_id, command.expected_revision) as conn:
+    def _cmd_review_observation(self, actor, case_id, command: m.ReviewObservation, idem=None, **_) -> m.CommandResult:
+        with self._owner_edit(actor, case_id, command.expected_revision, idem) as conn:
             row = conn.execute("SELECT * FROM observations WHERE observation_id = ? AND case_id = ?",
                                (command.observation_id, case_id)).fetchone()
             if row is None:
@@ -462,7 +500,7 @@ class CaseStore:
                 self._event(conn, case_id, "report.updated", audience="households",
                             households=[row["household_id"]], entity_id=row["report_id"],
                             public_summary="Report status changed")
-            return self._result(conn, case_id)
+            return self._result(conn, case_id, idem=idem)
 
     def add_evidence(self, actor: Actor, case_id: str, evidence: m.Evidence, expected_revision: int) -> m.CommandResult:
         """Lead domain operation: register dated evidence (inspection, cost source, ...)."""
@@ -528,8 +566,8 @@ class CaseStore:
             raise not_found("This task")
         return json.loads(row["json"])
 
-    def _cmd_transition_task(self, actor, case_id, command: m.TransitionTask, **_) -> m.CommandResult:
-        with self._owner_edit(actor, case_id, command.expected_revision) as conn:
+    def _cmd_transition_task(self, actor, case_id, command: m.TransitionTask, idem=None, **_) -> m.CommandResult:
+        with self._owner_edit(actor, case_id, command.expected_revision, idem) as conn:
             task = self._task_row(conn, case_id, command.task_id)
             if command.expected_task_revision != task["revision"]:
                 raise PlatformError(409, "task_revision_conflict", "This task changed. Reload before editing it.",
@@ -553,7 +591,7 @@ class CaseStore:
                 raise invalid("A note is required for this step.", "note_required")
             task["status"] = command.status
             self._save_task(conn, case_id, task, actor, note or None, analysis=command.status == "verified")
-            return self._result(conn, case_id)
+            return self._result(conn, case_id, idem=idem)
 
     def revise_task_scope(self, actor: Actor, case_id: str, task_id: str, scope: str,
                           expected_revision: int) -> m.CommandResult:
@@ -688,6 +726,8 @@ class CaseStore:
             if assessment.status == "draft":
                 known = {r["household_id"] for r in conn.execute(
                     "SELECT household_id FROM households WHERE case_id = ?", (case_id,))}
+                known_evidence = {r["evidence_id"] for r in conn.execute(
+                    "SELECT evidence_id FROM evidence WHERE case_id = ?", (case_id,))}
                 for proposal in result.get("proposed_tasks", []):
                     task = m.RecoveryTask.model_validate(proposal)
                     taken = conn.execute("SELECT 1 FROM tasks WHERE task_id = ?", (task.task_id,)).fetchone()
@@ -695,7 +735,8 @@ class CaseStore:
                         conn, case_id, title=task.title, scope=task.scope,
                         household_ids=[h for h in task.household_ids if h in known],
                         location=task.location.model_dump(mode="json") if task.location else None,
-                        evidence_ids=task.evidence_ids, assignee_label=task.assignee_label,
+                        evidence_ids=[e for e in task.evidence_ids if e in known_evidence],
+                        assignee_label=task.assignee_label,
                         actor_id="agent:" + run_id, task_id=None if taken else task.task_id)
                 for draft in result.get("draft_notices", []):
                     conn.execute("INSERT INTO notices VALUES (?,?,?,NULL,?,?)",
@@ -704,8 +745,8 @@ class CaseStore:
             self._event(conn, case_id, "assessment.completed", entity_id=assessment.assessment_id)
             return assessment
 
-    def _cmd_publish_assessment(self, actor, case_id, command: m.PublishAssessment, **_) -> m.CommandResult:
-        with self._owner_edit(actor, case_id, command.expected_revision) as conn:
+    def _cmd_publish_assessment(self, actor, case_id, command: m.PublishAssessment, idem=None, **_) -> m.CommandResult:
+        with self._owner_edit(actor, case_id, command.expected_revision, idem) as conn:
             row = conn.execute("SELECT * FROM assessments WHERE assessment_id = ? AND case_id = ?",
                                (command.assessment_id, case_id)).fetchone()
             if row is None:
@@ -724,7 +765,7 @@ class CaseStore:
                          (dumps(data), command.assessment_id))
             self._bump(conn, case_id)
             self._event(conn, case_id, "assessment.published", entity_id=command.assessment_id)
-            return self._result(conn, case_id)
+            return self._result(conn, case_id, idem=idem)
 
     def draft_notices(self, actor: Actor, case_id: str) -> list[dict]:
         """Agent-drafted notices: owner-only, never resident-visible until published as a notice."""
@@ -736,13 +777,13 @@ class CaseStore:
 
     # notices
 
-    def _cmd_publish_notice(self, actor, case_id, command: m.PublishNotice, **_) -> m.CommandResult:
+    def _cmd_publish_notice(self, actor, case_id, command: m.PublishNotice, idem=None, **_) -> m.CommandResult:
         title, body = command.title.strip(), command.body.strip()
         if not title or not body or len(title) > 200 or len(body) > 4000:
             raise invalid("A notice needs a title (up to 200 characters) and a body (up to 4000).")
         if len(command.source_ids) > 50:
             raise invalid("Too many sources.")
-        with self._owner_edit(actor, case_id, command.expected_revision) as conn:
+        with self._owner_edit(actor, case_id, command.expected_revision, idem) as conn:
             if command.household_ids is not None:
                 if not command.household_ids:
                     raise invalid("Choose at least one household, or send to everyone.")
@@ -760,7 +801,7 @@ class CaseStore:
             self._bump(conn, case_id)
             self._event(conn, case_id, "notice.published", audience="case" if households is None else "households",
                         households=households, entity_id=published.notice_id, public_summary="New notice")
-            return self._result(conn, case_id)
+            return self._result(conn, case_id, idem=idem)
 
     # ------------------------------------------------------------------ idempotency
 
@@ -935,6 +976,37 @@ class CaseStore:
                 return m.UploadedMedia(**exc.stored)
             raise
 
+    def purge_expired(self) -> None:
+        """Startup housekeeping: drop dead sessions and idempotency receipts past retention.
+
+        A retry older than IDEMPOTENCY_RETENTION is treated as a new submission.
+        Invitations are kept for the owner's audit/revocation list.
+        """
+        cutoff = (self.clock() - IDEMPOTENCY_RETENTION).astimezone(timezone.utc).isoformat()
+        with self._write() as conn:
+            conn.execute("DELETE FROM sessions WHERE expires_at <= ? OR revoked_at IS NOT NULL", (self.now(),))
+            conn.execute("DELETE FROM idempotency WHERE created_at < ?", (cutoff,))
+
+    def sweep_orphan_media(self, *, min_age: timedelta = ORPHAN_MIN_AGE) -> int:
+        """Delete media files with no committed row (a crash between file write and commit).
+
+        Only server-named files older than `min_age` are touched, so an upload still in
+        flight in this process is never removed. Returns the number of files deleted.
+        """
+        cutoff = time.time() - min_age.total_seconds()
+        candidates = [p for p in self.media_dir.glob("*/med_*")
+                      if MEDIA_FILE.fullmatch(p.name) and p.is_file() and p.stat().st_mtime < cutoff]
+        if not candidates:
+            return 0
+        with self._read() as conn:
+            known = {r["media_id"] for r in conn.execute("SELECT media_id FROM media")}
+        removed = 0
+        for path in candidates:
+            if path.name.split(".", 1)[0] not in known:
+                path.unlink(missing_ok=True)
+                removed += 1
+        return removed
+
     def media_bytes(self, actor: Actor, media_id: str) -> bytes:
         """Sanitized display bytes after a case/household permission check; 404 otherwise."""
         if not MEDIA_ID.fullmatch(media_id or ""):
@@ -1052,6 +1124,23 @@ TASK_TRANSITIONS = {
 }
 
 MEDIA_ID = re.compile(r"med_[0-9a-f]{20}")
+MEDIA_FILE = re.compile(r"med_[0-9a-f]{20}\.(orig|jpg)")
+
+
+@dataclass(frozen=True)
+class _Idem:
+    actor: Actor
+    operation: str
+    key: str
+    body_hash: str
+    command_type: str
+
+
+class _Replayed(Exception):
+    """Raised inside a write transaction (rolling back nothing) to return a stored receipt."""
+
+    def __init__(self, result: m.CommandResult):
+        self.result = result
 
 
 class _AlreadyStored(Exception):
