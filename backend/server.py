@@ -442,6 +442,20 @@ def building_heights(building_id: int) -> FileResponse:
     return FileResponse(path, media_type="image/png", headers={"Cache-Control": "max-age=3600"})
 
 
+@app.get("/api/desk")
+def storm_desk(scenario: str, step: str | None = None) -> dict:
+    """What the storm desk decided for the whole portfolio at one forecast step, and the crew schedule as it stands now.
+
+    The saved run is the agent's work: briefs, what it put to the owner, its statement. The schedule is recomputed
+    on every read from the saved plans, so it is never staler than they are.
+    """
+    from . import desk
+    sc = _scenario(scenario)
+    step_id = _step(sc, step)
+    return {"scenario": sc["id"], "step": step_id, "run": desk.load(sc["id"], step_id), "schedule": desk.schedule(sc["id"], step_id),
+            "buildings": [r for r in desk.portfolio(sc["id"], step_id) if r["plan_saved"]]}
+
+
 @app.get("/api/site-model/board")
 def site_model_board() -> dict:
     """Each of the six stages across every gathered building: how many sites it has run for, and its number."""
