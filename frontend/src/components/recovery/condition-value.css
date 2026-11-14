@@ -1,0 +1,502 @@
+/* Condition (rc-) and Value (rv-) tabs. Every selector is scoped under .brace-recovery.
+   The global `button` rule in styles.css reaches in here, so each button class sets its own border, radius and background. */
+
+/* ================================================================ shared shape */
+.brace-recovery .rc-tab,
+.brace-recovery .rv-tab {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  padding: 12px 0 4px;
+}
+.brace-recovery .rc-section,
+.brace-recovery .rv-section { display: grid; gap: 10px; min-width: 0; }
+.brace-recovery .rc-h,
+.brace-recovery .rv-h {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  font-family: var(--r-face-display);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+.brace-recovery .rc-h-count,
+.brace-recovery .rv-h-count {
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--r-sunk);
+  font-family: var(--r-face-body);
+  font-size: 11.5px;
+  font-weight: 700;
+  line-height: 1.6;
+}
+.brace-recovery .rv-h-note {
+  font-family: var(--r-face-body);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--r-pending-ink);
+}
+.brace-recovery .rc-none,
+.brace-recovery .rv-none { margin: 0; font-size: 13px; color: var(--r-ink-muted); }
+
+/* dl rows: label column + value column, compact */
+.brace-recovery .rc-meta,
+.brace-recovery .rv-meta { display: grid; gap: 3px; margin: 0; font-size: 12.5px; line-height: 1.35; }
+.brace-recovery .rc-meta > div,
+.brace-recovery .rv-meta > div { display: grid; grid-template-columns: 6.5rem minmax(0, 1fr); gap: 8px; }
+.brace-recovery .rc-meta dt,
+.brace-recovery .rv-meta dt { color: var(--r-ink-muted); }
+.brace-recovery .rc-meta dd,
+.brace-recovery .rv-meta dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+
+/* ================================================================ Condition */
+.brace-recovery .rc-group { display: grid; gap: 8px; min-width: 0; }
+.brace-recovery .rc-group + .rc-group { margin-top: 6px; }
+.brace-recovery .rc-group-h {
+  margin: 0;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--r-ink-muted);
+}
+.brace-recovery .rc-group-count { font-weight: 600; letter-spacing: 0; }
+.brace-recovery .rc-obs-list,
+.brace-recovery .rc-report-list,
+.brace-recovery .rc-unknown-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+
+.brace-recovery .rc-obs,
+.brace-recovery .rc-report {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 11px 12px 12px;
+  border: 1px solid var(--r-line);
+  border-radius: 10px;
+  background: var(--r-surface);
+}
+/* A model suggestion is drawn dashed: provisional, never with the verified look. */
+.brace-recovery .rc-obs--inferred { border-style: dashed; border-color: var(--r-line-strong); }
+.brace-recovery .rc-obs--dismissed { background: var(--r-sunk); color: var(--r-ink-muted); }
+.brace-recovery .rc-obs--dismissed .rc-obs-title { text-decoration: line-through; text-decoration-thickness: 1px; }
+.brace-recovery .rc-obs.is-selected { border-color: var(--r-ink); box-shadow: inset 0 0 0 1px var(--r-ink); }
+
+.brace-recovery .rc-obs-marks { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.brace-recovery .rc-basis {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--r-ink-muted);
+}
+.brace-recovery .rc-basis--inferred {
+  padding: 1px 7px;
+  border: 1px dashed var(--r-ink-muted);
+  border-radius: 999px;
+  color: var(--r-ink);
+}
+
+.brace-recovery .rc-obs-select {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+  margin: 0;
+  padding: 4px;
+  margin-inline: -4px;
+  width: calc(100% + 8px);
+  border: 0;
+  border-radius: var(--r-radius-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 150ms var(--r-ease);
+}
+.brace-recovery .rc-obs-select:hover:not(:disabled) { background: var(--r-sunk); border-color: transparent; }
+/* A finding with no location and no cited evidence in the snapshot: same layout, nothing to click. */
+.brace-recovery .rc-obs-select--static { cursor: default; }
+.brace-recovery .rc-obs-select--static:hover { background: transparent; }
+.brace-recovery .rc-obs-text { display: grid; gap: 3px; min-width: 0; }
+.brace-recovery .rc-obs-title {
+  font-family: var(--r-face-display);
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.15;
+}
+.brace-recovery .rc-obs-desc { font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; }
+.brace-recovery .rc-obs-figure { display: block; flex: none; }
+.brace-recovery .rc-obs-img {
+  display: block;
+  width: 92px;
+  height: 68px;
+  object-fit: cover;
+  border-radius: 6px;
+  background: var(--r-sunk);
+}
+
+.brace-recovery .rc-binding {
+  display: inline-block;
+  padding: 0 6px;
+  border-radius: 5px;
+  background: var(--r-sunk);
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.6;
+  color: var(--r-ink-muted);
+  white-space: normal;
+}
+/* Representative layout is a stand-in, not this unit: called out with the attention colour plus its text label. */
+.brace-recovery .rc-binding--layout { background: var(--r-signal-soft); color: #8a2f0e; }
+.brace-recovery .rc-binding--unknown { background: transparent; box-shadow: inset 0 0 0 1px var(--r-line-strong); }
+.brace-recovery .rc-structure {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+/* Observations whose status this screen does not recognise: listed as received, marked with the attention edge. */
+.brace-recovery .rc-group--other { padding-left: 9px; box-shadow: inset 2px 0 0 var(--r-signal); }
+
+.brace-recovery .rc-evidence { display: flex; flex-wrap: wrap; gap: 5px; min-width: 0; }
+.brace-recovery .rc-note-line { margin: 0; font-size: 12px; color: var(--r-ink-muted); }
+.brace-recovery .rc-verification {
+  margin: 0;
+  padding: 6px 9px;
+  border-radius: 6px;
+  background: var(--r-sunk);
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+.brace-recovery .rc-verified-by { color: var(--r-ink-muted); white-space: nowrap; }
+
+.brace-recovery .rc-review { display: grid; gap: 6px; min-width: 0; }
+.brace-recovery .rc-review-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.brace-recovery .rc-review .r-btn { min-height: 30px; padding: 4px 11px; font-size: 13px; }
+.brace-recovery .rc-review-form { display: grid; gap: 5px; margin: 0; }
+.brace-recovery .rc-review-label { font-size: 12.5px; font-weight: 600; }
+.brace-recovery .rc-required { font-weight: 400; color: var(--r-ink-muted); }
+.brace-recovery .rc-review-note {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 52px;
+  margin: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--r-line-strong);
+  border-radius: var(--r-radius-sm);
+  background: var(--r-surface);
+  color: var(--r-ink);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.4;
+  resize: vertical;
+}
+.brace-recovery .rc-review-note:disabled { opacity: 0.6; }
+.brace-recovery .rc-review-hint { margin: 0; font-size: 12px; line-height: 1.35; color: var(--r-ink-muted); }
+
+/* Unknown or unscanned spaces: hatched edge, because nothing here is established. */
+.brace-recovery .rc-unknown {
+  position: relative;
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px 11px 20px;
+  border-radius: 10px;
+  background: var(--r-sunk);
+  overflow: hidden;
+}
+.brace-recovery .rc-unknown::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 8px;
+  color: var(--r-ink-muted);
+  background-image: var(--r-hatch);
+}
+.brace-recovery .rc-unknown-h { margin: 0; font-family: var(--r-face-display); font-size: 16px; font-weight: 700; }
+.brace-recovery .rc-unknown-lede { margin: 0; font-size: 12.5px; color: var(--r-ink-muted); }
+.brace-recovery .rc-unknown-list { gap: 4px; font-size: 13px; }
+.brace-recovery .rc-unknown-name { font-weight: 600; overflow-wrap: anywhere; }
+
+.brace-recovery .rc-report-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; }
+.brace-recovery .rc-report-cat {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.brace-recovery .rc-report-text { margin: 0; font-size: 13.5px; line-height: 1.45; overflow-wrap: anywhere; }
+.brace-recovery .rc-thumbs { display: flex; flex-wrap: wrap; gap: 6px; }
+.brace-recovery .rc-thumb {
+  display: block;
+  width: 64px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 6px;
+  background: var(--r-sunk);
+}
+.brace-recovery .rc-thumb--file {
+  display: grid;
+  place-items: center;
+  padding: 4px;
+  font-size: 11px;
+  text-align: center;
+  color: var(--r-ink-muted);
+  overflow: hidden;
+}
+.brace-recovery .rc-public { margin: 0; font-size: 12.5px; color: var(--r-ink-muted); }
+.brace-recovery .rc-public-label { font-weight: 600; color: var(--r-ink); }
+
+/* ================================================================ Value */
+.brace-recovery .rv-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.brace-recovery .rv-hint { margin: 0; font-size: 12.5px; line-height: 1.35; color: var(--r-ink-muted); }
+
+.brace-recovery .rv-current {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  padding: 12px 14px 14px;
+  border: 1px solid var(--r-line);
+  border-radius: 10px;
+  background: var(--r-surface);
+}
+.brace-recovery .rv-current.is-stale { background: #f7f4ec; }
+.brace-recovery .rv-current-marks { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.brace-recovery .rv-eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--r-ink-muted);
+}
+.brace-recovery .rv-headline {
+  margin: 0;
+  font-family: var(--r-face-display);
+  font-size: 21px;
+  font-weight: 700;
+  line-height: 1.15;
+}
+.brace-recovery .rv-summary { margin: 0; font-size: 13.5px; line-height: 1.45; }
+.brace-recovery .rv-failure {
+  margin: 0;
+  padding: 6px 9px;
+  border-radius: 6px;
+  background: var(--r-danger-soft);
+  color: #7e1022;
+  font-size: 13px;
+}
+.brace-recovery .rv-publish { display: grid; gap: 6px; justify-items: start; margin-top: 2px; }
+
+.brace-recovery .rv-valuation { display: grid; gap: 14px; min-width: 0; }
+.brace-recovery .rv-basis {
+  display: grid;
+  gap: 4px;
+  padding: 9px 11px;
+  border-radius: var(--r-radius-sm);
+  background: var(--r-sunk);
+}
+.brace-recovery .rv-basis-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
+.brace-recovery .rv-basis-key {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--r-ink-muted);
+}
+.brace-recovery .rv-basis-date { margin-left: auto; font-size: 12.5px; font-weight: 600; }
+.brace-recovery .rv-basis-help { margin: 0; font-size: 12.5px; line-height: 1.4; color: var(--r-ink-muted); }
+
+.brace-recovery .rv-block { display: grid; gap: 6px; min-width: 0; }
+.brace-recovery .rv-block-title {
+  margin: 0;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--r-ink-muted);
+}
+.brace-recovery .rv-caption { margin: 0; font-size: 12px; line-height: 1.35; color: var(--r-ink-muted); }
+/* Costs sit in their own sunken box so they never read as part of the value line-up above. */
+.brace-recovery .rv-costs {
+  padding: 9px 11px 6px;
+  border-radius: var(--r-radius-sm);
+  border: 1px dashed var(--r-line-strong);
+}
+
+/* Narrower label column inside the ~420px right panel. */
+.brace-recovery .rv-tab .r-range-row { grid-template-columns: minmax(0, 7.5rem) minmax(48px, 1fr) auto; }
+.brace-recovery .rv-tab .r-range-row + .r-range-row { border-top: 1px solid var(--r-line); }
+.brace-recovery .rv-row-note { display: grid; gap: 2px; padding-top: 2px; }
+.brace-recovery .rv-row-reason { color: var(--r-ink); font-weight: 600; }
+.brace-recovery .rv-row-reason.is-invalid { color: var(--r-danger); }
+
+.brace-recovery .rv-sources { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 4px; font-size: 12px; }
+.brace-recovery .rv-sources-label { color: var(--r-ink-muted); }
+.brace-recovery .rv-src {
+  display: inline;
+  margin: 0;
+  padding: 0 3px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--r-info);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+.brace-recovery .rv-src:hover:not(:disabled) { background: var(--r-sunk); border-color: transparent; }
+.brace-recovery .rv-src--plain {
+  color: var(--r-ink-muted);
+  font-weight: 400;
+  text-decoration: none;
+  cursor: default;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 11.5px;
+}
+
+.brace-recovery .rv-table-wrap { overflow-x: auto; min-width: 0; border-radius: 6px; }
+.brace-recovery .rv-table {
+  width: 100%;
+  min-width: 400px;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  line-height: 1.35;
+}
+.brace-recovery .rv-table th {
+  padding: 4px 8px 5px 0;
+  border-bottom: 1px solid var(--r-line-strong);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-align: left;
+  text-transform: uppercase;
+  color: var(--r-ink-muted);
+  white-space: nowrap;
+}
+.brace-recovery .rv-table td {
+  padding: 7px 8px 7px 0;
+  border-bottom: 1px solid var(--r-line);
+  vertical-align: top;
+}
+.brace-recovery .rv-table th:last-child,
+.brace-recovery .rv-table td:last-child { padding-right: 0; }
+.brace-recovery .rv-num { text-align: right; white-space: nowrap; }
+.brace-recovery .rv-table td.rv-num { white-space: normal; min-width: 6.5rem; }
+.brace-recovery .rv-missing { color: var(--r-ink-muted); font-weight: 600; }
+.brace-recovery .rv-line-desc { display: block; font-weight: 600; }
+.brace-recovery .rv-line-sub { display: block; font-size: 11.5px; font-weight: 400; color: var(--r-ink-muted); }
+
+.brace-recovery .rv-list { display: grid; gap: 3px; margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.4; }
+.brace-recovery .rv-assumptions { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.brace-recovery .rv-assumption {
+  display: grid;
+  gap: 2px;
+  padding: 6px 0 7px;
+  border-bottom: 1px solid var(--r-line);
+}
+.brace-recovery .rv-assumption-line { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 8px; }
+.brace-recovery .rv-assumption-label { font-size: 13px; font-weight: 600; }
+.brace-recovery .rv-assumption-value { margin: 0; font-size: 13px; }
+.brace-recovery .rv-tag {
+  display: inline-block;
+  padding: 0 6px;
+  border-radius: 5px;
+  background: var(--r-sunk);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.6;
+  color: var(--r-ink-muted);
+  white-space: nowrap;
+}
+.brace-recovery .rv-tag--scenario { background: var(--r-pending-soft); color: var(--r-pending-ink); }
+.brace-recovery .rv-tag--user_supplied { box-shadow: inset 0 0 0 1px var(--r-line-strong); background: transparent; }
+
+/* Comparables disclosure */
+.brace-recovery .rv-comps {
+  min-width: 0;
+  border-radius: var(--r-radius-sm);
+  background: var(--r-sunk);
+}
+.brace-recovery .rv-comps-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 11px;
+  border-radius: var(--r-radius-sm);
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+.brace-recovery .rv-comps-summary::-webkit-details-marker { display: none; }
+.brace-recovery .rv-comps-summary:hover { background: var(--r-line); }
+.brace-recovery .rv-comps-caret {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 150ms var(--r-ease);
+}
+.brace-recovery .rv-comps[open] .rv-comps-caret { transform: rotate(45deg); }
+.brace-recovery .rv-comps-empty { margin: 0; padding: 0 11px 10px; font-size: 13px; color: var(--r-ink-muted); }
+.brace-recovery .rv-comps-list { display: grid; gap: 6px; margin: 0; padding: 0 6px 6px; list-style: none; }
+.brace-recovery .rv-comp {
+  display: grid;
+  gap: 3px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--r-surface);
+  font-size: 12.5px;
+  line-height: 1.35;
+}
+.brace-recovery .rv-comp--excluded { background: transparent; color: var(--r-ink-muted); box-shadow: inset 0 0 0 1px var(--r-line); }
+.brace-recovery .rv-comp-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 8px; }
+.brace-recovery .rv-comp-label { font-size: 13.5px; font-weight: 600; }
+.brace-recovery .rv-comp-facts { display: flex; flex-wrap: wrap; gap: 2px 12px; }
+.brace-recovery .rv-comp-price { font-family: var(--r-face-display); font-size: 15px; font-weight: 700; }
+/* No dollar figure: plain text in the reading face, so a missing price never looks like an amount. */
+.brace-recovery .rv-comp-price.is-missing {
+  font-family: var(--r-face-body);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--r-ink-muted);
+}
+.brace-recovery .rv-comp-status { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
+.brace-recovery .rv-comp-reason { margin: 0; }
+.brace-recovery .rv-comp-reason-label { font-weight: 600; }
+
+/* History: muted, static. Outdated entries carry a hatched edge; nothing here animates. */
+.brace-recovery .rv-history-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.brace-recovery .rv-past {
+  position: relative;
+  display: grid;
+  gap: 3px;
+  padding: 8px 10px 9px 12px;
+  border-radius: var(--r-radius-sm);
+  background: var(--r-sunk);
+  color: var(--r-ink-muted);
+  overflow: hidden;
+}
+.brace-recovery .rv-past.is-outdated { padding-left: 18px; }
+.brace-recovery .rv-past.is-outdated::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 6px;
+  color: var(--r-muted-mark);
+  background-image: var(--r-hatch);
+}
+.brace-recovery .rv-past-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 2px 10px; }
+.brace-recovery .rv-past-date { font-size: 12px; }
+.brace-recovery .rv-past-title { margin: 0; font-size: 13.5px; font-weight: 600; color: var(--r-ink); opacity: 0.85; }
+.brace-recovery .rv-past-meta { margin: 0; font-size: 12px; line-height: 1.35; }
+.brace-recovery .rv-past .r-status { color: var(--r-ink-muted); }

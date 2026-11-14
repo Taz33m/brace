@@ -1,0 +1,602 @@
+/* Owner recovery workspace shell (Agent E): layout, top bar, queue (rq-), aerial (ra-), inspector (ri-), preview.
+   A grid port of Standard Response's floating cards: cards sit on the paper canvas with gaps and never cover
+   the map or the Matterport iframe. Every selector starts with .brace-recovery. Tokens come from recovery-ui.css. */
+
+/* ---------- root and grid ---------- */
+.brace-recovery.rw-root {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  padding: 12px;
+  overflow: hidden;
+}
+.brace-recovery .rw-grid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr) 420px;
+  gap: 12px;
+}
+.brace-recovery .rw-grid--two { grid-template-columns: 300px minmax(0, 1fr); }
+.brace-recovery .rw-grid--one { grid-template-columns: minmax(0, 720px); justify-content: center; }
+.brace-recovery .rw-col {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  /* Room for the float shadow, which overflow would otherwise clip. */
+  padding: 2px 4px 12px;
+  margin: -2px -4px 0;
+}
+.brace-recovery .rw-col > * { flex-shrink: 0; }
+
+@media (max-width: 1279px) {
+  .brace-recovery .rw-grid { grid-template-columns: 260px minmax(0, 1fr) 380px; }
+  .brace-recovery .rw-grid--two { grid-template-columns: 260px minmax(0, 1fr); }
+}
+/* Below ~1100px the columns stack and the page scrolls instead of the columns. */
+@media (max-width: 1100px) {
+  .brace-recovery.rw-root { height: auto; min-height: 100vh; overflow: visible; }
+  .brace-recovery .rw-grid,
+  .brace-recovery .rw-grid--two,
+  .brace-recovery .rw-grid--one { grid-template-columns: minmax(0, 1fr); }
+  .brace-recovery .rw-col { overflow: visible; padding: 0; margin: 0; }
+  .brace-recovery .rw-col--left .rq-list { max-height: 300px; overflow-y: auto; }
+}
+
+/* ---------- top bar ---------- */
+.brace-recovery .rw-topbar {
+  flex: none;
+  padding: 10px 14px 12px;
+  background: var(--r-surface);
+  border-radius: var(--r-radius);
+  box-shadow: var(--r-shadow-float);
+}
+.brace-recovery .rw-topbar-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 20px;
+  min-width: 0;
+}
+.brace-recovery .rw-back { flex: none; }
+.brace-recovery .rw-identity { flex: 1 1 260px; min-width: 0; }
+.brace-recovery .rw-eyebrow {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--r-ink-muted);
+}
+.brace-recovery .rw-title {
+  margin: 0;
+  font-family: var(--r-face-display);
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.05;
+  overflow-wrap: anywhere;
+}
+.brace-recovery .rw-address { margin: 2px 0 0; font-size: 13px; color: var(--r-ink-muted); }
+.brace-recovery .rw-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 22px;
+  margin: 0;
+  min-width: 0;
+}
+.brace-recovery .rw-facts > div { min-width: 0; max-width: 340px; }
+.brace-recovery .rw-facts dt {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--r-ink-muted);
+}
+.brace-recovery .rw-facts dd { margin: 0; font-size: 13.5px; font-weight: 600; }
+.brace-recovery .rw-fact-date { margin-left: 8px; font-weight: 400; color: var(--r-ink-muted); white-space: nowrap; }
+.brace-recovery .rw-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-left: auto;
+}
+.brace-recovery .rw-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 26px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--r-sunk);
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.brace-recovery .rw-chip-key {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--r-ink-muted);
+}
+.brace-recovery .rw-chip--stale { background: var(--r-pending-soft); box-shadow: inset 0 0 0 1.5px var(--r-pending); }
+.brace-recovery .rw-saving {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 4.5em;
+  font-size: 12.5px;
+  font-style: italic;
+  color: var(--r-ink-muted);
+}
+.brace-recovery .rw-saving .rw-saving-spinner { width: 9px; height: 9px; border-width: 1.5px; }
+
+/* Mode banner. Scenario exercise is conspicuous and hatched; the other modes are a quiet strip. */
+.brace-recovery .rw-mode {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  margin-top: 10px;
+  overflow: hidden;
+  border-radius: var(--r-radius-sm);
+  background: var(--r-sunk);
+}
+.brace-recovery .rw-mode-text {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 12px;
+  min-width: 0;
+  margin: 0;
+  padding: 6px 12px;
+  font-size: 13px;
+}
+.brace-recovery .rw-mode-title { font-family: var(--r-face-display); font-size: 17px; font-weight: 700; }
+.brace-recovery .rw-mode-label {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--r-surface);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+.brace-recovery .rw-mode-help { color: var(--r-ink-muted); }
+.brace-recovery .rw-mode--observed_recovery { box-shadow: inset 4px 0 0 var(--r-ink); }
+.brace-recovery .rw-mode--historical_replay { box-shadow: inset 4px 0 0 var(--r-info); }
+/* A mode this build does not recognise: it may be hypothetical, so it is flagged rather than shown quietly. */
+.brace-recovery .rw-mode--unknown { box-shadow: inset 0 0 0 2px var(--r-signal); }
+.brace-recovery .rw-mode--scenario_exercise {
+  background: var(--r-signal-soft);
+  box-shadow: inset 0 0 0 2px var(--r-signal);
+}
+.brace-recovery .rw-mode--scenario_exercise .rw-mode-title {
+  font-size: 19px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: #8f2d0b;
+}
+.brace-recovery .rw-mode--scenario_exercise .rw-mode-help { color: var(--r-ink); }
+.brace-recovery .rw-mode-hatch { flex: none; width: 30px; color: var(--r-signal); background-image: var(--r-hatch); }
+
+/* ---------- center stage ---------- */
+.brace-recovery .rw-col--center .rw-stage { flex: 1 0 auto; min-height: max(460px, 60vh); }
+.brace-recovery .rw-stage .r-panel-body { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.brace-recovery .rw-viewport { position: relative; flex: 1; min-height: 400px; }
+.brace-recovery .rw-layer { position: absolute; inset: 0; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+/* Hidden with visibility, not display:none, so an iframe or map keeps its size and state. */
+.brace-recovery .rw-layer.is-hidden { visibility: hidden; pointer-events: none; }
+/* A scroll container clips its overflow on every side, which would cut the focus rings (2px ring, 2px offset)
+   of the selects, the slider and the capture chips at its edges. The layer reaches 6px into the panel's side
+   padding and pads by the same amount, so the rings fit while the content still lines up with the other layers. */
+.brace-recovery .rw-layer--scroll {
+  left: -6px;
+  right: -6px;
+  padding: 4px 6px 6px;
+  overflow-y: auto;
+}
+/* No case to show: an opaque status layer covers the (still mounted, hidden) slots. */
+.brace-recovery .rw-layer--status {
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  overflow-y: auto;
+  border-radius: var(--r-radius-sm);
+  background: var(--r-surface);
+}
+.brace-recovery .rw-slot {
+  position: relative;
+  /* Keeps a slot's own z-indexes (map panes and controls) inside the slot, under the stage's status layer. */
+  isolation: isolate;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border-radius: var(--r-radius-sm);
+  background: var(--r-sunk);
+}
+.brace-recovery .rw-slot > * { flex: 1 1 auto; min-width: 0; min-height: 0; }
+.brace-recovery .rw-scans { flex: none; max-height: 40%; overflow-y: auto; }
+.brace-recovery .rw-scans-title {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--r-ink-muted);
+}
+.brace-recovery .rw-scan-list { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.brace-recovery .rw-scans .r-empty { padding: 8px; }
+
+@media (max-width: 1100px) {
+  .brace-recovery .rw-col--center .rw-stage { min-height: 520px; }
+}
+
+/* ---------- right column ---------- */
+.brace-recovery .rw-tabs-card { display: flex; flex-direction: column; min-width: 0; padding: 4px 16px 16px; }
+.brace-recovery .rw-tabpanel { padding-top: 12px; }
+
+/* ---------- states ---------- */
+/* No snapshot: loading, load error or nothing selected, shown on the stage. */
+.brace-recovery .rw-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--r-ink-muted);
+  font-weight: 600;
+}
+.brace-recovery .rw-status--error {
+  display: grid;
+  gap: 0;
+  width: min(100%, 560px);
+  color: var(--r-ink);
+  font-weight: 400;
+}
+.brace-recovery .rw-error-note { margin: 10px 0 0; font-size: 13px; color: var(--r-ink-muted); }
+/* With a snapshot: a failed refresh is a banner above the grid; the workspace stays as it was. */
+.brace-recovery .rw-banner { flex: none; display: grid; gap: 4px; min-width: 0; }
+.brace-recovery .rw-banner-note { margin: 0 0 0 12px; font-size: 12.5px; color: var(--r-ink-muted); }
+.brace-recovery .rw-skeleton { display: grid; gap: 10px; padding: 16px; }
+.brace-recovery .rw-skel {
+  display: block;
+  height: 10px;
+  border-radius: 5px;
+  background: var(--r-sunk);
+  animation: r-rw-pulse 1.4s ease-in-out infinite;
+}
+.brace-recovery .rw-skel--title { width: 45%; height: 16px; }
+@keyframes r-rw-pulse {
+  50% { opacity: 0.45; }
+}
+
+/* ---------- case queue ---------- */
+.brace-recovery .rq-order-note { margin: 0 0 6px; font-size: 12px; color: var(--r-ink-muted); }
+.brace-recovery .rq-list { display: grid; gap: 4px; margin: 0 -8px; padding: 0; list-style: none; }
+.brace-recovery .rq-row {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  margin: 0;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--r-ink);
+  font-family: var(--r-face-body);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 150ms var(--r-ease);
+}
+.brace-recovery .rq-row:hover:not(:disabled) { background: var(--r-sunk); border-color: transparent; }
+.brace-recovery .rq-row.is-selected,
+.brace-recovery .rq-row.is-selected:hover:not(:disabled) { background: var(--r-sunk); box-shadow: inset 3px 0 0 var(--r-ink); }
+.brace-recovery .rq-name { font-family: var(--r-face-display); font-size: 17px; font-weight: 700; line-height: 1.15; }
+.brace-recovery .rq-city { color: var(--r-ink-muted); }
+.brace-recovery .rq-incident { font-size: 12.5px; }
+.brace-recovery .rq-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  justify-self: start;
+  font-size: 12px;
+  font-weight: 700;
+}
+.brace-recovery .rq-mode::before {
+  content: "";
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--r-ink);
+}
+.brace-recovery .rq-mode--historical_replay::before { background: var(--r-info); }
+.brace-recovery .rq-mode--unknown::before { background: transparent; box-shadow: inset 0 0 0 1.5px var(--r-signal); }
+.brace-recovery .rq-mode--scenario_exercise { color: #8f2d0b; }
+.brace-recovery .rq-mode--scenario_exercise::before {
+  color: var(--r-signal);
+  background: repeating-linear-gradient(135deg, currentColor 0 1.2px, transparent 1.2px 3.2px);
+  box-shadow: inset 0 0 0 1.2px currentColor;
+}
+.brace-recovery .rq-counts { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12.5px; color: var(--r-ink-muted); }
+.brace-recovery .rq-count.is-open { color: var(--r-ink); font-weight: 600; }
+.brace-recovery .rq-next { font-size: 12.5px; color: var(--r-ink); }
+.brace-recovery .rq-next-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--r-ink-muted);
+}
+
+/* ---------- aerial compare ---------- */
+.brace-recovery .ra-root { display: grid; gap: 10px; align-content: start; min-width: 0; padding-bottom: 4px; }
+.brace-recovery .ra-pickers { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px 12px; }
+.brace-recovery .ra-picker { display: grid; gap: 3px; min-width: 0; font-size: 12px; font-weight: 700; color: var(--r-ink-muted); }
+.brace-recovery .ra-select {
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  margin: 0;
+  padding: 0 8px;
+  border: 1px solid var(--r-line-strong);
+  border-radius: var(--r-radius-sm);
+  background: var(--r-surface);
+  color: var(--r-ink);
+  font-family: var(--r-face-body);
+  font-size: 13px;
+  font-weight: 600;
+}
+.brace-recovery .ra-stage {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: var(--r-radius-sm);
+  background: var(--r-sunk);
+}
+.brace-recovery .ra-img {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.brace-recovery .ra-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--r-surface);
+  box-shadow: 0 0 0 1px rgba(34, 29, 25, 0.5);
+  pointer-events: none;
+}
+.brace-recovery .ra-tag {
+  position: absolute;
+  bottom: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(34, 29, 25, 0.82);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  pointer-events: none;
+}
+.brace-recovery .ra-tag--before { left: 8px; }
+.brace-recovery .ra-tag--after { right: 8px; }
+.brace-recovery .ra-range { display: grid; gap: 2px; font-size: 12px; color: var(--r-ink-muted); }
+.brace-recovery .ra-range input { width: 100%; margin: 0; accent-color: var(--r-ink); }
+.brace-recovery .ra-split { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.brace-recovery .ra-missing {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 12px;
+  color: var(--r-line-strong);
+  background-image: var(--r-hatch);
+}
+.brace-recovery .ra-missing span {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--r-surface);
+  color: var(--r-ink);
+  font-size: 12.5px;
+  font-weight: 600;
+  text-align: center;
+}
+.brace-recovery .ra-sides { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px 16px; }
+.brace-recovery .ra-side { display: grid; gap: 4px; justify-items: start; min-width: 0; }
+.brace-recovery .ra-side-head { display: flex; align-items: baseline; gap: 8px; margin: 0; }
+.brace-recovery .ra-side-name { font-family: var(--r-face-display); font-size: 17px; font-weight: 700; }
+.brace-recovery .ra-side-date { font-weight: 600; }
+.brace-recovery .ra-mismatch { margin: 0; font-size: 12px; color: #8f2d0b; }
+.brace-recovery .ra-limits { margin: 4px 0 0; padding: 0 0 0 16px; font-size: 12.5px; color: var(--r-ink-muted); }
+.brace-recovery .ra-notice {
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: var(--r-radius-sm);
+  background: var(--r-pending-soft);
+  font-size: 13px;
+}
+.brace-recovery .ra-caveat {
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: var(--r-radius-sm);
+  background: var(--r-sunk);
+  font-size: 12.5px;
+  color: var(--r-ink);
+}
+
+/* ---------- evidence inspector ---------- */
+.brace-recovery .ri-panel { container-type: inline-size; }
+.brace-recovery .ri-kind {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.brace-recovery .ri-grid { display: grid; grid-template-columns: minmax(0, 1fr) 200px; gap: 16px; }
+.brace-recovery .ri-main { display: grid; gap: 10px; align-content: start; min-width: 0; }
+.brace-recovery .ri-main p { margin: 0; }
+.brace-recovery .ri-source { font-family: var(--r-face-display); font-size: 18px; font-weight: 700; line-height: 1.15; }
+.brace-recovery .ri-id { font-size: 12px; color: var(--r-ink-muted); overflow-wrap: anywhere; }
+.brace-recovery .ri-id code { font-size: 12px; }
+.brace-recovery .ri-summary { font-size: 13.5px; }
+.brace-recovery .ri-dates {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 6px 12px;
+  margin: 0;
+}
+.brace-recovery .ri-date dt {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--r-ink-muted);
+}
+.brace-recovery .ri-date dd { margin: 0; font-size: 13px; font-weight: 600; }
+.brace-recovery .ri-unknown { color: var(--r-ink-muted); font-style: italic; font-weight: 400; }
+.brace-recovery .ri-date dd.ri-unknown { font-weight: 400; }
+.brace-recovery .ri-sub {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--r-ink-muted);
+}
+.brace-recovery .ri-location { display: grid; gap: 3px; justify-items: start; font-size: 13px; }
+.brace-recovery .ri-location .r-btn { margin-top: 4px; }
+.brace-recovery .ri-unit { color: var(--r-ink-muted); }
+.brace-recovery .ri-binding { font-size: 12.5px; font-weight: 600; }
+.brace-recovery .ri-binding--representative_layout,
+.brace-recovery .ri-binding--unverified,
+.brace-recovery .ri-binding--unmapped { color: #8f2d0b; }
+.brace-recovery .ri-limits { display: grid; gap: 3px; font-size: 13px; }
+.brace-recovery .ri-limits ul { margin: 0; padding: 0 0 0 16px; }
+.brace-recovery .ri-media { min-width: 0; }
+.brace-recovery .ri-view-btn { margin-top: 8px; }
+.brace-recovery .ri-media img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: var(--r-radius-sm);
+  background: var(--r-sunk);
+}
+.brace-recovery .ri-media-missing {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 16 / 10;
+  padding: 10px;
+  border-radius: var(--r-radius-sm);
+  background: var(--r-sunk);
+  color: var(--r-ink-muted);
+  font-size: 12.5px;
+  text-align: center;
+}
+@container (max-width: 520px) {
+  .brace-recovery .ri-grid { grid-template-columns: minmax(0, 1fr); }
+  .brace-recovery .ri-media { max-width: 280px; }
+}
+
+/* ---------- preview (RecoveryPreview.tsx only) ---------- */
+.brace-recovery.rw-preview { min-height: 100vh; }
+.brace-recovery .rw-preview-bar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--r-canvas);
+  box-shadow: 0 1px 0 var(--r-line);
+}
+.brace-recovery .rw-preview-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.brace-recovery .rw-preview-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.brace-recovery .rw-preview-toggle input { width: 16px; height: 16px; margin: 0; accent-color: var(--r-danger); }
+.brace-recovery .rw-preview-last { font-size: 12.5px; color: var(--r-ink-muted); min-width: 0; overflow-wrap: anywhere; }
+.brace-recovery .rw-preview-spy { margin: 0 12px 24px; }
+.brace-recovery .rw-spy-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; max-height: 360px; overflow-y: auto; }
+.brace-recovery .rw-spy-item {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: 4px 10px;
+  padding: 6px 10px;
+  border-radius: var(--r-radius-sm);
+  background: var(--r-sunk);
+  font-size: 12.5px;
+}
+.brace-recovery .rw-spy-item pre {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 11.5px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--r-ink-muted);
+}
+.brace-recovery .rw-spy-at { color: var(--r-ink-muted); }
+/* What the parent received from create_invitation (fixture tokens only). */
+.brace-recovery .rw-invites { display: grid; gap: 6px; margin: 0 0 14px; }
+.brace-recovery .rw-invites-title { margin: 0; font-family: var(--r-face-display); font-size: 17px; font-weight: 700; }
+.brace-recovery .rw-invite-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.brace-recovery .rw-invite {
+  display: grid;
+  gap: 4px;
+  justify-items: start;
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: var(--r-radius-sm);
+  background: var(--r-pending-soft);
+  box-shadow: inset 0 0 0 1.5px var(--r-ink);
+  font-size: 13px;
+}
+.brace-recovery .rw-invite-tag {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--r-ink);
+  color: var(--r-surface);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.brace-recovery .rw-invite-head { margin: 0; }
+.brace-recovery .rw-invite-facts { display: grid; gap: 2px; margin: 0; min-width: 0; }
+.brace-recovery .rw-invite-facts > div { display: flex; flex-wrap: wrap; gap: 0 8px; min-width: 0; }
+.brace-recovery .rw-invite-facts dt { font-weight: 700; color: var(--r-ink-muted); }
+.brace-recovery .rw-invite-facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.brace-recovery .rw-placeholder {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  min-height: 240px;
+  padding: 16px;
+  color: var(--r-line-strong);
+  background-image: var(--r-hatch);
+}
+.brace-recovery .rw-placeholder span {
+  max-width: 34ch;
+  padding: 6px 12px;
+  border-radius: var(--r-radius-sm);
+  background: var(--r-surface);
+  color: var(--r-ink);
+  font-size: 13.5px;
+  font-weight: 600;
+  text-align: center;
+}
