@@ -371,3 +371,8 @@
   font-family: var(--r-cond); font-weight: 700; font-size: 34px; line-height: 1.05; letter-spacing: 0.01em;
   font-variant-numeric: tabular-nums lining-nums;
 }
+
+/* ---------- integration fixes ---------- */
+/* Server report IDs are long unbroken strings (e.g. rpt_ + 20 hex); keep them inside 375px. */
+.brace-resident .rr-id { font-size: 26px; overflow-wrap: anywhere; }
+.brace-resident .r-topbar .r-back:disabled { opacity: 0.4; cursor: progress; }

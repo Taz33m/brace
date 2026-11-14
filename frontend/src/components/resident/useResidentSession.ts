@@ -25,6 +25,8 @@ export interface ResidentSession {
 }
 
 const FRESH_MS = 4000;
+/** If the stream stays "reconnecting" this long, start a fresh subscription. */
+const STUCK_MS = 30_000;
 
 export function useResidentSession(api: ResidentApi, on_session_expired: () => void): ResidentSession {
   const [home, setHome] = useState<ResidentHome | null>(null);
@@ -33,6 +35,8 @@ export function useResidentSession(api: ResidentApi, on_session_expired: () => v
   const [serverConn, setServerConn] = useState<Exclude<Connection, "offline">>("connecting");
   const [online, setOnline] = useState(() => (typeof navigator === "undefined" ? true : navigator.onLine !== false));
   const [freshIds, setFreshIds] = useState<ReadonlySet<string>>(() => new Set());
+  /** Bumped to tear down and restart the live subscription. */
+  const [streamEpoch, setStreamEpoch] = useState(0);
 
   const homeRef = useRef<ResidentHome | null>(null);
   const gateRef = useRef<EventGate | null>(null);
@@ -107,6 +111,7 @@ export function useResidentSession(api: ResidentApi, on_session_expired: () => v
     const gate = createEventGate(homeRef.current.event_cursor);
     gateRef.current = gate;
     const timers: number[] = [];
+    let stuck: number | undefined;
     let unsub: (() => void) | null = null;
     try {
       unsub = api.subscribe({
@@ -135,6 +140,8 @@ export function useResidentSession(api: ResidentApi, on_session_expired: () => v
             return;
           }
           setServerConn(state);
+          window.clearTimeout(stuck);
+          if (state === "reconnecting") stuck = window.setTimeout(() => setStreamEpoch((n) => n + 1), STUCK_MS);
           // After a reconnect the adapter resumes from its last event ID; refresh anyway so a
           // missed public projection change cannot leave the screen stale.
           if (state === "connected") void refresh();
@@ -146,10 +153,11 @@ export function useResidentSession(api: ResidentApi, on_session_expired: () => v
     }
     return () => {
       timers.forEach((t) => window.clearTimeout(t));
+      window.clearTimeout(stuck);
       unsub?.();
       if (gateRef.current === gate) gateRef.current = null;
     };
-  }, [api, ready, expire, refresh]);
+  }, [api, ready, expire, refresh, streamEpoch]);
 
   // Browser connectivity.
   useEffect(() => {
@@ -158,11 +166,19 @@ export function useResidentSession(api: ResidentApi, on_session_expired: () => v
       void refresh();
     };
     const down = () => setOnline(false);
+    // Restored from the back/forward cache: the old stream was stopped on pagehide.
+    const shown = (e: PageTransitionEvent) => {
+      if (!e.persisted) return;
+      setStreamEpoch((n) => n + 1);
+      void refresh();
+    };
     window.addEventListener("online", up);
     window.addEventListener("offline", down);
+    window.addEventListener("pageshow", shown);
     return () => {
       window.removeEventListener("online", up);
       window.removeEventListener("offline", down);
+      window.removeEventListener("pageshow", shown);
     };
   }, [refresh]);
 

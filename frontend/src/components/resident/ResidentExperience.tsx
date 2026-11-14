@@ -37,6 +37,8 @@ export function ResidentExperience({ api, on_session_expired }: ResidentExperien
   const [screen, setScreen] = useState<Screen>({ name: "home" });
   const [reportDraft, setReportDraft] = useState<ReportDraft>(emptyReportDraft);
   const [supportDraft, setSupportDraft] = useState<SupportDraft>(emptySupportDraft);
+  // A flow reports a send in flight; leaving mid-send is blocked so nothing finishes "in the background".
+  const [busy, setBusy] = useState(false);
   const mainRef = useRef<HTMLDivElement>(null);
   // Idempotency state lives beside the drafts: leaving a flow mid-retry must not mint a new key.
   const reportKeeper = useRef(createSubmissionKeeper());
@@ -75,6 +77,13 @@ export function ResidentExperience({ api, on_session_expired }: ResidentExperien
     go({ name: "support_receipt", receipt });
   }, [go, session]);
 
+  // Release photo thumbnails if the whole experience unmounts (e.g. session expiry) with a draft open.
+  const draftForCleanup = useRef(reportDraft);
+  draftForCleanup.current = reportDraft;
+  useEffect(() => () => {
+    draftForCleanup.current.photos.forEach((p) => p.preview_url && URL.revokeObjectURL(p.preview_url));
+  }, []);
+
   const setReport = useCallback((u: (d: ReportDraft) => ReportDraft) => setReportDraft(u), []);
   const setSupport = useCallback((u: (d: SupportDraft) => SupportDraft) => setSupportDraft(u), []);
 
@@ -99,7 +108,7 @@ export function ResidentExperience({ api, on_session_expired }: ResidentExperien
   return (
     <div className="brace-resident">
       <div className="r-shell">
-        <TopBar home={home} back={onHome ? null : () => go({ name: "home" })} screenTitle={SCREEN_TITLES[screen.name]} />
+        <TopBar home={home} back={onHome ? null : () => go({ name: "home" })} busy={busy} screenTitle={SCREEN_TITLES[screen.name]} />
         <ModeStrip home={home} />
         <ConnectionStrip connection={session.connection} />
         <div ref={mainRef} key={screen.name} className="r-screen">
@@ -113,6 +122,7 @@ export function ResidentExperience({ api, on_session_expired }: ResidentExperien
               set_draft={setReport}
               keeper={reportKeeper.current}
               now_stamp={reportNowStamp}
+              on_busy={setBusy}
               on_submitted={onReportSubmitted}
               on_cancel={() => go({ name: "home" })}
               on_expired={session.expire}
@@ -129,6 +139,7 @@ export function ResidentExperience({ api, on_session_expired }: ResidentExperien
               draft={supportDraft}
               set_draft={setSupport}
               keeper={supportKeeper.current}
+              on_busy={setBusy}
               on_submitted={onSupportSubmitted}
               on_cancel={() => go({ name: "home" })}
               on_expired={session.expire}
@@ -144,11 +155,17 @@ export function ResidentExperience({ api, on_session_expired }: ResidentExperien
   );
 }
 
-function TopBar({ home, back, screenTitle }: { home: ResidentHome; back: (() => void) | null; screenTitle: string }) {
+function TopBar({ home, back, busy, screenTitle }: { home: ResidentHome; back: (() => void) | null; busy: boolean; screenTitle: string }) {
   return (
     <header className={`r-topbar${back ? "" : " no-back"}`}>
       {back ? (
-        <button type="button" className="r-back" onClick={back} aria-label={`Back to home from ${screenTitle}`}>
+        <button
+          type="button"
+          className="r-back"
+          onClick={back}
+          disabled={busy}
+          aria-label={busy ? "Sending — wait to go back" : `Back to home from ${screenTitle}`}
+        >
           <IconBack />
         </button>
       ) : null}

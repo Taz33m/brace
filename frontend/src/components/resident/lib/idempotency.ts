@@ -29,22 +29,42 @@ export function fingerprint(value: unknown): string {
 }
 
 export interface SubmissionKeeper {
-  /** Key for this payload: the same key as the last attempt when the payload is unchanged. */
+  /**
+   * Key for this payload: the same key as the last attempt when the payload is unchanged.
+   * While the last outcome is uncertain the key is kept even if the payload changed, so the
+   * server either stores it once or answers 409 idempotency_conflict ("the first one arrived").
+   */
   keyFor(payload: unknown): string;
-  /** Call after the server confirmed the submission. The next payload gets a fresh key. */
+  /** A send failed without a server answer (network / lost response): it may have been stored. */
+  markUncertain(): void;
+  /** True while an earlier send may have reached the server and has not been confirmed. */
+  uncertain(): boolean;
+  /** Call after the server confirmed the submission (or said it already had it). Next payload gets a fresh key. */
   succeeded(): void;
+  /** The server definitely rejected the send (validation): nothing was stored under this key. */
+  rejected(): void;
 }
 
 export function createSubmissionKeeper(make: () => string = newIdempotencyKey): SubmissionKeeper {
   let current: { key: string; print: string } | null = null;
+  let unsure = false;
   return {
     keyFor(payload) {
       const print = fingerprint(payload);
-      if (!current || current.print !== print) current = { key: make(), print };
+      if (!current) current = { key: make(), print };
+      else if (current.print !== print) current = unsure ? { key: current.key, print } : { key: make(), print };
       return current.key;
     },
+    markUncertain() {
+      if (current) unsure = true;
+    },
+    uncertain: () => unsure,
     succeeded() {
       current = null;
+      unsure = false;
+    },
+    rejected() {
+      if (!unsure) current = null;
     },
   };
 }
