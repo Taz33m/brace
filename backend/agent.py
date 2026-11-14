@@ -38,6 +38,7 @@ How to work
 - Open a lead for each specific vulnerability that this threat makes matter, then resolve every lead: add one or more actions, or close it as not a concern or as impossible to check. Let the threat pick the leads. Wind: roof coverings and edges, rooftop equipment, loose objects, trees over the building, large glass, roll-up doors, canopies and carports. Flooding: ground-level spaces and what sits on their floors, low entrances and docks, parking, drains. Wildfire: vegetation touching or near walls, debris on roofs and in gutters, combustible storage and fences against the building, vents, wood construction.
 - If a plan was made at an earlier forecast step, read it. Keep each of its decisions unless the time left, the forecast or something you see has changed it, and when you change one say what changed: in the action's why, or in the note when you close the lead. Something set aside earlier after looking at it stays set aside unless you have a new reason. A job that no longer fits the time moves to after the event; it does not vanish.
 - The notice must say what your plan says it says. If an action relies on the notice (residents do it, or you write that the notice covers it), the notice must tell residents that thing, in words they would recognise: residents do not know structure ids or grid cells, so describe the place ("the tall pine at the south end, by the road").
+- Write the notice as a flat list. Each line is one complete instruction that makes sense if it is the only line someone reads; never a heading with points under it. Instructions to on-site staff are a work order addressed to them, not a notice.\n- Wind is the sustained wind the forecast gives for this site. Never state a gust speed as a number, anywhere: the forecast does not give one. You may say that gusts run roughly 20 to 30 percent higher than the sustained wind.
 - Look before you write. The roof analysis and the detector are pointers and they are sometimes wrong or out of date; the scan survey is a first pass. Confirm with your own eyes, from more than one angle when it is unclear.
 - Match the action to the clock. With 36 hours left nobody re-roofs a building. "before_arrival" actions must be things a crew or the on-site team can finish in the time left, allowing for crews leaving site six hours before conditions turn. Put real repairs under "after_event" (do it once this threat has passed, before the next one) or "capital" (plan and budget).
 - Be specific about place: name the structure and the grid cell or the scanned space. "Secure the eleven rooftop units on S1" is useful; "secure rooftop equipment" is not.
@@ -435,6 +436,8 @@ class Planner:
         bad = [x for x in action_ids or [] if x not in known]
         if bad:
             raise ToolError(f"unknown action ids {bad}; actions so far: {sorted(known)}")
+        if kind == "notice" and plan_checks.is_staff_audience(to):
+            raise ToolError("a notice goes to the people who live or work in the building as tenants. Instructions to on-site staff or a trade are a work_order addressed to them.")
         # There is one notice to the building and one work order per trade. Drafting one again replaces it, keeping its id.
         earlier = next((m for m in self.messages if m["kind"] == kind and (kind == "notice" or m["to"].strip().lower() == to.strip().lower())), None)
         msg = {"id": earlier["id"] if earlier else f"M{len(self.messages) + 1}", "kind": kind, "to": to, "subject": subject, "body": body, "action_ids": action_ids or []}
@@ -456,9 +459,14 @@ class Planner:
             raise ToolError("a plan was made for this building at an earlier forecast step and you have not read it. Call get_earlier_plan, "
                             "then make sure each of its decisions is carried forward or its change explained, before finishing.")
         gaps = plan_checks.notice_gaps(self.actions, self.messages)
+        gaps += [f"the notice has a line that is not a finished instruction: \"{line}\". Write the notice as a flat list, each line a complete sentence that makes sense on its own; no headings with points under them."
+                 for line in plan_checks.unfinished_lines(self.messages)]
+        for where, text in [("the headline", headline), ("the summary", summary)] + [(f"the {m['kind'].replace('_', ' ')} to {m['to']}", m["body"]) for m in self.messages]:
+            if plan_checks.gust_figures(text):
+                gaps.append(f"{where} gives a gust speed in mph. The forecast gives sustained wind only; say \"{plan_checks.GUST_SENTENCE}\" and no gust number.")
         if gaps and self.finish_refusals < MAX_FINISH_REFUSALS:
             self.finish_refusals += 1
-            raise ToolError("the plan and the notice disagree:\n- " + "\n- ".join(gaps) + "\nDraft the notice again (it replaces the earlier one) or change the action, then finish.")
+            raise ToolError("the plan is not ready to finish:\n- " + "\n- ".join(gaps) + "\nDraft the message again (it replaces the earlier one) or change the action or the wording, then finish.")
         self.unresolved = gaps          # anything still open after the allowed tries is recorded on the plan, not hidden
         self.result = {"headline": headline, "summary": summary}
         return "Plan complete.", "Writing the plan", None
@@ -554,7 +562,7 @@ class Planner:
                       "hours": round(sum(a["hours_of_work"] for a in actions if a["timing"] == t), 1)} for t in TIMINGS}
         return {
             "building_id": self.site.id, "threat": self.threat, "stop": stop, "complete": self.result is not None,
-            "checks": {"earlier_plan_read": self.earlier_read, "notice_redrafts_asked": self.finish_refusals, "notice_gaps": self.unresolved},
+            "checks": {"earlier_plan_read": self.earlier_read, "finish_refused": self.finish_refusals, "open_gaps": self.unresolved},
             "model": AGENT_MODEL, "seconds": round(time.time() - self.t0),
             "headline": (self.result or {}).get("headline"), "summary": (self.result or {}).get("summary"),
             "actions": actions, "totals": totals, "messages": self.messages, "leads": self.leads,

@@ -58,7 +58,7 @@ def test_finishing_is_refused_until_the_notice_says_what_the_action_claims(image
     assert refused.get("is_error") and "never mentions a tree" in refused["content"]
     notices = [m for m in plan["messages"] if m["kind"] == "notice"]
     assert len(notices) == 1 and notices[0]["id"] == "M1" and "tall pine" in notices[0]["body"]      # the redraft replaced the first
-    assert plan["complete"] and plan["checks"] == {"earlier_plan_read": False, "notice_redrafts_asked": 1, "notice_gaps": []}
+    assert plan["complete"] and plan["checks"] == {"earlier_plan_read": False, "finish_refused": 1, "open_gaps": []}
 
 
 def test_a_gap_the_planner_never_closes_is_recorded_on_the_plan_not_hidden(imagery, threat):
@@ -69,8 +69,8 @@ def test_a_gap_the_planner_never_closes_is_recorded_on_the_plan_not_hidden(image
         turn(tool("draft_message", kind="notice", to="Residents", subject="Storm", body="- Close your windows.", action_ids=["A1"])),
         turn(tool("finish", headline="h", summary="s")), turn(tool("finish", headline="h", summary="s")), turn(tool("finish", headline="h", summary="s")),
     ])
-    assert plan["complete"] and plan["checks"]["notice_redrafts_asked"] == agent_mod.MAX_FINISH_REFUSALS
-    assert plan["checks"]["notice_gaps"] and "never mentions a tree" in plan["checks"]["notice_gaps"][0]
+    assert plan["complete"] and plan["checks"]["finish_refused"] == agent_mod.MAX_FINISH_REFUSALS
+    assert plan["checks"]["open_gaps"] and "never mentions a tree" in plan["checks"]["open_gaps"][0]
 
 
 def test_a_later_step_must_read_the_plan_made_at_the_earlier_step_and_never_a_later_one(imagery, threat, monkeypatch):
@@ -113,3 +113,60 @@ def test_a_work_order_drafted_again_for_the_same_trade_replaces_the_first(imager
         turn(tool("finish", headline="h", summary="s")),
     ])
     assert [(m["id"], m["to"], m["body"]) for m in plan["messages"]] == [("M1", "tree crew", "About 6 hours."), ("M2", "Roofer", "After the storm.")]
+
+
+def test_a_gust_speed_is_found_but_the_forecasts_own_sentence_is_not():
+    assert plan_checks.gust_figures("Sustained winds up to about 45 mph at the site, gusts about 55–60 mph.")
+    assert plan_checks.gust_figures("Gusts: they run roughly 20 to 30 percent higher, so about 55 to 60 mph.")
+    assert not plan_checks.gust_figures("Sustained wind is estimated at up to about 55 mph. " + plan_checks.GUST_SENTENCE)
+    assert not plan_checks.gust_figures("The site estimate is sustained winds near 55 mph; this is not a gust estimate. About 7.5 hours remained before winds of 39 mph.")
+    assert not plan_checks.gust_figures("Tropical-storm winds (55 mph sustained, higher gusts) arrive tonight.")
+
+
+def test_taking_the_gust_speed_out_leaves_the_rest_of_the_line():
+    assert plan_checks.drop_gust_figures("For Beryl (sustained winds up to about 45 mph at the site, gusts about 55–60 mph), the main job is the trees.") \
+        == "For Beryl (sustained winds up to about 45 mph at the site), the main job is the trees."
+    assert plan_checks.drop_gust_figures("- Gusts: the short bursts above the steady wind run roughly 20 to 30 percent higher, so about 55 to 60 mph.\n- Close your windows.") \
+        == "- Gusts: the short bursts above the steady wind run roughly 20 to 30 percent higher.\n- Close your windows."
+    assert plan_checks.drop_gust_figures("- Sustained winds up to about 45 mph.") == "- Sustained winds up to about 45 mph."
+
+
+def test_finishing_is_refused_while_the_headline_gives_a_gust_speed(imagery, threat):
+    plan, script = _run(imagery, threat, [
+        turn(tool("finish", headline="Winds of 45 mph, gusts about 55 to 60 mph.", summary="s")),
+        turn(tool("finish", headline="Sustained winds of about 45 mph; gusts run higher.", summary="s")),
+    ])
+    refused = next(iter(results_of(script.requests[1]).values()))
+    assert refused.get("is_error") and "gust speed in mph" in refused["content"]
+    assert plan["headline"] == "Sustained winds of about 45 mph; gusts run higher." and plan["checks"]["finish_refused"] == 1
+
+
+def test_what_an_action_is_about_is_read_from_its_title_not_its_reasons():
+    balcony = {"id": "A8", "title": "Ask residents to bring in balcony and patio furniture", "crew": "residents",
+               "why": "A chair blown into a sliding glass door breaks it."}
+    assert plan_checks.notice_gaps([balcony], [notice("- Clear your balcony or patio.", ["A8"])]) == []
+
+
+def test_a_notice_line_that_is_only_a_heading_is_found():
+    body = "Resident preparation:\n- Clear your balcony or patio\n- If you live next to one of our two large trees\n- Close and latch all windows.\n\nDo not bring grills indoors."
+    assert plan_checks.unfinished_lines([notice(body, [])]) == ["Clear your balcony or patio", "If you live next to one of our two large trees"]
+    assert plan_checks.unfinished_lines([notice("- Close and latch all windows.\n- Bring in chairs (only if conditions allow).", [])]) == []
+
+
+def test_a_notice_is_for_the_people_in_the_building_and_staff_get_a_work_order(imagery, threat):
+    assert plan_checks.is_staff_audience("On-site maintenance and leasing team") and plan_checks.is_staff_audience("Tree crew")
+    assert not plan_checks.is_staff_audience("All residents and tenants, The Parker at Ellington") and not plan_checks.is_staff_audience("Residents")
+    plan, script = _run(imagery, threat, [
+        turn(tool("draft_message", kind="notice", to="Residents", subject="Storm", body="- Close your windows.", action_ids=[])),
+        turn(tool("draft_message", kind="notice", to="On-site maintenance team", subject="Jobs", body="- Stack the pool chairs.", action_ids=[])),
+        turn(tool("finish", headline="h", summary="s")),
+    ])
+    refused = next(iter(results_of(script.requests[2]).values()))
+    assert refused.get("is_error") and "work_order" in refused["content"]
+    assert [(m["to"], "Close your windows" in m["body"]) for m in plan["messages"]] == [("Residents", True)]     # the residents' notice was not overwritten
+
+
+def test_only_the_last_draft_to_each_trade_is_kept():
+    drafts = [notice("a", []), {"id": "M2", "kind": "work_order", "to": "Staff"}, {"id": "M3", "kind": "work_order", "to": "Tree crew"},
+              {"id": "M4", "kind": "work_order", "to": "HVAC contractor"}, {"id": "M5", "kind": "work_order", "to": "tree crew"}]
+    assert [m["id"] for m in plan_checks.without_superseded(drafts)] == ["M1", "M2", "M4", "M5"]

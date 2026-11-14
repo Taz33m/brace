@@ -122,7 +122,8 @@ def test_headset_approval_needs_an_action_from_the_saved_plan(client, site):
     refused = client.post("/api/vr/approve", json={**ask, "action_id": "A9"}).json()
     assert refused["ok"] is False and client.get("/api/vr/approvals?building=7").json() == {"action_ids": []}
     done = client.post("/api/vr/approve", json={**ask, "action_id": "A1"}).json()
-    assert done["ok"] is True and "Nothing has been sent yet" in done["say"]
+    # This action has no resident notice linked to it, so approving it publishes nothing and says so.
+    assert done["ok"] is True and done["delivery"] is None and "No resident notice is linked" in done["say"] and "work orders remain drafts" in done["say"]
     client.post("/api/vr/approve", json={**ask, "action_id": "A1"})   # approving twice records it once
     assert client.get("/api/vr/approvals?building=7").json() == {"action_ids": ["A1"]}
     assert client.get("/api/vr/approvals?building=8").json() == {"action_ids": []}
@@ -155,7 +156,8 @@ def test_voice_session_grounds_the_voice_in_the_saved_plan(client, site, monkeyp
     session = seen["body"]["session"]
     notes = session["instructions"]
     assert "A1 | before it arrives | outside, on S1 | Cut back limbs over the roof" in notes and "$1,200 to $4,000" in notes
-    assert "Tarp on the roof: not a concern" in notes and "Resident notice to Residents: Bring in balcony items" in notes
+    # A saved notice is given its standard subject when the plan is loaded; the planner's own subject line is not kept.
+    assert "Tarp on the roof: not a concern" in notes and "Resident notice to Residents: Weather: resident preparation update" in notes
     assert "secret body text" not in notes and "Never say a crew is coming" in notes
     assert {t["name"] for t in session["tools"]} == {"go_to_action", "next_finding", "approve_action", "where_am_i", "set_hours_left", "hold_approval"}
     assert "wearing a headset" in notes and "large screen" not in notes
