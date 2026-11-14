@@ -6,6 +6,7 @@ import { costRange } from "../format";
 import { prepareHash, sceneHash } from "../recovery/routes";
 import type { Action, Approval, Building, Measured, ResidentReport, SavedStep, Scenario, SiteScene, HomeAvailable, ResidentResponse } from "../types";
 import "./scene.css";
+import { ScenePlanner } from "./ScenePlanner";
 
 interface Props { id: number; scenario: Scenario; step: string | null }
 
@@ -39,6 +40,7 @@ const VERDICT = { fits: "Fits the scan", wrong_place: "Not where the scan has it
 const click = (t: number) => { const c = 1.9; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
 
 export function ScenePage({ id, scenario, step }: Props) {
+  const [planning, setPlanning] = useState(false);
   const [b, setB] = useState<Building | null>(null);
   const [site, setSite] = useState<SiteScene | null>(null);
   const [measured, setMeasured] = useState<Record<string, Measured[]>>({});
@@ -160,6 +162,8 @@ export function ScenePage({ id, scenario, step }: Props) {
 
     const size = () => { renderer.setSize(el.clientWidth, el.clientHeight); camera.aspect = el.clientWidth / el.clientHeight; camera.updateProjectionMatrix(); };
     window.addEventListener("resize", size);
+    const resizeObserver = new ResizeObserver(size);
+    resizeObserver.observe(el);
     const v = new THREE.Vector3();
     let frame = 0;
     const tick = () => {
@@ -221,6 +225,7 @@ export function ScenePage({ id, scenario, step }: Props) {
     return () => {
       cancelAnimationFrame(frame);
       window.removeEventListener("resize", size);
+      resizeObserver.disconnect();
       controls.dispose(); renderer.dispose();
       renderer.domElement.remove();
       world.current = null;
@@ -373,14 +378,14 @@ export function ScenePage({ id, scenario, step }: Props) {
   // The presenter drives the beats from the keyboard: 1 the whole site, 2 the snap, 3 the first report.
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.metaKey || e.ctrlKey) return;
+      if (planning || e.target instanceof HTMLInputElement || e.metaKey || e.ctrlKey) return;
       if (e.key === "1") wide();
       if (e.key === "2") snap();
       if (e.key === "3") { const first = placed.find((r) => r.check?.verdict === "fits") ?? placed[0]; if (first) open(first); }
     };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
-  }, [wide, snap, open, placed]);
+  }, [wide, snap, open, placed, planning]);
 
   // Choosing a job brings the camera round to it.
   const look = useCallback((a: Action | null) => {
@@ -407,8 +412,11 @@ export function ScenePage({ id, scenario, step }: Props) {
   const steps = saved.filter((s) => s.step);
 
   return (
-    <div className={`scene${stood ? " is-standing" : ""}${snapped ? " is-placing" : ""}`}>
+    <div className={`scene${stood ? " is-standing" : ""}${snapped ? " is-placing" : ""}${planning ? " is-planning" : ""}`}>
       <div className="scene-stage" ref={mount} />
+      {stood && !planning && <button className="planner-open" onClick={() => { wide(); setPlanning(true); }}>Plan the building</button>}
+      {planning && stood && world.current && place && <ScenePlanner key={`${id}:${scenario.id}`} world={world.current} width={place.width} depth={place.depth} storageKey={`brace:planner:v1:${id}:${scenario.id}`} onClose={() => setPlanning(false)} />}
+
 
       <div className="scene-labels" aria-hidden={!stood}>
         {tall.map((t) => (
@@ -542,7 +550,7 @@ export function ScenePage({ id, scenario, step }: Props) {
           <button aria-pressed={!!snapped} onClick={snap}><kbd>2</kbd>Place the homes</button>
         </div>
       )}
-      {site && <p className="scene-source">Heights: {site.sources.heights}. Photo: {site.sources.photo}. A height model, not a photograph of the walls.</p>}
+      {site && <p className="scene-source">Heights: {site.sources.heights}. Photo: {site.sources.photo}. A height model, not a photograph of the walls.{planning ? " Water: hypothetical. Changes: owner-placed proposals with illustrative allowances." : ""}</p>}
       {!stood && <p className="scene-wait" role="status">{site ? "" : "Reading the site…"}</p>}
     </div>
   );
