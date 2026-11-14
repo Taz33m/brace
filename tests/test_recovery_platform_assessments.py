@@ -242,3 +242,49 @@ def test_failed_commit_does_not_leave_run_stuck(store, world, monkeypatch):
     finally:
         service.close()
     assert store.owner_snapshot(OWNER, "case_test").assessments[0].status == "draft"
+
+
+def test_double_click_start_returns_same_run_not_409(store, world, monkeypatch):
+    """Click B lands between click A's lookup and its insert: both must get the same run."""
+    import threading
+    from contextlib import contextmanager
+
+    launcher = RecordingLauncher()
+    expected = rev(store)
+    cmd = TypeAdapter(m.OwnerCommand).validate_python({"type": "start_assessment", "expected_revision": expected})
+    real_write = store._write
+    a_first_write_done, b_done = threading.Event(), threading.Event()
+    a_thread = {}
+
+    @contextmanager
+    def paused_write():
+        with real_write() as conn:
+            yield conn
+        if threading.get_ident() == a_thread.get("id") and not a_first_write_done.is_set():
+            a_first_write_done.set()
+            b_done.wait(5)
+
+    monkeypatch.setattr(store, "_write", paused_write)
+    results = {}
+
+    def click(name):
+        if name == "a":
+            a_thread["id"] = threading.get_ident()
+        else:
+            a_first_write_done.wait(5)
+        try:
+            results[name] = store.apply_command(OWNER, "case_test", cmd, launcher=launcher)
+        except PlatformError as exc:
+            results[name] = exc
+        finally:
+            if name == "b":
+                b_done.set()
+
+    threads = [threading.Thread(target=click, args=(n,)) for n in ("a", "b")]
+    [t.start() for t in threads]
+    [t.join(10) for t in threads]
+    assert not isinstance(results["a"], PlatformError), results["a"]
+    assert not isinstance(results["b"], PlatformError), results["b"]
+    assert results["a"].run_id == results["b"].run_id
+    runs = [a for a in store.owner_snapshot(OWNER, "case_test").events if a.type == "assessment.started"]
+    assert len(runs) == 1
