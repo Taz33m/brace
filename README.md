@@ -42,6 +42,20 @@ uv run python -m scripts.plan --list                          # scenarios and th
 uv run python -m scripts.plan --scenario <id> --top 4         # the most pressing buildings that have scans
 ```
 
+### Phone headset
+
+A phone in a cardboard-style headset can stand inside any scanned space and see the plan's actions pinned in it.
+
+```bash
+(cd frontend && npx vite --config vite.vr.config.ts)   # HTTPS on port 5175, reachable on the local network
+```
+
+On a building page click **Open in headset** and scan the QR code with the phone (same Wi-Fi as the computer).
+The phone warns about the self-made certificate; continue, press Start, and slide it into the headset. Look at a blue
+floor spot to walk there and at an orange number to read that action. Whatever is selected on the laptop, the headset
+goes to; where the wearer looks shows on the laptop's site photo. If the venue Wi-Fi blocks devices from reaching each
+other, put the computer on the phone's hotspot instead.
+
 `data/` and `.env` are git-ignored. The kit, API responses and keys never go in the repo.
 
 ## Tests
