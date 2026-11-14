@@ -17,7 +17,8 @@ from .integration import install_legacy_owner_gate
 def install_recovery(app: FastAPI, *, store: Any, registry: Any,
                      platform_router_factory: Callable,
                      resolve_owner: Callable, resolve_owner_case: Callable,
-                     agent_factory: Callable | None = None) -> AssessmentService:
+                     agent_factory: Callable | None = None,
+                     input_provider: Callable | None = None) -> AssessmentService:
     """Mount the real platform and source viewers as one protected application.
 
     resolve_owner must authorize the specific legacy request, including property
@@ -35,7 +36,7 @@ def install_recovery(app: FastAPI, *, store: Any, registry: Any,
         raise TypeError("Explicit platform routes and owner authorizers are required")
     if not all(callable(getattr(store, name, None)) for name in ("snapshot_for_analysis", "complete_assessment")):
         raise TypeError("The platform must implement the assessment worker handshake before mounting recovery")
-    service = AssessmentService(store, registry.input_provider, agent_factory=agent_factory)
+    service = AssessmentService(store, input_provider or registry.input_provider, agent_factory=agent_factory)
     try:
         platform_router = platform_router_factory(store, service.launch)
         evidence_router = build_evidence_router(resolve_owner_case, registry.load_inventory)

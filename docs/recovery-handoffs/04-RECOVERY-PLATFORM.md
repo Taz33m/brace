@@ -2,12 +2,12 @@
 
 ## Lead integration checkpoint (November 14)
 
-The lead has reviewed the first `p4-recovery-platform` branch and prepared the assembly code. Continue your existing ownership scope; do not edit the lead's runtime or frontend adapters.
+The lead merged `p4-recovery-platform` through `d2f33d1` and connected the assembly code. Continue your existing ownership scope; do not edit the lead's runtime or frontend adapters. Pull `main` before continuing: lead integration fixes add schema v2 for case-scoped evidence IDs and repair stream reauthorization and household pagination.
 
 - `CaseInput.from_seed(seed)` needs the source inventory's `locations` supplied alongside the seed. The lead will handle this bootstrap; do not infer household/unit bindings from those locations.
 - `backend/recovery/runtime.py::install_recovery` takes your `build_router`, complete store, registry, owner authorizer, and a case-scoped snapshot resolver. It checks for `snapshot_for_analysis` and `complete_assessment` before mounting.
 - Worker snapshots must be JSON-compatible dictionaries; HTTP snapshots may remain Pydantic models. The assessment completion call receives the entire `{assessment, proposed_tasks, draft_notices, trace}` envelope.
-- Keep completing uploads/media, SSE, support, review/task/publication commands, run restart handling, and mutation Origin/CSRF checks from the assignment below. The first branch's session/invitation/text-report paths are not yet the full runtime.
+- The full runtime now exercises uploads/media, SSE, support, review/task/publication, and stale completion. `backend/recovery/local.py` adds an explicit Origin allowlist covering legacy mutations, private storage, and a single-process database lock. The local operator alone receives legacy preparation access; other owner identities retain case-scoped recovery access.
 - The owner viewer routes are lead-owned: `/api/recovery/cases/{case_id}/spatial` and `/api/recovery/cases/{case_id}/evidence/{evidence_id}/image`. They authorize the case before reading the immutable registered source bundle. Resident upload media remains your responsibility.
 
 ## Assignment
