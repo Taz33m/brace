@@ -1,7 +1,9 @@
+import { FloodGround, QuietCloud, QuietHero } from "./Home";
+import { InsurerFile } from "./InsurerFile";
 import { useEffect, useRef, useState } from "react";
 import Lenis from "lenis";
 import { api } from "../api";
-import { Sky, CabinWindow } from "./Cabin";
+import { Sky } from "./Cabin";
 import { gsap, ScrollTrigger, prefersReducedMotion, smooth } from "./gsap";
 import { DeskStory } from "./DeskStory";
 import { FireStory, FloodStory, StormStory } from "./StormStory";
@@ -101,28 +103,14 @@ function AfterStory() {
 
 /** The home page: the cabin, and the scenarios to choose from. */
 export function HomePage() {
-  useEffect(() => {
-    document.documentElement.classList.add("st-on");
-    return () => document.documentElement.classList.remove("st-on");
-  }, []);
+  useSmoothScroll();
   return (
-    <div className="st st-homepage">
-      <Sky />
-      <div className="st-stage st-home-stage">
-        <CabinWindow />
-        <div className="st-safe">
-          <h1 className="st-lead st-home-mark">Brace</h1>
-          <p className="st-home-line">A home before and after the flood, inside and out, priced for its insurer.</p>
-          <nav className="st-menu" aria-label="Start">
-            <a href="#/file"><strong>The file</strong></a>
-            <a href="#/flood"><strong>Flood test</strong></a>
-          </nav>
-          <p className="st-home-more">
-            {STORIES.map((x) => <a key={x.id} href={`#/story/${x.id}`}>{x.title}</a>)}
-            <a href="#/beryl-2024">Map</a>
-          </p>
-        </div>
-      </div>
+    <div className="st" data-story="home">
+      <Sky whisper="" />
+      <QuietHero />
+      <QuietCloud />
+      <FloodGround />
+      <InsurerFile site={4303509} scan="39JTmBzqWxr" inline />
     </div>
   );
 }

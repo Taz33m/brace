@@ -550,6 +550,16 @@ def insurer_file(property_id: int, scan_id: str, water_ft: float = Query(4.0, ge
         raise HTTPException(404, str(e))
 
 
+@app.get("/api/file/{property_id}/{scan_id}/pov")
+def insurer_file_pov(property_id: int, scan_id: str, water_ft: float = Query(4.0, ge=0, le=12)) -> dict:
+    """What a person standing in the home would see with that water in it: the standpoint, the rooms round it, the furniture and the water's height."""
+    from . import flood, insurer_file as f
+    try:
+        return f.pov(property_id, scan_id, water_ft)
+    except (f.FileError, flood.FloodError) as e:
+        raise HTTPException(404, str(e))
+
+
 @app.get("/api/file/{property_id}/{scan_id}/inside.jpg")
 def insurer_file_photo(property_id: int, scan_id: str) -> FileResponse:
     """The room as the scan saw it, before any water."""

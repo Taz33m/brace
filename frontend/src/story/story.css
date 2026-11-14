@@ -281,3 +281,27 @@ html.st-on, html.st-on body, html.st-on #root { height: auto; min-height: 100%; 
 .fi .fi-panel { left: 4.5vw; right: 4.5vw; bottom: 9vh; width: auto; }
 .fi-nophoto { position: absolute; inset: 0; background: #14171c; }
 .fi-total em { display: block; margin-top: 10px; font: 400 13px/1.3 var(--sans); font-style: normal; color: rgba(243, 236, 224, 0.6); }
+
+/* ---- the way in: the flood on the ground, played by the scroll ---- */
+.fg-cloud { height: 170vh; }
+.fg-section { position: relative; z-index: 10; height: 820vh; }
+.fg-stage { position: relative; width: 100%; height: 100vh; overflow: hidden; }
+.fg-scene { position: absolute; inset: 0; opacity: 0; }
+.fg-scene canvas { display: block; width: 100%; height: 100%; }
+.fg-stage::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(to bottom, rgba(11, 11, 12, 0.5), rgba(11, 11, 12, 0) 30%); }
+.fg-head, .fg-count { position: absolute; z-index: 2; top: 8vh; color: var(--ivory); text-shadow: 0 2px 26px rgba(0, 0, 0, 0.85); }
+.fg-head { left: 6vw; opacity: 0; }
+.fg-head h2 { margin: 0; font: 400 clamp(2.2rem, 4.2vw, 4.6rem)/0.95 var(--heading); letter-spacing: -0.01em; }
+.fg-head p { margin: 12px 0 0; font: 300 clamp(1.1rem, 1.7vw, 1.8rem)/1.2 var(--heading); color: rgba(243, 236, 224, 0.9); }
+.fg-count { right: 6vw; text-align: right; }
+.fg-count span { display: block; opacity: 0; font: 500 12px/1 var(--sans); letter-spacing: 0.24em; text-transform: uppercase; color: rgba(243, 236, 224, 0.85); }
+.fg-count strong { display: block; margin-top: 10px; opacity: 0; font: 400 clamp(5rem, 12vw, 13rem)/0.82 var(--heading); letter-spacing: -0.03em; color: #ff5a3c; font-variant-numeric: lining-nums tabular-nums; }
+.fg-count em { display: block; margin-top: 16px; opacity: 0; font: 300 clamp(1.3rem, 2.2vw, 2.3rem)/1.1 var(--heading); font-style: normal; }
+.fi.is-inline { position: relative; inset: auto; z-index: 10; height: 100vh; }
+
+/* ---- standing in the home: a film for one eye or two ---- */
+.pov { position: fixed; inset: 0; background: #000; cursor: pointer; }
+.pov-stage { position: absolute; inset: 0; }
+.pov-stage canvas { display: block; width: 100%; height: 100%; }
+.pov-split { position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: #000; }
+.pov-label { position: absolute; left: 0; right: 0; bottom: 3vh; margin: 0; text-align: center; font: 400 12.5px/1.3 var(--sans); color: rgba(243, 236, 224, 0.75); text-shadow: 0 1px 10px rgba(0, 0, 0, 0.9); pointer-events: none; }

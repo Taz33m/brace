@@ -26,13 +26,13 @@ const usd = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
 const range = (low: number | null, high: number | null) => (low == null || high == null ? "no price confirmed" : low === high ? usd(low) : `${usd(low)} to ${usd(high)}`);
 const each = (l: Line) => (l.price == null ? "" : l.price_high ? `$${l.price.toLocaleString("en-US")} to $${l.price_high.toLocaleString("en-US")}` : `$${l.price.toLocaleString("en-US")}`);
 
-export function InsurerFile({ site, scan }: { site: number; scan: string }) {
+export function InsurerFile({ site, scan, inline = false }: { site: number; scan: string; inline?: boolean }) {
   const [water, setWater] = useState(4);
   const [data, setData] = useState<FileData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [how, setHow] = useState(false);
 
-  useEffect(() => { document.documentElement.classList.add("st-on"); return () => document.documentElement.classList.remove("st-on"); }, []);
+  useEffect(() => { if (inline) return; document.documentElement.classList.add("st-on"); return () => document.documentElement.classList.remove("st-on"); }, [inline]);
   useEffect(() => {
     let on = true;
     fetch(`/api/file/${site}/${scan}?water_ft=${water}`).then(async (r) => { if (!r.ok) throw new Error((await r.json().catch(() => null))?.detail || "no file for this home"); return r.json(); })
@@ -40,10 +40,10 @@ export function InsurerFile({ site, scan }: { site: number; scan: string }) {
     return () => { on = false; };
   }, [site, scan, water]);
   useEffect(() => {
-    const key = (e: KeyboardEvent) => { if (e.key === "Escape") { if (how) setHow(false); else window.location.hash = "#/"; } };
+    const key = (e: KeyboardEvent) => { if (e.key === "Escape") { if (how) setHow(false); else if (!inline) window.location.hash = "#/"; } };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
-  }, [how]);
+  }, [how, inline]);
 
   // The aerial, cut down to this building and a little around it.
   const view = useMemo(() => {
@@ -57,12 +57,12 @@ export function InsurerFile({ site, scan }: { site: number; scan: string }) {
   }, [data]);
 
   if (error) return <div className="fatal" role="alert">{error}</div>;
-  if (!data || !view) return <div className="st-wait" />;
+  if (!data || !view) return <div className={inline ? "fi is-inline" : "st-wait"} />;
   const { inside, outside, schedule } = data, depth = data.water.at_this_building_ft, wet = depth > 0;
   const lines = schedule.work_total.lines + schedule.contents_total.lines, priced = schedule.work_total.priced + schedule.contents_total.priced;
 
   return (
-    <div className="st fi">
+    <div className={`st fi${inline ? " is-inline" : ""}`}>
       <div className="fi-before">
         <figure>
           <svg viewBox={view.box} preserveAspectRatio="xMidYMid slice" aria-hidden="true">
@@ -86,7 +86,7 @@ export function InsurerFile({ site, scan }: { site: number; scan: string }) {
       </div>
 
       <div className="fi-after">
-        <a className="st-home fi-home" href="#/">Brace</a>
+        {!inline && <a className="st-home fi-home" href="#/">Brace</a>}
         <header>
           <h1>{inside.name}</h1>
           <p>{data.name}{data.address ? `, ${data.address}` : ""}</p>
@@ -128,7 +128,7 @@ export function InsurerFile({ site, scan }: { site: number; scan: string }) {
 
         <footer>
           <button type="button" className="ft-how fi-how" onClick={() => setHow(!how)}>How this is worked out</button>
-          <a href={`#/flood/${site}`}>The whole site</a>
+          <a href={`#/inside/${site}/${scan}`}>Stand inside</a>
         </footer>
 
         {how && (

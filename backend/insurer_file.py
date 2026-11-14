@@ -90,6 +90,46 @@ def inside(property_id: int, scan_id: str) -> dict:
     }
 
 
+def _ring(walls: list) -> list[list[float]] | None:
+    """A room's walls, which come as loose segments, joined end to end into one outline. None if they do not close."""
+    left = [(tuple(a), tuple(b)) for a, b in walls]
+    if len(left) < 3:
+        return None
+    ring = [left[0][0], left[0][1]]
+    left = left[1:]
+    while left:
+        end = ring[-1]
+        i = next((i for i, (a, b) in enumerate(left) if math.dist(a, end) < 0.08 or math.dist(b, end) < 0.08), None)
+        if i is None:
+            return None
+        a, b = left.pop(i)
+        ring.append(b if math.dist(a, end) < 0.08 else a)
+    return [[round(x, 3), round(y, 3)] for x, y in ring[:-1]] if math.dist(ring[0], ring[-1]) < 0.08 else None
+
+
+def pov(property_id: int, scan_id: str, water_ft: float = 4.0) -> dict:
+    """What a person standing in the home would see: where the scan stood, the outline of every room round them, the
+    furniture, and how high the water would stand. All in metres east and north of the scan's own origin."""
+    from .openproblems import furnish3d
+    f = file(property_id, scan_id, water_ft)
+    _, scan = _scan(property_id, scan_id)
+    seen = furnish3d.scene(scan_id)
+    if not seen:
+        raise FileError("no standpoint has been read in this scan")
+    plan = openings.layout(scan, json.loads((matterport.MP_CACHE / "openings" / f"{scan_id}.json").read_text()))
+    rooms = [{"name": r["name"], "outline": ring} for r in plan["rooms"] if not r["outdoor"] and r["name"] != "Void" and (ring := _ring(r["walls"]))]
+    total = f["schedule"]["total"]
+    return {
+        "property_id": property_id, "scan_id": scan_id, "name": f["inside"]["name"], "site": f["name"], "sweep_id": seen["sweep_id"],
+        "standpoint": seen["standpoint"], "view": seen["view"], "rooms": rooms,
+        "pieces": [{k: p[k] for k in ("name", "east_m", "north_m", "faces_deg", "width_m", "depth_m", "height_m", "stands_on_m")} for p in seen["pieces"]],
+        "water": {"set_ft": water_ft, "depth_ft": f["water"]["at_this_building_ft"], "depth_m": round(f["water"]["at_this_building_ft"] * 0.3048, 3)},
+        "ceiling_m": round(f["inside"]["ceiling_ft"] * 0.3048, 2),
+        "cost": {"low": total["low"], "high": total["high"]} if total else None,
+        "label": "The room is the scan. The water is drawn in at the depth the flood test gives this building. It is not a photograph of a flood.",
+    }
+
+
 def _photo(scan_id: str):
     from .openproblems import furnish3d
     return next(iter(sorted((furnish3d.OUT / scan_id).glob("*/as_it_was.jpg"))), None)

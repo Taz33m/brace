@@ -7,6 +7,7 @@ export type AppRoute =
   | { kind: "home" }
   | { kind: "flood"; site: number | null }
   | { kind: "file"; site: number; scan: string }
+  | { kind: "inside"; site: number; scan: string; stereo: boolean }
   | { kind: "story"; id: "storm" | "flood" | "desk" | "after" | "fire" }
   | { kind: "furnish"; building: number; scan: string }
   | { kind: "model"; building: number | null }
@@ -79,6 +80,12 @@ export function parseAppRoute(hash: string): AppRoute {
     }
     // The flood test: one site, the water, the loss, and what a budget buys.
     if (prefix === "flood") return parts.length === 1 ? { kind: "flood", site: null } : parts.length === 2 && /^\d+$/.test(parts[1]) ? { kind: "flood", site: Number(parts[1]) } : invalid();
+    // Standing in the home while the water comes in: a film that plays by itself. "vr" at the end draws it for two eyes.
+    if (prefix === "inside") {
+      const stereo = parts[parts.length - 1] === "vr", rest = stereo ? parts.slice(0, -1) : parts;
+      return rest.length === 1 ? { kind: "inside", site: 4303509, scan: "39JTmBzqWxr", stereo }
+        : rest.length === 3 && /^\d+$/.test(rest[1]) && /^[A-Za-z0-9]+$/.test(rest[2]) ? { kind: "inside", site: Number(rest[1]), scan: rest[2], stereo } : invalid();
+    }
     // The file on one home for an insurer. With no address, the home at The Parker whose furniture has been read.
     if (prefix === "file") return parts.length === 1 ? { kind: "file", site: 4303509, scan: "39JTmBzqWxr" }
       : parts.length === 3 && /^\d+$/.test(parts[1]) && /^[A-Za-z0-9]+$/.test(parts[2]) ? { kind: "file", site: Number(parts[1]), scan: parts[2] } : invalid();
@@ -108,7 +115,7 @@ export function parseAppRoute(hash: string): AppRoute {
     const prepare = vr || walk || scene ? parts.slice(1) : parts;
     if (!prepare.length) return invalid();
     const scenario = prepare[0];
-    if (["resident", "recovery", "vr", "walk", "model", "scene", "place", "furnish", "story", "flood", "file"].includes(scenario)) return invalid();
+    if (["resident", "recovery", "vr", "walk", "model", "scene", "place", "furnish", "story", "flood", "file", "inside"].includes(scenario)) return invalid();
     let step: string | null = null;
     let building: number | null = null;
     let offset = 1;
@@ -142,7 +149,7 @@ export function prepareHash(scenario: string | null, step: string | null = null,
     if (step !== null || building !== null || vr) throw new Error("A scenario is required for this route.");
     return "#/";
   }
-  if (["resident", "recovery", "vr", "walk", "model", "scene", "place", "furnish", "story", "flood", "file"].includes(scenario)) throw new Error("Reserved Brace route identifier.");
+  if (["resident", "recovery", "vr", "walk", "model", "scene", "place", "furnish", "story", "flood", "file", "inside"].includes(scenario)) throw new Error("Reserved Brace route identifier.");
   if (step === "b" || step === "-") throw new Error("Reserved Brace step identifier.");
   if (building !== null && !safeBuilding(building)) throw new Error("A positive building ID is required.");
   return `#/${vr ? "vr/" : ""}${encodedPart(scenario)}/${step === null ? "-" : encodedPart(step)}${building === null ? "" : `/b/${building}`}`;
