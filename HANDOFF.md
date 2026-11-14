@@ -69,6 +69,19 @@ The pitch transcript and the product differ in ways a judge will notice. Keep th
 
 ## 5. Tasks, in order
 
+**Status, Saturday 2:00 AM:**
+
+| Task | State |
+|---|---|
+| 1 Public repository | Pushed to `github.com/ryanwatach/HackPrinceton` (team repo). It is **private**; it must be made public before submission if the rule holds |
+| 2 Rebuild the Los Angeles plan | Done: rebuilt after the hindsight fix (7 actions, 3 messages) |
+| 3 Demo set | Plans building; `DEMO.md` still to write once they are read |
+| 4 Headset on a real phone | Needs a person with the phone |
+| 5 Value exposed | Done and tested. 1,770 of 3,339 buildings have a priced sale, $42.6 billion in total |
+| 6 Photon | Not started; needs Photon's guidelines and an account |
+| 7 Observed rainfall | Done and tested. Anonymous read works in under a second; downtown Houston's cell got 4.1 in over 7 to 8 July 2024. Shown only at the landfall step |
+| 8 Los Angeles validation | Done: see the result under the task |
+
 Do tasks 1 to 4 before anything else; they are what makes the entry valid and demo-safe. Tasks 5 to 8 strengthen the pitch and are each independent, so they can run in parallel.
 
 ### Task 1 — Public repository (blocker for submission)
@@ -119,6 +132,7 @@ The teammate's research found PARDIG, DeepMind's public rainfall dataset release
 - Using the fire perimeters already downloaded (`data/hazards/calfire/january_2025_fires.json`), count kit buildings inside or within 1 km of the Palisades and Eaton perimeters, and report where they sat in the ranking at the first replay step (43 hours before the warning).
 - This is hindsight used for checking only. It must not feed the ranking or the agent.
 - **Done when:** one honest sentence with numbers exists for the pitch, whatever the result is.
+- **Result:** none of the 1,581 Los Angeles buildings in the kit sat inside or within 1 km of any January 2025 fire. The nine closest are 2.7 to 3.0 km from the Palisades perimeter, in Brentwood. All nine were inside the warning area at the first forecast step, 43 hours out, and four ranked in the top 25 of 84. So the honest line is: "None of our buildings burned; the ones nearest the Palisades fire were already on the list 43 hours before the warning began." It is not a validation of anything stronger than that.
 
 ### Not doing
 - **Flood depth per room** ("which rooms flood at X ft"). FEMA's base flood elevation is empty for most of the Houston flood zones we checked, scan floor heights are noisy, and scans do not cover plant rooms. If flood needs more weight, use stated scenarios for ground-level scanned spaces and label them as scenarios.

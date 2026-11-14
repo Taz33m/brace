@@ -160,7 +160,7 @@ export function BuildingPage({ id, scenario, step, sdkKey, agentReady, onBack }:
       <div className={`threat-strip ${t.kind}`}>
         <strong>{t.name}</strong>
         <span>{t.label}{t.replay ? " (replay)" : ""}</span>
-        <span className="clock">{t.hours_left != null ? `Damaging conditions here in about ${hours(t.hours_left)}` : "No arrival time for this site"}</span>
+        <span className="clock">{t.hours_left == null ? "No arrival time for this site" : t.hours_left <= 0 ? "Damaging conditions are here now" : `Damaging conditions here in about ${hours(t.hours_left)}`}</span>
         <span>{exposureLine(t.at_this_site)}</span>
         {standing && <span>{standing}</span>}
         {b.observed_rain && (

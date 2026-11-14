@@ -107,7 +107,7 @@ export function MapPage({ scenarios, scenario, step, onScenario, onStep, onOpen 
                       <span className="who">
                         <strong>{b.name}</strong>
                         <small>{b.type_label}{b.units ? `, ${num(b.units)} homes` : b.tenant_count ? `, ${b.tenant_count} tenants` : ""}{b.manager ? `. Managed by ${b.manager}` : ""}</small>
-                        <span className="clock">{exposureLine(b.exposure)}{b.hours_left != null ? `, arriving in ${hours(b.hours_left)}` : ""}</span>
+                        <span className="clock">{exposureLine(b.exposure)}{b.hours_left == null ? "" : b.hours_left <= 0 ? ", already here" : `, arriving in ${hours(b.hours_left)}`}</span>
                         {b.reasons.length > 0 && (
                           <span className="reasons">{b.reasons.slice(0, 4).map((r) => <span key={r}>{r}</span>)}</span>
                         )}
