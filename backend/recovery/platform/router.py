@@ -91,14 +91,16 @@ def parse_cursor(request: Request) -> int:
 
 
 async def event_stream(store: CaseStore, token: str, role: str, cursor: int, case_id: Optional[str],
-                       *, poll_seconds: float = POLL_SECONDS) -> AsyncIterator[dict]:
+                       *, poll_seconds: float = POLL_SECONDS,
+                       resolve_actor: Callable[[], Actor | None] | None = None) -> AsyncIterator[dict]:
     """Persisted-cursor replay with session checks before reads and delivery.
 
     A revoked/expired session never drains pending private events. An established
     resident stream may receive only its scoped, persisted revocation notice on
     its way out; that notice has no report, support, financial, or media content.
     """
-    actor = await run_in_threadpool(store.resolve_session, token)
+    resolve = resolve_actor or (lambda: store.resolve_session(token))
+    actor = await run_in_threadpool(resolve)
     if actor is None or actor.role != role:
         return
 
@@ -113,7 +115,7 @@ async def event_stream(store: CaseStore, token: str, role: str, cursor: int, cas
         return None
 
     while True:
-        current = await run_in_threadpool(store.resolve_session, token)
+        current = await run_in_threadpool(resolve)
         if current is None or current != actor:
             notice = await terminal_notice()
             if notice:
@@ -123,7 +125,7 @@ async def event_stream(store: CaseStore, token: str, role: str, cursor: int, cas
         for event in events:
             # Session revocation can happen during the query or while the client
             # is consuming an earlier frame in this batch.
-            current = await run_in_threadpool(store.resolve_session, token)
+            current = await run_in_threadpool(resolve)
             if current is None or current != actor:
                 notice = await terminal_notice()
                 if notice:
@@ -157,10 +159,23 @@ def _set_cookie(response: Response, request: Request, name: str, token: str, max
 
 
 def _actor(store: CaseStore, request: Request, cookie: str, role: str) -> Actor:
-    actor = store.resolve_session(request.cookies.get(cookie))
+    actor = _owner_actor(store, request) if role == "owner" else store.resolve_session(request.cookies.get(cookie))
     if actor is None or actor.role != role:
         raise unauthenticated()
     return actor
+
+
+def _owner_actor(store: CaseStore, request: Request) -> Actor | None:
+    if os.environ.get("BRACE_LOCAL_OWNER") == "1":
+        forwarded = request.headers.get("x-forwarded-for", "")
+        if (request.client and request.client.host in LOOPBACK_HOSTS
+                and request.url.hostname in LOOPBACK_HOSTS
+                and all(p.strip() in LOOPBACK_HOSTS for p in forwarded.split(",") if p.strip())
+                and not request.headers.get("forwarded")
+                and request.headers.get("x-forwarded-host", request.headers.get("host")) == request.headers.get("host")
+                and request.headers.get("sec-fetch-site", "").lower() not in {"cross-site", "same-site"}):
+            return Actor("owner", LOCAL_OWNER_ID)
+    return store.resolve_session(request.cookies.get(OWNER_COOKIE))
 
 
 def make_owner_dependency(store: CaseStore):
@@ -171,7 +186,7 @@ def make_owner_dependency(store: CaseStore):
     """
 
     def require_owner(request: Request) -> Actor:
-        actor = store.resolve_session(request.cookies.get(OWNER_COOKIE))
+        actor = _owner_actor(store, request)
         if actor is None or actor.role != "owner":
             raise HTTPException(401, detail=unauthenticated().envelope()["error"])
         return actor
@@ -270,7 +285,7 @@ def build_router(store: CaseStore, assessment_launcher: Optional[AssessmentLaunc
 
     @router.get("/api/recovery/media/{media_id}")
     def media(media_id: str, request: Request):
-        actor = store.resolve_session(request.cookies.get(OWNER_COOKIE))
+        actor = _owner_actor(store, request)
         if actor is None or actor.role != "owner":
             actor = store.resolve_session(request.cookies.get(RESIDENT_COOKIE))
         if actor is None:
@@ -284,7 +299,8 @@ def build_router(store: CaseStore, assessment_launcher: Optional[AssessmentLaunc
         actor = owner(request)
         cursor = parse_cursor(request)
         store.events_after(actor, cursor, case_id, limit=1)  # 404 unless this owner's case
-        return EventSourceResponse(event_stream(store, request.cookies[OWNER_COOKIE], "owner", cursor, case_id),
+        return EventSourceResponse(event_stream(store, "", "owner", cursor, case_id,
+                                                resolve_actor=lambda: _owner_actor(store, request)),
                                    ping=HEARTBEAT_SECONDS)
 
     @router.get("/api/resident/events")

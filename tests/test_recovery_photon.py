@@ -125,6 +125,8 @@ def test_one_use_join_uses_real_session_without_storing_raw_credentials(bridge):
     ("I need someone to call me", "support", "communication"),
     ("I need help with my medicine", "support", "other"),
     ("I see water in my kitchen", "report", "water"),
+    ("Water under the balcony door", "report", "water"),
+    ("Smoke coming in through my bedroom window", "report", "smoke_or_fire"),
     ("There is smoke in the hallway", "report", "smoke_or_fire"),
 ])
 def test_inbound_uses_existing_household_scoped_workflows(bridge, text, kind, category):

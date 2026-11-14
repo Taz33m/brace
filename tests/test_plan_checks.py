@@ -90,7 +90,7 @@ def test_a_later_step_must_read_the_plan_made_at_the_earlier_step_and_never_a_la
         turn(tool("finish", headline="h", summary="s")),
     ])
     refused = next(iter(results_of(script.requests[1]).values()))
-    assert refused.get("is_error") and "have not read it" in refused["content"]
+    assert refused.get("is_error") and "get_earlier_plan" in refused["content"]
     told = json.loads(next(iter(results_of(script.requests[2]).values()))["content"])
     assert told["made_for"] == "36 hours before landfall" and told["headline"] == "Trim the tree."
     assert [(d["concern"], d["outcome"]) for d in told["decisions"]] == [("Carports", "looked at and set aside"), ("Courtyard tree", "in the plan")]
@@ -103,6 +103,18 @@ def test_the_first_step_has_no_earlier_plan_and_finishes_without_one(imagery, th
     plan, script = _run(imagery, threat, [turn(tool("get_earlier_plan")), turn(tool("finish", headline="h", summary="s"))])
     assert "No plan has been made" in next(iter(results_of(script.requests[1]).values()))["content"]
     assert plan["complete"]
+
+
+def test_plan_requires_reading_new_resident_evidence_even_without_an_earlier_plan(imagery, threat, monkeypatch):
+    monkeypatch.setattr(hazards, "scenarios", lambda include_live=True: [])
+    report = {"id": "report-water", "text": "Water under the balcony door", "review_status": "Reported; unverified"}
+    script = Script([turn(tool("finish", headline="h", summary="s")),
+                     turn(tool("get_earlier_plan")),
+                     turn(tool("finish", headline="h", summary="s"))])
+    plan = agent_mod.Planner(imagery, threat, client=script, resident_reports=[report]).run()
+    assert next(iter(results_of(script.requests[1]).values()))["is_error"]
+    assert json.loads(next(iter(results_of(script.requests[2]).values()))["content"])["resident_reports"] == [report]
+    assert plan["complete"] and plan["resident_report_ids"] == ["report-water"]
 
 
 def test_a_work_order_drafted_again_for_the_same_trade_replaces_the_first(imagery, threat):

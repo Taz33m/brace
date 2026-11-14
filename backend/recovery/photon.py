@@ -196,11 +196,12 @@ class PhotonService:
             return {"kind": "support", "request_id": receipt.request_id,
                 "reply": "The property team received your request. You'll get their updates here."}
         # Only explicit observations, not hypothetical questions or negations.
-        report_words = re.search(r"\b(water|flood(?:ing|ed)?|leak(?:ing)?|smoke|fire|damage(?:d)?|roof|broken|power outage)\b", lower)
-        observed = re.search(r"\b(i see|i saw|i noticed|there is|there's|my|our|in (?:the|my)|report)\b", lower)
+        report_words = re.search(r"\b(water|flood(?:ing|ed)?|leak(?:ing)?|smoke|ash|fire|damage(?:d)?|roof|broken|power outage)\b", lower)
+        observed = (re.search(r"\b(i see|i saw|i noticed|there is|there's|my|our|in (?:the|my)|report)\b", lower)
+                    or re.search(r"\b(water|smoke|ash|leak(?:ing)?)\s+(?:under|by|at|near|around|through|inside|in)\b", lower))
         uncertain = "?" in lower or re.search(r"\b(no|not|if|might|could|would)\b", lower)
         if report_words and observed and not uncertain:
-            category = ("smoke_or_fire" if re.search(r"\b(smoke|fire)\b", lower) else
+            category = ("smoke_or_fire" if re.search(r"\b(smoke|ash|fire)\b", lower) else
                         "water" if re.search(r"\b(water|flood(?:ing|ed)?|leak(?:ing)?)\b", lower) else
                         "roof" if "roof" in lower else "power_or_access" if "power outage" in lower else "other")
             receipt = self.store.append_report(actor, ReportInput(category=category, text=text,

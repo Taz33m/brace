@@ -49,6 +49,24 @@ def test_origin_gate_covers_legacy_and_recovery_writes(monkeypatch):
             assert client.post(path).status_code == 200  # explicit non-browser client
 
 
+def test_local_owner_console_opens_without_login_and_keeps_phone_sessions_scoped(tmp_path, monkeypatch):
+    monkeypatch.setenv("BRACE_LOCAL_OWNER", "1")
+    app = FastAPI()
+
+    @app.get("/api/config")
+    def config():
+        return {"ok": True}
+
+    install_local_recovery(app, root=tmp_path)
+    with TestClient(app, base_url="http://localhost", client=("127.0.0.1", 50000)) as owner:
+        assert owner.get("/api/config").status_code == 200
+        assert owner.get("/api/recovery/cases").status_code == 200
+        assert owner.get("/api/resident/home").status_code == 401
+        for headers in ({"Host": "10.1.2.3:5185"}, {"X-Forwarded-For": "10.1.2.4, 127.0.0.1"},
+                        {"Sec-Fetch-Site": "cross-site"}):
+            assert owner.get("/api/recovery/cases", headers=headers).status_code == 401
+
+
 @pytest.mark.parametrize("value", ["", "*", "https://brace.test/path", "https://user:pass@brace.test", "null"])
 def test_origins_require_explicit_http_origins(monkeypatch, value):
     monkeypatch.setenv("BRACE_ALLOWED_ORIGINS", value)
