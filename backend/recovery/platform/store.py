@@ -10,7 +10,9 @@ No model call or other slow work ever runs inside a transaction.
 """
 from __future__ import annotations
 
+import hashlib
 import json
+import re
 import sqlite3
 import uuid
 from contextlib import contextmanager
@@ -493,9 +495,88 @@ class CaseStore:
 
     def _attach_uploads(self, conn, actor: Actor, upload_ids: list[str], report_id: str,
                         location: Optional[m.LocationRef], now: str) -> list[str]:
-        if upload_ids:
-            raise invalid("Photo attachments are not available yet.", "upload_unavailable")
-        return []
+        """Re-check ownership at attach time; one upload belongs to at most one report."""
+        if len(set(upload_ids)) != len(upload_ids):
+            raise invalid("A photo is listed twice.", "upload_unavailable")
+        evidence_ids = []
+        for upload_id in upload_ids:
+            row = conn.execute("SELECT * FROM media WHERE upload_id = ? AND case_id = ? AND household_id = ? "
+                               "AND attached_report_id IS NULL",
+                               (upload_id, actor.case_id, actor.household_id)).fetchone()
+            if row is None:
+                raise invalid("A photo could not be attached. Upload it again.", "upload_unavailable")
+            conn.execute("UPDATE media SET attached_report_id = ? WHERE media_id = ?", (report_id, row["media_id"]))
+            evidence = m.Evidence(
+                evidence_id=new_id("ev"), kind="resident_photo", source_id=row["media_id"],
+                source_label="Resident photo", captured_at=None, effective_at=None, available_at=None,
+                received_at=row["received_at"], model_created_at=None, location=location,
+                media=self._media_ref(row), summary="Photo attached to a resident report",
+                limitations=["Unverified resident photo; when and where it was taken is not established."])
+            conn.execute("INSERT INTO evidence VALUES (?,?,?,?,?)",
+                         (evidence.evidence_id, actor.case_id, actor.household_id, dumps(evidence), now))
+            evidence_ids.append(evidence.evidence_id)
+        return evidence_ids
+
+    # ------------------------------------------------------------------ uploads / media
+
+    def save_upload(self, actor: Actor, data: bytes, idempotency_key: Optional[str]) -> m.UploadedMedia:
+        from .uploads import decode_image
+
+        key = self._check_key(idempotency_key)
+        body_hash = hashlib.sha256(data).hexdigest()
+        with self._read() as conn:
+            self._resident(conn, actor)
+            stored = self._replay(conn, actor, "upload", key, body_hash)
+        if stored is not None:
+            return m.UploadedMedia(**stored)
+        mime, display = decode_image(data)  # slow work stays outside any transaction
+        media_id, upload_id = new_id("med"), new_id("upl")
+        case_dir = self.media_dir / _safe_component(actor.case_id)
+        case_dir.mkdir(parents=True, exist_ok=True)
+        original_name = f"{_safe_component(actor.case_id)}/{media_id}.orig"
+        display_name = f"{_safe_component(actor.case_id)}/{media_id}.jpg"
+        (self.media_dir / original_name).write_bytes(data)
+        (self.media_dir / display_name).write_bytes(display)
+        try:
+            with self._write() as conn:
+                self._resident(conn, actor)
+                stored = self._replay(conn, actor, "upload", key, body_hash)
+                if stored is not None:
+                    raise _AlreadyStored(stored)
+                conn.execute("INSERT INTO media VALUES (?,?,?,?,?,?,?,?,?,?,NULL)",
+                             (media_id, upload_id, actor.case_id, actor.household_id, mime, body_hash,
+                              len(data), original_name, display_name, self.now()))
+                row = conn.execute("SELECT * FROM media WHERE media_id = ?", (media_id,)).fetchone()
+                result = m.UploadedMedia(upload_id=upload_id, media=self._media_ref(row))
+                self._remember(conn, actor, "upload", key, body_hash, result)
+                return result
+        except BaseException as exc:
+            for name in (original_name, display_name):
+                (self.media_dir / name).unlink(missing_ok=True)
+            if isinstance(exc, _AlreadyStored):
+                return m.UploadedMedia(**exc.stored)
+            raise
+
+    def media_bytes(self, actor: Actor, media_id: str) -> bytes:
+        """Sanitized display bytes after a case/household permission check; 404 otherwise."""
+        if not MEDIA_ID.fullmatch(media_id or ""):
+            raise not_found("This photo")
+        with self._read() as conn:
+            row = conn.execute("SELECT * FROM media WHERE media_id = ?", (media_id,)).fetchone()
+            if row is None:
+                raise not_found("This photo")
+            if actor.role == "owner":
+                case = conn.execute("SELECT owner_id FROM cases WHERE case_id = ?", (row["case_id"],)).fetchone()
+                allowed = case is not None and case["owner_id"] == actor.actor_id
+            else:
+                allowed = (actor.role == "resident" and row["case_id"] == actor.case_id
+                           and row["household_id"] == actor.household_id)
+            if not allowed:
+                raise not_found("This photo")
+        path = (self.media_dir / row["display_name"]).resolve()
+        if not path.is_relative_to(self.media_dir.resolve()) or not path.is_file():
+            raise not_found("This photo")
+        return path.read_bytes()
 
     def _report_view(self, conn, row: sqlite3.Row) -> m.ResidentReport:
         data = json.loads(row["json"])
@@ -569,6 +650,21 @@ class CaseStore:
                 (actor.case_id, cursor, *sorted(RESIDENT_EVENT_TYPES), limit)).fetchall()
             return [self._event_model(r) for r in rows
                     if r["audience"] == "case" or actor.household_id in json.loads(r["households_json"] or "[]")]
+
+
+MEDIA_ID = re.compile(r"med_[0-9a-f]{20}")
+
+
+class _AlreadyStored(Exception):
+    def __init__(self, stored: dict):
+        self.stored = stored
+
+
+def _safe_component(value: str) -> str:
+    """Case IDs are server-issued, but never let one become a path segment unchecked."""
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", value or ""):
+        raise invalid("This case cannot store photos.")
+    return value
 
 
 RESIDENT_EVENT_TYPES = frozenset({"report.updated", "support.updated", "task.updated", "notice.published",

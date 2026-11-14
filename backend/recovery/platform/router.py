@@ -13,8 +13,10 @@ from fastapi import APIRouter, Header, HTTPException, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
+from starlette.concurrency import run_in_threadpool
 
 from . import models as m
+from . import uploads
 from .auth import LOCAL_OWNER_ID, Actor, check_owner_secret
 from .errors import PlatformError, unauthenticated
 from .store import OWNER_SESSION_TTL, RESIDENT_SESSION_TTL, CaseStore
@@ -128,6 +130,24 @@ def build_router(store: CaseStore, assessment_launcher: Optional[AssessmentLaunc
     @router.get("/api/resident/home", response_model=m.ResidentHome)
     def resident_home(request: Request):
         return store.resident_home(resident(request))
+
+    @router.post("/api/resident/uploads", response_model=m.UploadedMedia)
+    async def resident_upload(request: Request, idempotency_key: Optional[str] = Header(default=None)):
+        actor = resident(request)
+        body = await uploads.read_limited(request)
+        data = uploads.extract_file_part(request.headers.get("content-type", ""), body)
+        return await run_in_threadpool(store.save_upload, actor, data, idempotency_key)
+
+    @router.get("/api/recovery/media/{media_id}")
+    def media(media_id: str, request: Request):
+        actor = store.resolve_session(request.cookies.get(OWNER_COOKIE))
+        if actor is None or actor.role != "owner":
+            actor = store.resolve_session(request.cookies.get(RESIDENT_COOKIE))
+        if actor is None:
+            raise unauthenticated()
+        return Response(store.media_bytes(actor, media_id), media_type="image/jpeg",
+                        headers={"X-Content-Type-Options": "nosniff",
+                                 "Content-Disposition": "inline"})
 
     @router.post("/api/resident/reports", response_model=m.ReportReceipt)
     def resident_report(body: m.ReportInput, request: Request,
