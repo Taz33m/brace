@@ -74,10 +74,24 @@ def select_capture_pair(captures: list[dict], incident_at: str, cutoff: str,
                         mode: str = "scenario_exercise") -> dict:
     """Nearest eligible dated flights; no pair is itself a damage finding."""
     eligible = [c for c in captures if source_eligibility(c.get("date"), c.get("available_at"), cutoff, mode)[0]]
-    before = [c for c in eligible if relative_to_incident(c.get("date"), incident_at) == "before"]
-    after = [c for c in eligible if relative_to_incident(c.get("date"), incident_at) == "after"]
+    incident_start, incident_end = date_bounds(incident_at)
+
+    def window(c):
+        last = normalize_date(c.get("last_date") or c.get("date"))
+        # New inventories declare a capture window. An unknown start must not
+        # turn a mosaic ending after the incident into a wholly post-incident view.
+        first = normalize_date(c.get("first_date") if "first_date" in c else c.get("date"))
+        if not last or (first and date_bounds(first)[0] > date_bounds(last)[1]):
+            return None
+        if date_bounds(last)[1] > date_bounds(cutoff)[1]:
+            return None
+        return (date_bounds(first)[0] if first else None, date_bounds(last)[1])
+
+    windows = [(c, window(c)) for c in eligible]
+    before = [(c, w) for c, w in windows if w and w[1] < incident_start]
+    after = [(c, w) for c, w in windows if w and w[0] is not None and w[0] > incident_end]
     return {
-        "before": max(before, key=lambda c: date_bounds(c["date"])[1], default=None),
-        "after": min(after, key=lambda c: date_bounds(c["date"])[0], default=None),
+        "before": max(before, key=lambda item: item[1][1])[0] if before else None,
+        "after": min(after, key=lambda item: item[1][0])[0] if after else None,
         "limitation": "Flights can differ in season, lighting and resolution. A visual change needs review; it does not establish cause or hidden damage.",
     }

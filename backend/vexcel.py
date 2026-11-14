@@ -7,9 +7,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import random
 import re
 import time
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -93,25 +95,58 @@ def _xmp(image: bytes) -> dict[str, str]:
     return dict(re.findall(r"<Vexcel:([\w-]+)>(.*?)</Vexcel:", text))
 
 
-def _image(endpoint: str, body: dict, refresh: bool = False) -> tuple[Path, dict]:
-    key = _key(endpoint, body)
-    img = VX_CACHE / "images" / f"{key}.jpg"
-    meta = VX_CACHE / "images" / f"{key}.json"
-    if img.exists() and meta.exists() and not refresh:
-        return img, json.loads(meta.read_text())
-    r = _send("POST", endpoint, body=body)
-    if not r.is_success:
-        raise VexcelError(r.status_code, r.text[:300])
-    x = _xmp(r.content)
+def _date_only(value: Any) -> str | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        return date.fromisoformat(value[:10]).isoformat()
+    except ValueError:
+        try:
+            return datetime.strptime(value, "%a %b %d %H:%M:%S %Z %Y").date().isoformat()
+        except ValueError:
+            return None
+
+
+def _image_info(image: bytes) -> dict:
+    x = _xmp(image)
     info: dict[str, Any] = {
+        "metadata_version": 2,
         "collection": x.get("collection"),
         "first_capture": x.get("first-capture-date"),
         "last_capture": x.get("last-capture-date"),
+        "first_date": _date_only(x.get("first-capture-date")),
+        "last_date": _date_only(x.get("last-capture-date")),
+        "first_publish": x.get("first-publish-date"),
+        "last_publish": x.get("last-publish-date"),
+        "layer": x.get("layer"),
+        "graysky_event": x.get("graysky-event"),
+        "min_gsd": x.get("min-gsd"),
+        "max_gsd": x.get("max-gsd"),
         "product": x.get("product-type"),
     }
     if x.get("geometry"):
         w, s, e, n = shapely_wkt.loads(x["geometry"]).bounds
         info["bounds"] = [w, s, e, n]
+    return info
+
+
+def _image(endpoint: str, body: dict, refresh: bool = False) -> tuple[Path, dict]:
+    key = _key(endpoint, body)
+    img = VX_CACHE / "images" / f"{key}.jpg"
+    meta = VX_CACHE / "images" / f"{key}.json"
+    if img.exists() and not refresh:
+        info = json.loads(meta.read_text()) if meta.exists() else {}
+        if info.get("metadata_version") != 2:
+            # Enrich old local metadata without downloading or changing image bytes.
+            for name, value in _image_info(img.read_bytes()).items():
+                if info.get(name) is None or name == "metadata_version":
+                    info[name] = value
+            meta.write_text(json.dumps(info))
+        return img, info
+    r = _send("POST", endpoint, body=body)
+    if not r.is_success:
+        raise VexcelError(r.status_code, r.text[:300])
+    info = _image_info(r.content)
     img.parent.mkdir(parents=True, exist_ok=True)
     img.write_bytes(r.content)
     meta.write_text(json.dumps(info))
@@ -119,12 +154,14 @@ def _image(endpoint: str, body: dict, refresh: bool = False) -> tuple[Path, dict
 
 
 def ortho(area_wkt: str, buffer_m: float = 8, drawing: list[dict] | None = None, refresh: bool = False,
-          collection: str | None = None, max_px: tuple[int, int] | None = None) -> tuple[Path, dict]:
+          collection: str | None = None, max_px: tuple[int, int] | None = None,
+          layers: str | None = None) -> tuple[Path, dict]:
     """Straight-down image of an area. Returns (file, info) where info['bounds'] is [west, south, east, north].
 
-    Without `collection` the API picks the best current imagery; with it, that specific capture.
+    Without `collection` the API picks current imagery; with it, that collection.
+    Collection images may span dates: inspect first_capture and last_capture.
     """
-    body: dict[str, Any] = {"wkt": area_wkt, "srid": 4326, "layer": VEXCEL_LAYERS,
+    body: dict[str, Any] = {"wkt": area_wkt, "srid": 4326, "layer": VEXCEL_LAYERS if layers is None else layers,
                             "buffer-meter": buffer_m, "crop": "bounding_box", "image-format": "jpeg"}
     if collection:
         body["collection"] = collection
@@ -135,45 +172,68 @@ def ortho(area_wkt: str, buffer_m: float = 8, drawing: list[dict] | None = None,
     return _image("ortho/extract", body, refresh)
 
 
-def captures(area_wkt: str, max_gsd: float = 0.12, *, thin: bool = True,
-             refresh: bool = False, cached_only: bool = False) -> list[dict]:
+def captures(area_wkt: str, max_gsd: float | None = 0.12, *, thin: bool = True,
+             refresh: bool = False, cached_only: bool = False, layers: str | None = None) -> list[dict]:
     """Every ortho capture covering an area, newest first: [{collection, date, layer, gsd}].
 
     ``thin=False`` preserves nearby flights for before/after recovery comparisons.
     The v2 cache stores the full inventory; old half-year caches are never treated
     as complete inventories. ``cached_only`` makes no request on a cache miss.
+    ``max_gsd=None`` does not filter resolution, including unknown GSD. ``date``
+    remains the last capture day for compatibility, not an exact single-date claim.
+    Older v2 caches may lack capture windows and publication metadata.
     """
-    path = VX_CACHE / "captures_v2" / f"{_key(area_wkt, VEXCEL_LAYERS)}.json"
+    selected_layers = VEXCEL_LAYERS if layers is None else layers
+    path = VX_CACHE / "captures_v2" / f"{_key(area_wkt, selected_layers)}.json"
     if path.exists() and not refresh:
         rows = json.loads(path.read_text())
         return _select_captures(rows, max_gsd, thin)
     if cached_only:
         return []
-    r = _send("GET", "ortho/collections", timeout=120, params={
-        "wkt": area_wkt, "srid": 4326, "layer": VEXCEL_LAYERS,
-        "include": "collection,last-capture-date,layer,min-gsd"})
+    core = "collection,first-capture-date,last-capture-date,layer,min-gsd,graysky-event"
+    params = {"wkt": area_wkt, "srid": 4326, "layer": selected_layers,
+              "include": core + ",max-gsd,first-publish-date,last-publish-date"}
+    r = _send("GET", "ortho/collections", timeout=120, params=params)
+    if r.status_code in (400, 422):
+        # Some catalog versions expose publication fields only in extracted XMP.
+        # A rejected expansion must not hide otherwise usable capture inventory.
+        r = _send("GET", "ortho/collections", timeout=120, params={**params, "include": core})
     if r.status_code == 404:
         rows: list[dict] = []
     elif not r.is_success:
         raise VexcelError(r.status_code, r.text[:300])
     else:
-        rows = [{"collection": f["properties"]["collection"], "date": (f["properties"].get("last-capture-date") or "")[:10],
-                 "layer": f["properties"].get("layer"), "gsd": round(f["properties"].get("min-gsd") or 9, 3)}
-                for f in r.json().get("features") or []]
+        rows = []
+        for feature in r.json().get("features") or []:
+            p = feature["properties"]
+            last_date = _date_only(p.get("last-capture-date"))
+            rows.append({"collection": p["collection"], "date": last_date,
+                         "first_date": _date_only(p.get("first-capture-date")), "last_date": last_date,
+                         "first_capture": p.get("first-capture-date"), "last_capture": p.get("last-capture-date"),
+                         "first_publish": p.get("first-publish-date"), "last_publish": p.get("last-publish-date"),
+                         "layer": p.get("layer"), "graysky_event": p.get("graysky-event"),
+                         "gsd": p.get("min-gsd"), "min_gsd": p.get("min-gsd"), "max_gsd": p.get("max-gsd")})
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(rows))
     return _select_captures(rows, max_gsd, thin)
 
 
-def _select_captures(rows: list[dict], max_gsd: float, thin: bool) -> list[dict]:
+def _select_captures(rows: list[dict], max_gsd: float | None, thin: bool) -> list[dict]:
+    def resolution(row: dict) -> float:
+        try:
+            gsd = float(row.get("gsd"))
+            return gsd if math.isfinite(gsd) and gsd > 0 else math.inf
+        except (TypeError, ValueError):
+            return math.inf
+
     best: dict[tuple[str, int] | str, dict] = {}
     for c in rows:
-        if not c["date"] or c["gsd"] > max_gsd:
+        if (thin and not c.get("date")) or (max_gsd is not None and resolution(c) > max_gsd):
             continue
         slot = (c["date"][:4], 0 if c["date"][5:7] <= "06" else 1) if thin else c["collection"]
-        if slot not in best or c["gsd"] < best[slot]["gsd"]:
+        if slot not in best or resolution(c) < resolution(best[slot]):
             best[slot] = c
-    return sorted(best.values(), key=lambda c: (c["date"], c["collection"]), reverse=True)
+    return sorted(best.values(), key=lambda c: (c.get("date") or "", c["collection"]), reverse=True)
 
 
 def oblique_directions(area_wkt: str) -> list[str]:

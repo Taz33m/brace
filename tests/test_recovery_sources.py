@@ -36,6 +36,20 @@ def test_pair_never_uses_same_day_or_future_capture():
     assert select_capture_pair(captures, "2024-07-08", "2024-07-10", "historical_replay")["before"] is None
 
 
+def test_capture_pair_respects_mosaic_windows_and_unknown_start():
+    captures = [
+        {"collection": "before", "date": "2024-07-01", "first_date": "2024-06-01"},
+        {"collection": "overlapping", "date": "2024-07-09", "first_date": "2024-07-01"},
+        {"collection": "unknown", "date": "2024-07-10", "first_date": None},
+        {"collection": "after", "date": "2024-09-28", "first_date": "2024-08-07"},
+        {"collection": "reversed", "date": "2024-07-10", "first_date": "2024-08-01"},
+    ]
+    pair = select_capture_pair(captures, "2024-07-08", "2024-10-01")
+    assert pair["before"]["collection"] == "before"
+    assert pair["after"]["collection"] == "after"
+    assert select_capture_pair(captures, "2024-07-08", "2024-09-01")["after"] is None
+
+
 def test_full_capture_inventory_uses_versioned_cache_and_keeps_nearby_flights(tmp_path, monkeypatch):
     monkeypatch.setattr(vexcel, "VX_CACHE", tmp_path)
     old = tmp_path / "captures" / f"{vexcel._key('POINT(0 0)', 0.12)}.json"
