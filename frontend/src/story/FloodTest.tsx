@@ -185,7 +185,7 @@ export function FloodTest({ site }: { site: number | null }) {
               {research.found.map((f) => (
                 <li key={f.name + f.price} className={f.planned ? "is-used" : ""}>
                   {f.source ? <a href={f.source.url} target="_blank" rel="noreferrer">{f.name}</a> : f.name}: ${f.price.toLocaleString("en-US")}{f.price_high ? ` to $${f.price_high.toLocaleString("en-US")}` : ""} {f.price_unit}
-                  <small>{f.planned ? "planned from" : f.why_not}</small>
+                  <small>{f.planned ? "used in the plan" : f.why_not}</small>
                 </li>
               ))}
             </ul>
