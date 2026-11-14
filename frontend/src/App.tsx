@@ -1,14 +1,15 @@
-import { useCallback, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { api } from "./api";
-import { BuildingPage } from "./components/BuildingPage";
-import { MapPage } from "./components/MapPage";
-import { VrPage } from "./components/VrPage";
 import type { Scenario } from "./types";
 import { OwnerSignIn, RecoveryEntry, ResidentEntry } from "./recovery/RecoveryEntry";
 import { consumeResidentInvitation, parseAppRoute, prepareHash } from "./recovery/routes";
 import type { AppRoute } from "./recovery/routes";
 
 type PrepareRoute = Extract<AppRoute, { kind: "prepare" }>;
+
+const BuildingPage = lazy(() => import("./components/BuildingPage").then(module => ({ default: module.BuildingPage })));
+const MapPage = lazy(() => import("./components/MapPage").then(module => ({ default: module.MapPage })));
+const VrPage = lazy(() => import("./components/VrPage").then(module => ({ default: module.VrPage })));
 
 /** Read and scrub invitations before any child can issue a network request. */
 export function captureBrowserRoute(): AppRoute {
@@ -46,7 +47,9 @@ export function App() {
     invitation_token={route.invitation_token} on_invitation_consumed={consumed} />;
   if (route.kind === "recovery") return <RecoveryEntry case_id={route.case_id} />;
   if (route.kind === "invalid") return <div className="fatal" role="alert">{route.message}</div>;
-  return <PrepareApp route={route} />;
+  return <Suspense fallback={<div className="fatal quiet" role="status">Loading preparation tools…</div>}>
+    <PrepareApp route={route} />
+  </Suspense>;
 }
 
 function PrepareApp({ route }: { route: PrepareRoute }) {

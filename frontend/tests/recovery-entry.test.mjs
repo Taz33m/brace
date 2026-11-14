@@ -23,6 +23,7 @@ async function compile(relative, imports = {}) {
   } });
   outputText = outputText.replace(/import\s+"[^\"]+\.css";?/g, "")
     .replace(/import\.meta\.glob\([^)]*\)/g, "({})")
+    .replace(/import\("([^"]+)"\)/g, (all, name) => imports[name] ? `import(${JSON.stringify(imports[name])})` : all)
     .replace(/from\s+"([^"]+)"/g, (_all, name) => {
       const replacement = imports[name] ?? (name === "react" ? hooksUrl : pathToFileURL(require.resolve(name)).href);
       return `from ${JSON.stringify(replacement)}`;
@@ -39,11 +40,14 @@ const routesUrl = await compile("../src/recovery/routes.ts");
 const spatialUrl = await compile("../src/recovery/spatial.ts");
 const noticeClientUrl = await compile("../src/recovery/notice-client.ts", { "./client": clientUrl });
 const draftNoticesUrl = await compile("../src/recovery/DraftNotices.tsx", { "./client": clientUrl, "./notice-client": noticeClientUrl });
+const supportClientUrl = await compile("../src/recovery/support-client.ts", { "./client": clientUrl });
+const supportInboxUrl = await compile("../src/recovery/SupportInbox.tsx", { "./client": clientUrl, "./support-client": supportClientUrl });
 const geometryUrl = await compile("../src/recovery/spatial-geometry.ts");
-const spatialViewerUrl = await compile("../src/recovery/SpatialViewer.tsx", { "./spatial-geometry": geometryUrl });
+const spatialViewerUrl = await compile("../src/recovery/SpatialViewer.tsx", { "./spatial-geometry": geometryUrl, "./spatial": spatialUrl });
 const entryUrl = await compile("../src/recovery/RecoveryEntry.tsx", {
   "./client": clientUrl, "./owner-controller": controllerUrl, "./routes": routesUrl, "./spatial": spatialUrl,
   "./DraftNotices": draftNoticesUrl,
+  "./SupportInbox": supportInboxUrl,
   "./SpatialViewer": spatialViewerUrl,
 });
 const { ResidentBootstrap, EvidenceSlot, commandForCurrentCase } = await import(entryUrl);
