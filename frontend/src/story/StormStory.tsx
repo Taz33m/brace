@@ -19,6 +19,9 @@ const stopAt = (t: number) => (t < 23.4 ? 0 : t < 24.2 ? ((t - 23.4) / 0.8) * 0.
 const RING = [1, 0.256, 0.064, 0.016];            // each aerial covers this share of the widest one's width, all on one centre
 const rad = (deg: number) => (deg * Math.PI) / 180;
 const clamp = (v: number) => Math.max(0, Math.min(1, v));
+const dollars = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
+/** A large sum the way it is said aloud: $22.9 billion, $29.95 million. */
+const sum = (n: number) => (n >= 1e9 ? `$${(n / 1e9).toFixed(1)} billion` : n >= 1e6 ? `$${(n / 1e6).toFixed(2).replace(/\.?0+$/, "")} million` : dollars(n));
 
 interface Descent { levels: { level: number; bounds: [number, number, number, number]; url: string }[]; site: { bounds: [number, number, number, number]; captured?: string } }
 type Cue = { hash?: string; key?: string; click?: string; text?: RegExp; wait?: number };
@@ -183,8 +186,9 @@ function Ground() {
   const section = useRef<HTMLElement>(null);
   const [descent, setDescent] = useState<Descent | null>(null);
   const [hours, setHours] = useState<number | null>(null);
-  const [homes, setHomes] = useState<{ name: string; units: number | null; built: number | null; rent: string | null } | null>(null);
+  const [homes, setHomes] = useState<{ name: string; units: number | null; built: number | null; rent: string | null; sold: string | null; soldHow: string | null; work: string | null } | null>(null);
   const [count, setCount] = useState<number | null>(null);
+  const [city, setCity] = useState<{ homes: number; sold: number; of: number } | null>(null);
   const [room, setRoom] = useState<{ sweep: string; heading: number; yaw: number } | null>(null);
   const [siteLoaded, setSiteLoaded] = useState(false);
   const rings = useRef<(HTMLDivElement | null)[]>([]);
@@ -201,9 +205,13 @@ function Ground() {
       if (!current) return;
       setHours(b.threat.hours_left ?? null);
       const record = b.record as { name?: string; units?: number; year_built?: number };
-      const dollars = (n: number) => `$${n.toLocaleString("en-US")}`;
+      const sale = b.last_sale as { price?: number; date?: string; basis?: string; portfolio?: boolean } | null | undefined;
+      const before = b.plan?.totals.before_arrival;
       setHomes({ name: record.name ?? "", units: record.units ?? null, built: record.year_built ?? null,
-                 rent: b.rent ? `Homes advertised at ${dollars(b.rent.low)} to ${dollars(b.rent.high)} a month` : null });
+                 rent: b.rent ? `Homes advertised at ${dollars(b.rent.low)} to ${dollars(b.rent.high)} a month` : null,
+                 sold: sale?.price ? `Last sold for ${sum(sale.price)}${sale.date ? ` in ${sale.date.slice(0, 4)}` : ""}` : null,
+                 soldHow: sale?.price ? (sale.portfolio ? "CoStar sale record: its share of a portfolio sale" : "CoStar sale record") : null,
+                 work: before?.count ? `${dollars(before.cost_low)} to ${dollars(before.cost_high)} of work still fits` : null });
     }).catch(() => {});
     api.furnish(PARKER, SCAN).then((r) => { if (current) setRoom({ sweep: r.sweep_id, heading: r.standpoint.h, yaw: r.view.yaw_deg }); }).catch(() => {});
     return () => { current = false; };
@@ -217,6 +225,7 @@ function Ground() {
     api.portfolio(SCENARIO, STEP, "", "").then((p) => {
       if (!current) return;
       setCount(p.shown);
+      if (p.value.buildings_with_sale) setCity({ homes: p.homes, sold: p.value.last_sale_total, of: p.value.buildings_with_sale });
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
       const [west, south, east, north] = wide, size = canvas.width;
@@ -400,16 +409,19 @@ function Ground() {
         <div data-g="city" className="st-city">
           <p className="st-kicker">Houston, Texas</p>
           {count != null && <p className="st-figure"><strong>{count.toLocaleString("en-US")}</strong> buildings in the forecast wind field</p>}
+          {city && <p className="st-money">{city.homes.toLocaleString("en-US")} homes. {sum(city.sold)} is what {city.of.toLocaleString("en-US")} of these buildings last sold for.<small>CoStar sale records. Not today's value, and not a loss estimate.</small></p>}
         </div>
         <div data-g="place" className="st-place">
           <h2>{homes?.name}</h2>
           <p>{[homes?.units ? `${homes.units} homes` : null, homes?.built ? `built ${homes.built}` : null].filter(Boolean).join(", ")}</p>
+          {homes?.sold && <p className="st-place-rent">{homes.sold}<small>{homes.soldHow}</small></p>}
           {homes?.rent && <p className="st-place-rent">{homes.rent}<small>CoStar apartment listing</small></p>}
         </div>
         {hours != null && (
           <div data-g="clock" className="st-clock">
             <strong>{Math.round(hours)}</strong>
             <span>hours until the wind arrives</span>
+            {homes?.work && <em>{homes.work}</em>}
           </div>
         )}
         <div data-g="backdrop" className="st-backdrop" />
