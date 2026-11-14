@@ -208,7 +208,9 @@ def build_router(store: CaseStore, assessment_launcher: Optional[AssessmentLaunc
 
     @router.post("/api/resident/uploads", response_model=m.UploadedMedia)
     async def resident_upload(request: Request, idempotency_key: Optional[str] = Header(default=None)):
-        actor = resident(request)
+        # Cheap checks first: never read up to 10 MB for a request that will be refused.
+        actor = await run_in_threadpool(resident, request)
+        store._check_key(idempotency_key)
         body = await uploads.read_limited(request)
         data = uploads.extract_file_part(request.headers.get("content-type", ""), body)
         return await run_in_threadpool(store.save_upload, actor, data, idempotency_key)

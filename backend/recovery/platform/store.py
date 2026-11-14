@@ -14,6 +14,7 @@ import hashlib
 import json
 import re
 import sqlite3
+import time
 import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -36,6 +37,7 @@ OWNER_EVENT_WINDOW = 100
 INVITATION_TTL = timedelta(hours=72)
 RESIDENT_SESSION_TTL = timedelta(days=30)
 OWNER_SESSION_TTL = timedelta(hours=12)
+ORPHAN_MIN_AGE = timedelta(minutes=10)
 
 
 def _utc_now() -> datetime:
@@ -67,6 +69,7 @@ class CaseStore:
         finally:
             conn.close()
         self.recover_interrupted_runs()
+        self.sweep_orphan_media()
 
     # ------------------------------------------------------------------ plumbing
 
@@ -968,6 +971,26 @@ class CaseStore:
                 return m.UploadedMedia(**exc.stored)
             raise
 
+    def sweep_orphan_media(self, *, min_age: timedelta = ORPHAN_MIN_AGE) -> int:
+        """Delete media files with no committed row (a crash between file write and commit).
+
+        Only server-named files older than `min_age` are touched, so an upload still in
+        flight in this process is never removed. Returns the number of files deleted.
+        """
+        cutoff = time.time() - min_age.total_seconds()
+        candidates = [p for p in self.media_dir.glob("*/med_*")
+                      if MEDIA_FILE.fullmatch(p.name) and p.is_file() and p.stat().st_mtime < cutoff]
+        if not candidates:
+            return 0
+        with self._read() as conn:
+            known = {r["media_id"] for r in conn.execute("SELECT media_id FROM media")}
+        removed = 0
+        for path in candidates:
+            if path.name.split(".", 1)[0] not in known:
+                path.unlink(missing_ok=True)
+                removed += 1
+        return removed
+
     def media_bytes(self, actor: Actor, media_id: str) -> bytes:
         """Sanitized display bytes after a case/household permission check; 404 otherwise."""
         if not MEDIA_ID.fullmatch(media_id or ""):
@@ -1085,6 +1108,7 @@ TASK_TRANSITIONS = {
 }
 
 MEDIA_ID = re.compile(r"med_[0-9a-f]{20}")
+MEDIA_FILE = re.compile(r"med_[0-9a-f]{20}\.(orig|jpg)")
 
 
 @dataclass(frozen=True)
