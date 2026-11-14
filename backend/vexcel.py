@@ -135,14 +135,20 @@ def ortho(area_wkt: str, buffer_m: float = 8, drawing: list[dict] | None = None,
     return _image("ortho/extract", body, refresh)
 
 
-def captures(area_wkt: str, max_gsd: float = 0.12) -> list[dict]:
+def captures(area_wkt: str, max_gsd: float = 0.12, *, thin: bool = True,
+             refresh: bool = False, cached_only: bool = False) -> list[dict]:
     """Every ortho capture covering an area, newest first: [{collection, date, layer, gsd}].
 
-    Keeps the sharpest capture per calendar half-year so a decade of flights stays a short list.
+    ``thin=False`` preserves nearby flights for before/after recovery comparisons.
+    The v2 cache stores the full inventory; old half-year caches are never treated
+    as complete inventories. ``cached_only`` makes no request on a cache miss.
     """
-    path = VX_CACHE / "captures" / f"{_key(area_wkt, max_gsd)}.json"
-    if path.exists():
-        return json.loads(path.read_text())
+    path = VX_CACHE / "captures_v2" / f"{_key(area_wkt, VEXCEL_LAYERS)}.json"
+    if path.exists() and not refresh:
+        rows = json.loads(path.read_text())
+        return _select_captures(rows, max_gsd, thin)
+    if cached_only:
+        return []
     r = _send("GET", "ortho/collections", timeout=120, params={
         "wkt": area_wkt, "srid": 4326, "layer": VEXCEL_LAYERS,
         "include": "collection,last-capture-date,layer,min-gsd"})
@@ -154,17 +160,20 @@ def captures(area_wkt: str, max_gsd: float = 0.12) -> list[dict]:
         rows = [{"collection": f["properties"]["collection"], "date": (f["properties"].get("last-capture-date") or "")[:10],
                  "layer": f["properties"].get("layer"), "gsd": round(f["properties"].get("min-gsd") or 9, 3)}
                 for f in r.json().get("features") or []]
-    best: dict[tuple[str, int], dict] = {}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(rows))
+    return _select_captures(rows, max_gsd, thin)
+
+
+def _select_captures(rows: list[dict], max_gsd: float, thin: bool) -> list[dict]:
+    best: dict[tuple[str, int] | str, dict] = {}
     for c in rows:
         if not c["date"] or c["gsd"] > max_gsd:
             continue
-        slot = (c["date"][:4], 0 if c["date"][5:7] <= "06" else 1)
+        slot = (c["date"][:4], 0 if c["date"][5:7] <= "06" else 1) if thin else c["collection"]
         if slot not in best or c["gsd"] < best[slot]["gsd"]:
             best[slot] = c
-    out = sorted(best.values(), key=lambda c: c["date"], reverse=True)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(out))
-    return out
+    return sorted(best.values(), key=lambda c: (c["date"], c["collection"]), reverse=True)
 
 
 def oblique_directions(area_wkt: str) -> list[str]:

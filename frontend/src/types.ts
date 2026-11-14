@@ -106,9 +106,14 @@ export interface Scan {
   structure: string | null;
   area_sqft: number | null;
   scanned: string;
+  captured_at?: string | null;
+  model_created_at?: string | null;
+  association_basis?: string;
+  rooms?: { id: string; label: string; type: string; floor_id: string | null; area_sqft: number; polygon: number[][] | null }[];
+  floors?: { id: string; label: string | null; sequence: number; area_with_walls_sqft: number }[];
   origin: LonLat | null;
   sdk_yaw_offset: number | null;
-  sweeps: { id: string; lon: number | null; lat: number | null; heading: number | null }[];
+  sweeps: { id: string; lon: number | null; lat: number | null; heading: number | null; room_id?: string | null; floor_id?: string | null; model_position?: {x: number | null; y: number | null; z: number | null} }[];
 }
 
 export interface Threat {

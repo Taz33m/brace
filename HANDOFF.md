@@ -1,5 +1,7 @@
 # Brace — engineering handoff
 
+**Recovery implementation update (November 14):** Lead-owned three-layer data integration, deterministic valuation, recovery agent, and assessment worker are implemented. Read [the core integration guide](docs/recovery-core.md) and [four-person ownership split](docs/recovery-handoffs/00-START-HERE.md). Those recovery assignments supersede older feature-scope statements below; the preparation app and its evidence rules remain intact. Platform/router authentication and owner/resident UI mounting are the next team integration checkpoint.
+
 For the lead engineer, working in Claude Code with the superpowers plugin.
 Written 2026-11-14 (Saturday, early morning). Read this, then `PRD.md` and `README.md`.
 

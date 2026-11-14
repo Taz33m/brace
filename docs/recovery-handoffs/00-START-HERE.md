@@ -2,6 +2,8 @@
 
 Prepared for Tazeem on November 14, 2026. This package specifies future implementation; creating it did not modify Brace or Standard Response.
 
+**Lead implementation update:** The data adapters, deterministic valuation, recovery agent, and worker handshake are now implemented. Read [recovery-core.md](../recovery-core.md) for the runnable CLI and the precise Person 4 launcher/store interface. The wire contract and exclusive teammate file ownership below remain unchanged.
+
 ## The four owners
 
 | Person | Ownership | Concrete output |

@@ -16,7 +16,7 @@ from shapely.geometry import Point, Polygon, box
 from . import geo, matterport, portfolio, vexcel
 from .config import BUILDINGS_DIR
 
-BUNDLE_VERSION = 3
+BUNDLE_VERSION = 4
 MAX_AERIAL_PX = 1500
 MAX_SCANS = 14
 DEFECTS = ("missing-material", "tarp", "patch", "structural-damage", "rust", "debris")
@@ -87,9 +87,9 @@ def _structure(s: dict, n: int) -> dict[str, Any]:
     }
 
 
-def _scan(model_id: str, frame: geo.LocalFrame) -> dict | None:
+def _scan(model_id: str, frame: geo.LocalFrame, model: dict | None = None) -> dict | None:
     try:
-        m = matterport.fetch_model(model_id)
+        m = model if model is not None else matterport.fetch_model(model_id)
     except matterport.MatterportError:
         return None
     kind, level = classify_scan(m.get("name"))
@@ -109,20 +109,48 @@ def _scan(model_id: str, frame: geo.LocalFrame) -> dict | None:
                 (a, b), (c, d) = t.a
                 heading = round(math.degrees(math.atan2(a * math.cos(yaw) + b * math.sin(yaw),
                                                         c * math.cos(yaw) + d * math.sin(yaw))) % 360, 1)
-            sweeps.append({"id": s["id"], "lon": round(lon, 7), "lat": round(lat, 7), "heading": heading})
+            sweeps.append({"id": s["id"], "lon": round(lon, 7), "lat": round(lat, 7), "heading": heading,
+                           "room_id": s.get("room_id"), "floor_id": s.get("floor_id"),
+                           "model_position": {k: s.get(k) for k in ("x", "y", "z")}})
         (a, _), (c, _) = t.a
         yaw_offset = round(-math.degrees(math.atan2(c, a)), 2)
     else:
-        sweeps = [{"id": s["id"], "lon": None, "lat": None, "heading": None} for s in m["sweeps"] if s["has_pano"]]
+        sweeps = [{"id": s["id"], "lon": None, "lat": None, "heading": None,
+                   "room_id": s.get("room_id"), "floor_id": s.get("floor_id"),
+                   "model_position": {k: s.get(k) for k in ("x", "y", "z")}}
+                  for s in m["sweeps"] if s["has_pano"]]
         yaw_offset = None
     return {
         "id": m["id"], "name": m.get("name") or "Untitled scan", "kind": kind, "level": level,
-        "scanned": (m.get("created") or "")[:10],
+        # Model API creation time is not the date the building was captured.
+        "scanned": m.get("captured_at") or "",
+        "captured_at": m.get("captured_at"), "model_created_at": m.get("created"),
+        "rooms": m.get("rooms") or [], "floors": m.get("floors") or [],
+        "association_basis": "sponsor_property_link; structure GPS candidate only",
         "area_sqft": m.get("area_with_walls_sqft") or m.get("area_indoor_sqft") or None,
         "origin": g.get("origin"), "altitude_m": g.get("altitude_m"),
         "sdk_yaw_offset": yaw_offset,  # viewer yaw that faces north; yaw = offset - bearing
         "sweeps": sweeps,
     }
+
+
+def upgrade_cached_bundle(cached: dict) -> dict:
+    """Migrate v3 metadata using local model caches only, without network calls."""
+    if cached.get("version") == BUNDLE_VERSION:
+        return cached
+    frame = geo.LocalFrame(**cached["frame"])
+    for old in cached.get("scans", []):
+        model_path = matterport.MP_CACHE / old["id"] / "model.json"
+        if model_path.exists():
+            new = _scan(old["id"], frame, json.loads(model_path.read_text()))
+            if new:
+                old.update(new)
+        else:
+            old.update(model_created_at=old.get("scanned") or None, captured_at=None,
+                       scanned="", rooms=[], floors=[],
+                       association_basis="sponsor_property_link; structure GPS candidate only")
+    cached["version"] = BUNDLE_VERSION
+    return cached
 
 
 def build(property_id: int, refresh: bool = False) -> dict:
@@ -131,6 +159,10 @@ def build(property_id: int, refresh: bool = False) -> dict:
     if path.exists() and not refresh:
         cached = json.loads(path.read_text())
         if cached.get("version") == BUNDLE_VERSION:
+            return cached
+        if cached.get("version") == 3:
+            cached = upgrade_cached_bundle(cached)
+            path.write_text(json.dumps(cached))
             return cached
     try:
         b = portfolio.building(property_id)
@@ -191,6 +223,7 @@ def build(property_id: int, refresh: bool = False) -> dict:
         },
         "structures": structures,
         "aerial": {"bounds": info["bounds"], "width": width, "height": height, "captured": info.get("last_capture"),
+                   "collection": info.get("collection"),
                    "obliques": obliques, "grid": {"cols": max(3, math.ceil(span_x / cell)), "rows": max(3, math.ceil(span_y / cell)),
                                                   "cell_m": cell}},
         "scans": scans,

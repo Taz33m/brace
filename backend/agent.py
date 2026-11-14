@@ -272,9 +272,11 @@ class Planner:
 
     def t_list_scans(self) -> tuple[Any, str, str | None]:
         rows = [{"scan_id": sc["id"], "name": sc["name"], "kind": sc["kind"], "floor": sc["level"], "structure": sc.get("structure"),
-                 "area_sqft": sc["area_sqft"], "scanned": sc["scanned"], "positions": len(sc["sweeps"]),
+                 "area_sqft": sc["area_sqft"], "captured_at": sc.get("captured_at"),
+                 "model_created_at": sc.get("model_created_at"), "positions": len(sc["sweeps"]),
                  "sweep_ids": [x["id"] for x in sc["sweeps"]][:30]} for sc in self.site.d["scans"]]
-        note = "Scans cover individual spaces, not the whole building." if rows else "No scans are attached to this building."
+        note = ("Scans cover individual spaces, not the whole building. Model creation is not capture time; "
+                "structure associations from GPS are unverified candidates.") if rows else "No scans are attached to this building."
         return json.dumps({"scans": rows, "note": note}, indent=1), "Listing the scanned spaces", None
 
     def t_survey_scan(self, scan_id: str) -> tuple[Any, str, str | None]:
