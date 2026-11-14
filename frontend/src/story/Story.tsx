@@ -11,7 +11,7 @@ export type StoryId = "storm" | "flood" | "desk" | "after" | "fire";
 
 /** The scenarios, by the city they happen in. The home page lists them; each is told by scrolling. */
 export const STORIES: { id: StoryId; where: string; title: string; line: string }[] = [
-  { id: "storm", where: "Houston", title: "Before the storm", line: "Hurricane Beryl, thirty-nine hours out. One building, what it is worth, and the work that still fits." },
+  { id: "storm", where: "Houston", title: "Thirty-nine hours", line: "You own the building. Hurricane Beryl arrives in 39 hours. What it is worth, what still fits, and three decisions that are yours." },
   { id: "flood", where: "Houston", title: "Before the water", line: "A community in a high-risk flood zone. Which buildings stand on the lowest ground, and what to move first." },
   { id: "desk", where: "Houston", title: "Five buildings, two crews", line: "Not enough crew hours for every roof. Scroll the clock and watch the desk decide who goes where." },
   { id: "after", where: "Houston", title: "After the storm", line: "One room as it was scanned, cleared, and furnished again." },

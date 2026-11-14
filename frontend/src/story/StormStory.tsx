@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { api } from "../api";
+import type { Desk } from "../types";
 import { CabinWindow, Sky, SplitChars } from "./Cabin";
 import { gsap, prefersReducedMotion, scrollToY } from "./gsap";
 
@@ -16,6 +17,8 @@ import { gsap, prefersReducedMotion, scrollToY } from "./gsap";
 const RING = [1, 0.256, 0.064, 0.016];            // each aerial covers this share of the widest one's width, all on one centre
 const rad = (deg: number) => (deg * Math.PI) / 180;
 const clamp = (v: number) => Math.max(0, Math.min(1, v));
+const WORDS = ["No", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten"];
+const word = (n: number) => WORDS[n] ?? String(n);
 const dollars = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
 /** A large sum the way it is said aloud: $22.9 billion, $29.95 million. */
 const sum = (n: number) => (n >= 1e9 ? `$${(n / 1e9).toFixed(1)} billion` : n >= 1e6 ? `$${(n / 1e6).toFixed(2).replace(/\.?0+$/, "")} million` : dollars(n));
@@ -46,6 +49,7 @@ interface Chapter {
   site: { from: number; cues: Cue[] }[];
   length: number;                                  // how long the site stays, in the timeline's units
   notice?: number;                                 // the state in which Enter approves the notice
+  decide?: number;                                 // the state in which the owner is asked about a second crew
   stops?: { label: string; from: number }[];       // one building at several moments: the bar under it
 }
 
@@ -61,13 +65,14 @@ const HOUSTON: Chapter = {
     { from: 0, cues: [{ hash: at("beryl-2024", "adv33", P) }, { key: "1" }] },
     { from: 3.2, cues: [{ hash: at("beryl-2024", "adv33", P) }, { key: "2" }] },
     { from: 6.2, cues: [{ hash: at("beryl-2024", "adv33", P) }, { key: "1" }, { click: ".scene-jobs button", text: /evergreen|pine/i, wait: 1500 }] },
-    { from: 9.2, cues: [{ hash: at("beryl-2024", "adv37", P) }, { key: "1", wait: 900 }] },
-    { from: 12.2, cues: [{ hash: at("beryl-2024", "adv37", P) }, { click: ".scene-jobs button", text: /resident/i, wait: 400 }] },
-    { from: 15.2, cues: [{ hash: at("beryl-2024", "adv39", P) }, { key: "1", wait: 900 }] },
-    { from: 18.2, cues: [{ hash: at("beryl-2024", "adv39", P) }, { key: "3", wait: 700 }] },
+    { from: 9.2, cues: [{ hash: at("beryl-2024", "adv33", P) }, { key: "1" }] },
+    { from: 12.4, cues: [{ hash: at("beryl-2024", "adv37", P) }, { key: "1", wait: 900 }] },
+    { from: 15.4, cues: [{ hash: at("beryl-2024", "adv37", P) }, { click: ".scene-jobs button", text: /resident/i, wait: 400 }] },
+    { from: 18.4, cues: [{ hash: at("beryl-2024", "adv39", P) }, { key: "1", wait: 900 }] },
+    { from: 21.4, cues: [{ hash: at("beryl-2024", "adv39", P) }, { key: "3", wait: 700 }] },
   ],
-  length: 21, notice: 4,
-  stops: [{ label: "36 hours", from: 0 }, { label: "12 hours", from: 9.2 }, { label: "The morning after", from: 15.2 }],
+  length: 24.2, decide: 3, notice: 5,
+  stops: [{ label: "36 hours", from: 0 }, { label: "12 hours", from: 12.4 }, { label: "The morning after", from: 18.4 }],
 };
 const LOS_ANGELES: Chapter = {
   building: V, scenario: "la-red-flag-jan-2025", step: "20250105T2240Z", label: "Los Angeles, then one building",
@@ -93,7 +98,7 @@ const HOUSTON_WATER: Chapter = {
     { from: 6.2, cues: [{ key: "1" }, { click: ".scene-jobs button", text: /ground-floor/i, wait: 1500 }] },
     { from: 9.2, cues: [{ key: "1" }, { click: ".scene-jobs button", text: /open roof bay/i, wait: 1500 }] },
   ],
-  length: 12.5, notice: undefined, stops: undefined,
+  length: 12.5, notice: undefined, decide: undefined, stops: undefined,
 };
 
 export function StormStory() { return <Before chapter={HOUSTON} />; }
@@ -253,6 +258,9 @@ function Ground({ chapter: c }: { chapter: Chapter }) {
   const [city, setCity] = useState<{ homes: number; sold: number; of: number } | null>(null);
   const [room, setRoom] = useState<{ sweep: string; heading: number; yaw: number } | null>(null);
   const [siteLoaded, setSiteLoaded] = useState(false);
+  const [desk, setDesk] = useState<Desk | null>(null);
+  const [hired, setHired] = useState<string | null>(null);     // the owner's answer: a trade, or "none"
+  const decide = useRef<HTMLDivElement>(null);
   const rings = useRef<(HTMLDivElement | null)[]>([]);
   const dots = useRef<HTMLCanvasElement>(null), ground = useRef<HTMLDivElement>(null);
   const pano = useRef<HTMLDivElement>(null), frame = useRef<HTMLIFrameElement>(null);
@@ -266,9 +274,9 @@ function Ground({ chapter: c }: { chapter: Chapter }) {
   // Where the handle sits for a point on the timeline: on a stop, sliding to the next over the last stretch before it.
   const handleAt = useCallback((t: number) => {
     if (stops.length < 2) return 0;
-    let x = 0;
-    stops.forEach((stop, i) => { if (i) x = Math.max(x, (i - 1 + clamp((t - (start + stop.from - 0.8)) / 0.8)) / (stops.length - 1)); });
-    return x;
+    let passed = 0;      // each stop after the first counts once it is reached, and part-way while the scroll is crossing to it
+    stops.forEach((stop, i) => { if (i) passed += clamp((t - (start + stop.from - 0.8)) / 0.8); });
+    return passed / (stops.length - 1);
   }, [stops, start]);
 
   useEffect(() => {
@@ -287,6 +295,7 @@ function Ground({ chapter: c }: { chapter: Chapter }) {
                  work: before?.count ? `${dollars(before.cost_low)} to ${dollars(before.cost_high)} of work still fits` : null,
                  why: why(b.reasons ?? [], c.why, c.ground ? b.ground : null) });
     }).catch(() => {});
+    if (c.decide != null) api.desk(c.scenario, c.step).then((d) => { if (current) setDesk(d); }).catch(() => {});
     if (c.room) api.furnish(c.building, c.room).then((r) => { if (current) setRoom({ sweep: r.sweep_id, heading: r.standpoint.h, yaw: r.view.yaw_deg }); }).catch(() => {});
     return () => { current = false; };
   }, [c]);
@@ -362,6 +371,7 @@ function Ground({ chapter: c }: { chapter: Chapter }) {
           let now = 0;
           c.site.forEach((s, i) => { if (t >= start + s.from) now = i; });
           if (t >= start - 1.4) siteTo(now);
+          decide.current?.classList.toggle("is-on", c.decide != null && now === c.decide && t >= start);
           // The handle sits on the moment the scroll is in, and slides as the scroll crosses to the next.
           const x = handleAt(t);
           if (handle.current && !dragging.current) handle.current.style.left = `${x * 100}%`;
@@ -465,6 +475,19 @@ function Ground({ chapter: c }: { chapter: Chapter }) {
     track.addEventListener("pointermove", move); track.addEventListener("pointerup", up); track.addEventListener("pointercancel", up);
   }, [goTo, stops]);
 
+  // The crew question, in the desk's own figures: what the crews there are leave undone, and what one more of each trade would add.
+  const question = useMemo(() => {
+    if (!desk) return null;
+    const waiting = desk.schedule.trades.flatMap((t) => t.deferred);
+    const options = (desk.run?.what_more_crews_buy ?? []).flatMap((option) => option.trades.filter((t) => (option.crews?.[t.trade] ?? 1) > 1).map((t) => {
+      const base = desk.schedule.trades.find((b) => b.trade === t.trade), had = new Set((base?.scheduled ?? []).map((j) => `${j.building_id}:${j.job_id}`));
+      const added = t.scheduled.filter((j) => !had.has(`${j.building_id}:${j.job_id}`));
+      return { trade: t.trade, now: base?.people_covered ?? 0, then: t.people_covered, low: t.cost_low, high: t.cost_high, where: added[0]?.building ?? null };
+    })).filter((o) => o.then > o.now);
+    return waiting.length && options.length ? { waiting: waiting.length, buildings: desk.buildings.length, crews: desk.schedule.trades.map((t) => `${t.crews === 1 ? "one" : t.crews} ${t.trade}`), options } : null;
+  }, [desk]);
+  const chosen = question?.options.find((o) => o.trade === hired) ?? null;
+
   const site = descent?.site.bounds, last = descent?.levels[3]?.bounds;
   const box = site && last ? {
     left: `${((site[0] - last[0]) / (last[2] - last[0])) * 100}%`, width: `${((site[2] - site[0]) / (last[2] - last[0])) * 100}%`,
@@ -507,6 +530,25 @@ function Ground({ chapter: c }: { chapter: Chapter }) {
         <div ref={pano} className="st-pano" />
         <p data-g="inside" className="st-inside">Inside one of its homes.<small>Matterport scan</small></p>
         <iframe ref={frame} className="st-site" title={`${homes?.name ?? "The building"} in three dimensions`} src={`/${at(c.scenario, c.step, c.building)}`} data-shot="site" tabIndex={-1} onLoad={() => setSiteLoaded(true)} />
+        {question && (
+          <div ref={decide} className="st-decide" role="group" aria-label="The owner's decision on a second crew">
+            <p className="st-kicker">Your call</p>
+            <h2>{word(question.buildings)} buildings, {question.crews.join(" and ")}. {word(question.waiting)} jobs will not be reached in time.</h2>
+            <div className="st-decide-choices">
+              {question.options.map((o) => (
+                <button key={o.trade} type="button" aria-pressed={hired === o.trade} onClick={() => setHired(o.trade)}>
+                  <strong>Hire a second {o.trade}</strong>
+                  <span>{(o.then - o.now).toLocaleString("en-US")} more people protected. {dollars(o.low)} to {dollars(o.high)}.</span>
+                </button>
+              ))}
+              <button type="button" aria-pressed={hired === "none"} onClick={() => setHired("none")}>
+                <strong>Keep the crews you have</strong>
+                <span>Those {question.waiting} jobs wait until after the storm.</span>
+              </button>
+            </div>
+            <p className="st-decide-said">{chosen ? `${chosen.now.toLocaleString("en-US")} people protected becomes ${chosen.then.toLocaleString("en-US")}${chosen.where ? `, with the second crew at ${chosen.where}` : ""}. Nothing is booked until you sign the work order.` : hired === "none" ? "Noted. Nothing is booked, and the jobs move to after the storm." : "The desk agent worked this out from the saved plans. It decides nothing by itself."}</p>
+          </div>
+        )}
         <div ref={scrub} className="st-scrub" role="group" aria-label="The moment shown" hidden={stops.length < 2}>
           <div className="st-scrub-track" onPointerDown={drag}><i ref={handle} /></div>
           {stops.map((stop, i) => <button key={stop.label} type="button" style={{ left: `${(i / Math.max(1, stops.length - 1)) * 100}%` }} onClick={() => goTo(i)}>{stop.label}</button>)}
