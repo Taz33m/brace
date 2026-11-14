@@ -11,6 +11,7 @@ import type { SupportInput } from "../contract";
 import { SUPPORT_CATEGORIES } from "../lib/status";
 import { toResidentError, type ResidentError } from "../lib/errors";
 import { useDictation } from "../lib/useDictation";
+import { useFlowLifetime } from "../lib/useFlowLifetime";
 import { ActionBar, Choice, Message, ScreenHead } from "../ui";
 import { IconAccess, IconChat, IconHousing, IconMic, IconOther, IconRetry, IconStop } from "../icons";
 import type { SupportDraft, SupportFlowProps } from "./types";
@@ -38,6 +39,7 @@ export function SupportFlow({ api, connection, draft, set_draft, keeper: sharedK
   useEffect(() => () => onBusyRef.current(false), []);
   const keeper = useRef(sharedKeeper);
   const pending = useRef(false);
+  const lifetimeRef = useFlowLifetime();
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
   const [attempted, setAttempted] = useState(false);
   const categoryRef = useRef<HTMLDivElement>(null);
@@ -61,7 +63,8 @@ export function SupportFlow({ api, connection, draft, set_draft, keeper: sharedK
   const prompt = PROMPT[draft.category ?? "none"];
 
   async function send() {
-    if (pending.current || offline) return;
+    const lifetime = lifetimeRef.current;
+    if (!lifetime || lifetime.aborted || pending.current || offline) return;
     setAttempted(true);
     if (!draft.category) {
       categoryRef.current?.querySelector<HTMLElement>("[role=radio]")?.focus();
@@ -80,12 +83,14 @@ export function SupportFlow({ api, connection, draft, set_draft, keeper: sharedK
     setPhase({ kind: "sending" });
     try {
       const receipt = await api.request_support(input, key);
+      if (lifetime.aborted) return;
       keeper.current.succeeded();
       pending.current = false;
       onBusyRef.current(false);
       setPhase({ kind: "idle" });
       on_submitted(receipt);
     } catch (e) {
+      if (lifetime.aborted) return;
       pending.current = false;
       onBusyRef.current(false);
       const error = toResidentError(e);

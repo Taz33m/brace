@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
-    "test:recovery": "node --test tests/recovery-*.test.mjs"
+    "test:recovery": "node --test tests/recovery-*.test.mjs",
+    "test:resident": "node --test src/components/resident/__tests__/*.test.mjs"
   },
   "dependencies": {
     "leaflet": "^1.9.4",

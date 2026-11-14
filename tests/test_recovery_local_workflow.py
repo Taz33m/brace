@@ -184,11 +184,23 @@ def test_owner_resident_assessment_and_publication_loop(world):
     task = next(t for t in world.snapshot()["tasks"] if t["title"] == "Address the reviewed roof scope")
     world.command("transition_task", task_id=task["task_id"], expected_task_revision=task["revision"], status="approved",
                   note="Approve a repair scope for contractor review.", confirmation_source=None, evidence_ids=[])
-    world.command("publish_notice", title="Your report update", body="Your reviewed work is approved; scheduling is still pending.",
-                  household_ids=[world.households[0]], source_ids=["inspection"])
+    drafts = world.owner.get("/api/recovery/cases/workflow-case/draft-notices")
+    assert drafts.status_code == 200
+    draft = next(row for row in drafts.json()["drafts"] if row["eligible"])
+    assert draft["run_id"] == fresh["run_id"] and draft["source_ids"] == ["inspection"]
+    notice_path = f"/api/recovery/cases/workflow-case/draft-notices/{draft['draft_id']}/publish"
+    notice_body = {"expected_revision": world.snapshot()["case"]["case_revision"],
+                   "title": "Your report update", "body": "Your reviewed work is approved; scheduling is still pending.",
+                   "household_ids": [world.households[0]]}
+    published = world.owner.post(notice_path, json=notice_body, headers={"Idempotency-Key": "reviewed-agent-notice"})
+    assert published.status_code == 200, published.text
+    repeated = world.owner.post(notice_path, json=notice_body, headers={"Idempotency-Key": "reviewed-agent-notice"})
+    assert repeated.status_code == 200 and repeated.json() == published.json()
+    assert world.a.get("/api/recovery/cases/workflow-case/draft-notices").status_code == 401
     a, b = world.a.get("/api/resident/home").json(), world.b.get("/api/resident/home").json()
     assert a["tasks"][0]["status"] == "approved" and a["tasks"][0]["confirmed_schedule"] is None
     assert a["notices"][0]["title"] == "Your report update" and not b["notices"] and not b["tasks"]
+    assert len(a["notices"]) == 1 and a["notices"][0]["source_ids"] == ["inspection"]
     assert "valuation" not in str(a) and "assessment" not in a
     current = world.snapshot()
     assert current["current_assessment_id"] == assessment.assessment_id
