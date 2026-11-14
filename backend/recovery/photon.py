@@ -207,8 +207,10 @@ class PhotonService:
             receipt = self.store.append_report(actor, ReportInput(category=category, text=text,
                 selected_location_id=None, location_description=None, observed_at=None, upload_ids=[]),
                 "photon:" + hash_token(message.message_id))
-            return {"kind": "report", "request_id": receipt.report.report_id,
-                "reply": "Your observation was received as an unverified resident report. The property team still needs to review it; this is not a safety clearance."}
+            reply = "Got it. I logged your report for the property team."
+            if category == "smoke_or_fire":
+                reply = "If there's a fire or anyone is in danger, call 911 now. I also logged your report for the property team."
+            return {"kind": "report", "request_id": receipt.report.report_id, "reply": reply}
         return {"kind": "clarify", "reply": "Are you asking for help, or reporting something you observed? Say HELP and what you need, or describe the issue and where you saw it. This channel does not dispatch emergency services."}
 
     def _select_choice(self, conn, message):

@@ -143,6 +143,8 @@ def test_inbound_uses_existing_household_scoped_workflows(bridge, text, kind, ca
     assert other.support_requests == [] and other.reports == []
     if kind == "report":
         assert rows[0].status == "reported" and rows[0].location is None
+        assert "logged your report for the property team" in first["reply"]
+        assert ("call 911" in first["reply"]) == (category == "smoke_or_fire")
 
 
 def test_unknown_sender_and_ambiguous_text_never_create_reports(bridge):
