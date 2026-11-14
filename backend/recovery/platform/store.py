@@ -832,6 +832,29 @@ class CaseStore:
             self._remember(conn, actor, "report", key, body_hash, receipt)
             return receipt
 
+    def append_support_request(self, actor: Actor, request: m.SupportInput,
+                               idempotency_key: Optional[str]) -> m.SupportReceipt:
+        key = self._check_key(idempotency_key)
+        if not request.description.strip():
+            raise invalid("Describe what you need before sending.")
+        body_hash = hash_token(dumps(request))
+        with self._write() as conn:
+            self._resident(conn, actor)
+            stored = self._replay(conn, actor, "support", key, body_hash)
+            if stored is not None:
+                return m.SupportReceipt(**{**stored, "duplicate": True})
+            request_id, now = new_id("sup"), self.now()
+            payload = {"category": request.category, "description": request.description, "status": "received"}
+            conn.execute("INSERT INTO support_requests VALUES (?,?,?,?,?)",
+                         (request_id, actor.case_id, actor.household_id, dumps(payload), now))
+            self._bump(conn, actor.case_id)
+            self._event(conn, actor.case_id, "support.updated", audience="households",
+                        households=[actor.household_id], entity_id=request_id, public_summary="Request received")
+            receipt = self._support_view(conn.execute("SELECT * FROM support_requests WHERE request_id = ?",
+                                                      (request_id,)).fetchone())
+            self._remember(conn, actor, "support", key, body_hash, receipt)
+            return receipt
+
     def _attach_uploads(self, conn, actor: Actor, upload_ids: list[str], report_id: str,
                         location: Optional[m.LocationRef], now: str) -> list[str]:
         """Re-check ownership at attach time; one upload belongs to at most one report."""

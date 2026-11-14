@@ -7,12 +7,15 @@ envelope and every response is `Cache-Control: no-store`.
 """
 from __future__ import annotations
 
-from typing import Callable, Optional
+import asyncio
+import os
+from typing import AsyncIterator, Callable, Optional
 
 from fastapi import APIRouter, Header, HTTPException, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
+from sse_starlette.sse import EventSourceResponse
 from starlette.concurrency import run_in_threadpool
 
 from . import models as m
@@ -24,6 +27,9 @@ from .store import OWNER_SESSION_TTL, RESIDENT_SESSION_TTL, CaseStore
 OWNER_COOKIE = "brace_owner_session"
 RESIDENT_COOKIE = "brace_resident_session"
 COOKIE_PATH = "/api"
+ALLOWED_ORIGINS_ENV = "BRACE_ALLOWED_ORIGINS"
+HEARTBEAT_SECONDS = 15
+POLL_SECONDS = 1.0
 
 AssessmentLauncher = Callable[[dict], object]
 
@@ -36,6 +42,8 @@ class EnvelopeRoute(APIRoute):
 
         async def handler(request: Request) -> Response:
             try:
+                if request.method not in ("GET", "HEAD", "OPTIONS"):
+                    check_origin(request)
                 response = await original(request)
             except PlatformError as exc:
                 response = JSONResponse(exc.envelope(), status_code=exc.status)
@@ -49,6 +57,48 @@ class EnvelopeRoute(APIRoute):
             return response
 
         return handler
+
+
+def check_origin(request: Request) -> None:
+    """CSRF defence for state changes, on top of SameSite=Strict cookies.
+
+    Browsers set Sec-Fetch-Site and page scripts cannot forge it, so a cross-site request
+    is rejected. The Vite proxy rewrites Host (changeOrigin), so Origin is compared with
+    an explicit allowlist instead, and only when BRACE_ALLOWED_ORIGINS is configured.
+    """
+    if request.headers.get("sec-fetch-site", "").lower() == "cross-site":
+        raise PlatformError(403, "cross_site_request", "This request came from another site.")
+    allowed = {o.strip().rstrip("/") for o in os.environ.get(ALLOWED_ORIGINS_ENV, "").split(",") if o.strip()}
+    origin = request.headers.get("origin")
+    if allowed and origin is not None and origin.rstrip("/") not in allowed:
+        raise PlatformError(403, "cross_site_request", "This request came from another site.")
+
+
+def parse_cursor(request: Request) -> int:
+    raw = request.headers.get("last-event-id") or request.query_params.get("after") or "0"
+    if not raw.isdigit():
+        raise PlatformError(422, "invalid_cursor", "The event cursor must be a non-negative integer.")
+    return int(raw)
+
+
+async def event_stream(store: CaseStore, token: str, role: str, cursor: int, case_id: Optional[str],
+                       *, poll_seconds: float = POLL_SECONDS) -> AsyncIterator[dict]:
+    """Persisted-cursor replay, then live polling. Permissions are re-applied on every poll;
+    the stream ends (after delivering pending events, e.g. session.revoked) once the
+    session is no longer valid."""
+    actor = await run_in_threadpool(store.resolve_session, token)
+    if actor is None or actor.role != role:
+        return
+    while True:
+        events = await run_in_threadpool(store.events_after, actor, cursor, case_id)
+        for event in events:
+            cursor = event.event_id
+            yield {"id": str(event.event_id), "data": event.model_dump_json()}
+        current = await run_in_threadpool(store.resolve_session, token)
+        if current is None or current != actor:
+            return
+        if not events:
+            await asyncio.sleep(poll_seconds)
 
 
 def _secure(request: Request) -> bool:
@@ -148,6 +198,26 @@ def build_router(store: CaseStore, assessment_launcher: Optional[AssessmentLaunc
         return Response(store.media_bytes(actor, media_id), media_type="image/jpeg",
                         headers={"X-Content-Type-Options": "nosniff",
                                  "Content-Disposition": "inline"})
+
+    @router.get("/api/recovery/cases/{case_id}/events")
+    def owner_events(case_id: str, request: Request):
+        actor = owner(request)
+        cursor = parse_cursor(request)
+        store.events_after(actor, cursor, case_id, limit=1)  # 404 unless this owner's case
+        return EventSourceResponse(event_stream(store, request.cookies[OWNER_COOKIE], "owner", cursor, case_id),
+                                   ping=HEARTBEAT_SECONDS)
+
+    @router.get("/api/resident/events")
+    def resident_events(request: Request):
+        resident(request)
+        cursor = parse_cursor(request)
+        return EventSourceResponse(event_stream(store, request.cookies[RESIDENT_COOKIE], "resident", cursor, None),
+                                   ping=HEARTBEAT_SECONDS)
+
+    @router.post("/api/resident/support", response_model=m.SupportReceipt)
+    def resident_support(body: m.SupportInput, request: Request,
+                         idempotency_key: Optional[str] = Header(default=None)):
+        return store.append_support_request(resident(request), body, idempotency_key)
 
     @router.post("/api/resident/reports", response_model=m.ReportReceipt)
     def resident_report(body: m.ReportInput, request: Request,
