@@ -12,7 +12,8 @@ import { gsap, prefersReducedMotion, scrollToY } from "./gsap";
  * by itself; the scroll is the film's clock, and it runs backwards as well as forwards.
  *
  * One story, two cities: the hurricane over Houston and the fire weather over Los Angeles are the same
- * component given a different building, forecast and words.
+ * component given a different building, event and words. Both are real events replayed from the warnings as
+ * they were issued: nothing here forecasts the weather.
  */
 const RING = [1, 0.256, 0.064, 0.016];            // each aerial covers this share of the widest one's width, all on one centre
 const rad = (deg: number) => (deg * Math.PI) / 180;
@@ -40,7 +41,7 @@ interface Chapter {
   label: string;                                   // what the section is, for a screen reader
   hero: { lead: [string, string]; counter: [string, string]; said: string; aside: [string, string]; asideText: string; place: string; statement: string };
   whisper: string;                                 // the line in the cloud
-  city: string; counted: string;                   // "Houston, Texas", "buildings in the forecast wind field"
+  city: string; counted: string;                   // "Houston, Texas", "buildings in the storm's wind field"
   clock: string;                                   // "hours until the wind arrives"
   why?: RegExp;                                    // the reasons this chapter is about, shown first
   ground?: boolean;                                // say which structures stand on the lowest ground
@@ -58,9 +59,9 @@ const P = 4303509, V = 9519837, G = 1507455;
 const HOUSTON: Chapter = {
   building: P, scenario: "beryl-2024", step: "adv33", room: "39JTmBzqWxr", label: "Houston, then one building",
   hero: { lead: ["A storm", "is coming"], counter: ["Thirty-nine", "hours out"], said: "A storm is coming. Thirty-nine hours out.", aside: ["Hurricane Beryl,", "July 2024"],
-          asideText: "A replay of the real forecasts, in the order the National Hurricane Center issued them.", place: "Houston, Texas",
-          statement: "reads each forecast against every building in its path, and turns it into the work that still fits before the wind arrives." },
-  whisper: "Every building in its path.", city: "Houston, Texas", counted: "buildings in the forecast wind field", clock: "hours until the wind arrives",
+          asideText: "A real storm, replayed from the National Hurricane Center's advisories as they were issued.", place: "Houston, Texas",
+          statement: "replays a real storm against every building in its path, and turns it into the work that still fits before the wind arrives." },
+  whisper: "Every building in its path.", city: "Houston, Texas", counted: "buildings in the storm's wind field", clock: "hours until the wind arrives",
   site: [
     { from: 0, cues: [{ hash: at("beryl-2024", "adv33", P) }, { key: "1" }] },
     { from: 3.2, cues: [{ hash: at("beryl-2024", "adv33", P) }, { key: "2" }] },
@@ -77,8 +78,8 @@ const HOUSTON: Chapter = {
 const LOS_ANGELES: Chapter = {
   building: V, scenario: "la-red-flag-jan-2025", step: "20250105T2240Z", label: "Los Angeles, then one building",
   hero: { lead: ["The wind", "is coming"], counter: ["Forty-three", "hours out"], said: "The wind is coming. Forty-three hours out.", aside: ["Santa Ana windstorm,", "January 2025"],
-          asideText: "A replay of the real Red Flag Warnings, in the order the National Weather Service issued them.", place: "Los Angeles, California",
-          statement: "reads each warning against every building inside it, and turns it into the work that still fits before the wind arrives." },
+          asideText: "A real windstorm, replayed from the National Weather Service's warnings as they were issued.", place: "Los Angeles, California",
+          statement: "replays a real warning against every building inside it, and turns it into the work that still fits before the wind arrives." },
   whisper: "Every building inside the warning.", city: "Los Angeles, California", counted: "buildings inside the Red Flag Warning", clock: "hours until the Red Flag Warning starts",
   site: [
     { from: 0, cues: [{ key: "1" }] },

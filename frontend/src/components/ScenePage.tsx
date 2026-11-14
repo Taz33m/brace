@@ -446,7 +446,7 @@ export function ScenePage({ id, scenario, step }: Props) {
         {after ? (
           <>
             <strong className="is-after">The morning after</strong>
-            <span>{b?.observed_rain ? `${b.observed_rain.inches} inches of rain fell here, as observed` : "The storm has arrived"}{due?.count ? `. ${due.count} jobs now due, ${costRange(due.cost_low, due.cost_high)}` : ""}</span>
+            <span>The storm has passed{due?.count ? `. ${due.count} jobs now due, ${costRange(due.cost_low, due.cost_high)}` : ""}</span>
           </>
         ) : (
           <>

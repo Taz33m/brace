@@ -112,7 +112,7 @@ export function HomePage() {
         <CabinWindow />
         <div className="st-safe">
           <h1 className="st-lead st-home-mark">Brace</h1>
-          <p className="st-home-line">The forecast, turned into work,<br />for every building in its path.</p>
+          <p className="st-home-line">A storm on the way, turned into work,<br />for every building in its path.</p>
           <nav className="st-menu" aria-label="Scenarios">
             {STORIES.map((s, i) => (
               <a key={s.id} href={`#/story/${s.id}`}>

@@ -4,7 +4,7 @@ import type { Desk, DeskJob, DeskSchedule } from "../types";
 import { gsap } from "./gsap";
 
 /**
- * The storm desk, told by scrolling. Houston draws itself from every building in the forecast wind field;
+ * The storm desk, told by scrolling. Houston draws itself from every building in the storm's wind field;
  * the buildings with a plan light up, each with a ring that is its safe working time; and as the scroll runs
  * the clock, the crews the desk scheduled move between them until the time runs out. What did not fit is
  * shown, then what a second crew would buy, which is the question the desk put to the owner.
@@ -221,7 +221,7 @@ export function DeskStory() {
         <div className="st-stage st-sticky st-desk">
           <canvas ref={canvas} className="st-desk-canvas" />
           <div data-d="title" className="st-desk-say">
-            <p className="st-kicker">Houston{desk ? `. Forecast issued ${desk.schedule.forecast_issued_local}` : ""}</p>
+            <p className="st-kicker">Houston{desk ? `. ${desk.schedule.forecast_issued_local}` : ""}</p>
             <h2>{view ? `${cap(word(view.placed.length))} buildings.` : ""}<br />{trades.map((t) => `${cap(word(t.crews))} ${t.trade}.`).join(" ")}</h2>
           </div>
           <div data-d="agent" className="st-desk-note">
@@ -253,7 +253,7 @@ export function DeskStory() {
             </div>
             <div className="st-desk-clock"><strong ref={hours} /><span>hours until the wind arrives<small ref={time} /></span></div>
           </div>
-          <p className="st-credit">Buildings, homes and rents: CoStar. Forecast: National Hurricane Center.</p>
+          <p className="st-credit">Buildings, homes and rents: CoStar. The storm: National Hurricane Center advisories, replayed.</p>
         </div>
       </section>
       <section className="st-end"><h2>Brace</h2><a href="#/">All scenarios</a></section>

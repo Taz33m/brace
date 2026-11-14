@@ -23,7 +23,6 @@ USER_AGENT = "brace-hackathon"
 CACHE_ROOT: Path = HAZARDS_DIR  # tests point this at a temp folder
 
 DEFAULT_TIMEOUT = httpx.Timeout(25.0, connect=8.0)
-QUICK_TIMEOUT = httpx.Timeout(8.0, connect=4.0)   # for "what is live right now" checks
 BULK_TIMEOUT = httpx.Timeout(90.0, connect=10.0)  # for the few multi-megabyte downloads
 MIN_INTERVAL_S = 0.2
 RETRY_STATUS = {429, 500, 502, 503, 504}

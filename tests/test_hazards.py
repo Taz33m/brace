@@ -18,7 +18,7 @@ import pytest
 from shapely.geometry import Point, shape
 
 from backend import hazards
-from backend.hazards import alerts, fireweather, net, nhc, registry, static, wind
+from backend.hazards import fireweather, net, nhc, registry, static, wind
 from backend.hazards.errors import HazardError
 from tests import test_hazards_samples as samples
 
@@ -422,76 +422,6 @@ def test_scenarios_leaves_out_a_replay_that_cannot_be_built(monkeypatch):
         hazards.scenario("beryl-2024")
 
 
-# ---------------------------------------------------------- live scenarios
-
-def test_live_hurricane_near_houston_becomes_a_scenario(replays, monkeypatch):
-    storm = {"id": "al022024", "name": "Beryl", "forecastAdvisory": {"url": "https://nhc.invalid/MIATCMAT2.shtml"},
-             "trackCone": {"zipFile": "https://nhc.invalid/cone.zip"}}
-    monkeypatch.setattr(nhc, "active_storms", lambda **kw: [storm, {"id": "ep012024"}])
-    monkeypatch.setattr(net, "get_text", lambda url, *a, **kw: f"<html><pre>{samples.ADVISORY_39}</pre></html>")
-    monkeypatch.setattr(net, "get_bytes", lambda url, *a, **kw: make_cone_zip(CONE_RING))
-    monkeypatch.setattr(alerts, "fire_weather_alerts", lambda state="CA": [])
-
-    live = [s for s in hazards.scenarios() if s["live"]]
-    assert [(s["id"], s["kind"], s["city"], s["name"]) for s in live] == [("live-al022024", "hurricane", "Houston", "Hurricane Beryl")]
-    assert live[0]["steps"] == [{"id": "adv39", "issued": "2024-07-08T09:00:00Z", "label": "Latest forecast"}]
-    assert hazards.exposure("live-al022024", *DOWNTOWN_HOUSTON)["wind_band"] == "strong tropical storm"
-    assert hazards.scenario("live-al022024")["landfall"] is None
-    status = hazards.live_status()
-    assert status["houston"]["active"] is True and status["los_angeles"]["active"] is False
-
-
-def test_live_storm_far_from_houston_is_not_listed(replays, monkeypatch):
-    far = samples.ADVISORY_39
-    for lat in ("28.6N", "28.2N", "30.4N", "32.7N", "35.0N", "37.5N", "40.0N", "42.0N"):
-        far = far.replace(lat, "12.0N")                       # scaffolding: park every position in the deep tropics
-    for lon in ("96.0W", "95.9W", "95.8W", "94.4W", "92.1W", "89.0W", "85.8W", "83.0W"):
-        far = far.replace(lon, "40.0W")
-    monkeypatch.setattr(nhc, "active_storms", lambda **kw: [{"id": "al022024", "forecastAdvisory": {"url": "https://nhc.invalid/x"}}])
-    monkeypatch.setattr(net, "get_text", lambda url, *a, **kw: f"<pre>{far}</pre>")
-    monkeypatch.setattr(alerts, "fire_weather_alerts", lambda state="CA": [])
-    assert [s for s in hazards.scenarios() if s["live"]] == []
-    assert "none is forecast near Houston" in hazards.live_status()["houston"]["summary"]
-
-
-def test_live_red_flag_warning_becomes_a_scenario(replays, monkeypatch):
-    alert = {"properties": {  # scaffolding in the shape api.weather.gov returns
-        "event": "Red Flag Warning", "sent": "2026-11-14T02:00:00-08:00", "onset": "2026-11-14T10:00:00-08:00",
-        "ends": "2026-11-15T18:00:00-08:00", "expires": "2026-11-14T12:00:00-08:00",
-        "headline": "Red Flag Warning issued November 14 at 2:00AM PST until November 15 at 6:00PM PST by NWS Los Angeles/Oxnard CA",
-        "description": "* WINDS...Northeast 20 to 30 mph with gusts to 55 mph.\n\n* RELATIVE HUMIDITY...8 to 15 percent.",
-        "affectedZones": ["https://api.weather.gov/zones/fire/CAZ362", "https://api.weather.gov/zones/fire/CAZ999"]}}
-    zones = {"CAZ362": {"name": "Malibu Coast", "geometry": square(*PALISADES)},
-             "CAZ999": {"name": "Far away", "geometry": square(40.0, -122.0)}}
-    monkeypatch.setattr(nhc, "active_storms", lambda **kw: [])
-    monkeypatch.setattr(alerts, "fire_weather_alerts", lambda state="CA": [alert])
-    monkeypatch.setattr(alerts, "zone_geometry", lambda url: zones[url.rsplit("/", 1)[-1]])
-
-    live = [s for s in hazards.scenarios() if s["live"]]
-    assert [(s["id"], s["kind"], s["city"]) for s in live] == [("live-la-fire-weather", "wildfire", "Los Angeles")]
-    assert live[0]["steps"] == [{"id": "now", "issued": "2026-11-14T10:00:00Z", "label": "Live now"}]
-    view = hazards.scenario("live-la-fire-weather")
-    assert len(view["warning_polygons"]) == 1 and view["wind"] == {
-        "gust_mph": 55, "peak_gust_mph": 55, "direction": "northeast",
-        "text": "Northeast 20 to 30 mph with gusts to 55 mph."}
-    e = hazards.exposure("live-la-fire-weather", *PALISADES)
-    assert (e["in_warning"], e["hours_until_warning"], e["warning_hours"], e["gust_mph"]) == (True, 8.0, 32.0, 55)
-    assert hazards.exposure("live-la-fire-weather", *DOWNTOWN_LA)["in_warning"] is False
-    assert "no active tropical cyclones" in hazards.live_status()["houston"]["summary"]
-
-
-def test_live_check_failure_is_soft(replays, monkeypatch):
-    def down(*args, **kwargs):
-        raise HazardError("api.weather.gov request failed (ConnectTimeout)")
-    monkeypatch.setattr(nhc, "active_storms", down)
-    monkeypatch.setattr(alerts, "fire_weather_alerts", down)
-    assert [s["id"] for s in hazards.scenarios()] == ["beryl-2024", "la-red-flag-jan-2025"]
-    status = hazards.live_status()
-    assert status["houston"]["unavailable"] and status["los_angeles"]["unavailable"]
-    with pytest.raises(HazardError):
-        hazards.scenario("live-al022024")
-
-
 # ------------------------------------------------------------- static risk
 
 FEMA_FLOODWAY = {  # real response for 17202 Imperial Valley Dr, Houston (-95.404, 29.951), fields list trimmed
@@ -603,68 +533,3 @@ def test_warm_static_backs_off_and_stops_when_the_service_is_down(monkeypatch):
     assert len(attempts) == 15                                  # 3 tries each for 5 points, then it gives up
     assert pauses[:3] == [5.0, 10.0, 20.0]
     assert hazards.static_risk(*points[0], cached_only=True)["fema"] is None
-
-
-# -------------------------------------------------------------- live alerts
-
-NWS_ALERT = {"properties": {  # real alert from api.weather.gov on 14 Nov 2026, description shortened
-    "id": "urn:oid:2.49.0.1.840.0.a511b79eef9e40c20b5e31f137aae53f00caeaed.003.1",
-    "event": "High Surf Advisory", "severity": "Minor",
-    "headline": "High Surf Advisory issued November 13 at 5:35PM PST until November 17 at 3:00PM PST by NWS Los Angeles/Oxnard CA",
-    "effective": "2026-11-13T17:35:00-08:00", "onset": "2026-11-13T17:35:00-08:00",
-    "expires": "2099-11-14T09:00:00-08:00", "ends": "2099-11-17T15:00:00-08:00",
-    "senderName": "NWS Los Angeles/Oxnard CA",
-    "description": "* WHAT...For the High Surf Advisory, large breaking waves of 5 to 8 feet Friday,\nincreasing to 8 to 12 feet Saturday."}}
-
-
-def test_live_alerts_maps_fields_and_falls_back_to_cache(monkeypatch):
-    seen = []
-    monkeypatch.setattr(net, "get_json", lambda url, params=None, **kw: seen.append(params) or {"features": [NWS_ALERT]})
-    got = hazards.live_alerts(*PALISADES)
-    assert seen == [{"point": "34.045,-118.526"}]
-    assert got == [{
-        "event": "High Surf Advisory", "severity": "Minor", "headline": NWS_ALERT["properties"]["headline"],
-        "onset": "2026-11-14T01:35:00Z", "expires": "2099-11-14T17:00:00Z",
-        "description": "* WHAT...For the High Surf Advisory, large breaking waves of 5 to 8 feet Friday, increasing to 8 to 12 feet Saturday.",
-        "ends": "2099-11-17T23:00:00Z", "sender": "NWS Los Angeles/Oxnard CA", "id": NWS_ALERT["properties"]["id"]}]
-    assert hazards.live_alerts(*PALISADES) == got and len(seen) == 1                  # inside the 5 minute cache
-
-    def down(*args, **kwargs):
-        raise HazardError("api.weather.gov request failed (ConnectError)")
-    monkeypatch.setattr(net, "get_json", down)
-    monkeypatch.setattr(net, "file_age_s", lambda path: 3600.0)                       # cache now stale, service down
-    assert hazards.live_alerts(*PALISADES) == got
-    with pytest.raises(HazardError):
-        hazards.live_alerts(*DOWNTOWN_HOUSTON)                                         # nothing cached for this point
-
-
-def test_alert_description_is_trimmed():
-    long_alert = {"properties": dict(NWS_ALERT["properties"], description="wind " * 400)}
-    text = alerts.map_alert(long_alert)["description"]
-    assert len(text) <= alerts.DESCRIPTION_LIMIT + 3 and text.endswith("...")
-
-
-# ------------------------------------------------------------ polite HTTP
-
-def test_get_backs_off_on_503_and_gives_up_cleanly(monkeypatch):
-    replies = [503, 429, 200]
-    pauses = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        assert request.headers["user-agent"] == "brace-hackathon"
-        return httpx.Response(replies.pop(0), json={"ok": True})
-
-    monkeypatch.setattr(net, "_client", httpx.Client(transport=httpx.MockTransport(handler),
-                                                     headers={"User-Agent": net.USER_AGENT}))
-    monkeypatch.setattr(time, "sleep", pauses.append)
-    monkeypatch.setattr(net, "get", REAL_GET)
-    assert net.get_json("https://example.invalid/data") == {"ok": True}
-    assert [p for p in pauses if p >= 1] == [1.5, 3.0]
-
-    replies[:] = [500, 500, 500]
-    with pytest.raises(HazardError, match="HTTP 500"):
-        net.get("https://example.invalid/data")
-    replies[:] = [404]
-    with pytest.raises(HazardError, match="HTTP 404"):
-        net.get("https://example.invalid/data")
-    assert replies == []                                                               # a 404 is not retried

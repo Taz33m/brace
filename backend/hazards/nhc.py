@@ -9,11 +9,10 @@ from datetime import datetime, timedelta, timezone
 
 from . import net
 from .errors import HazardError
-from .util import HOUSTON_CENTER, haversine_km, iso, round_geometry
+from .util import iso, round_geometry
 
 ARCHIVE_ADVISORY_URL = "https://www.nhc.noaa.gov/archive/{year}/{basin}{num:02d}/{storm}.fstadv.{adv:03d}.shtml"
 ARCHIVE_CONE_URL = "https://www.nhc.noaa.gov/gis/forecast/archive/{storm}_5day_{adv:03d}.zip"
-CURRENT_STORMS_URL = "https://www.nhc.noaa.gov/CurrentStorms.json"
 
 _MONTHS = {m: i + 1 for i, m in enumerate("JAN FEB MAR APR MAY JUN JUL AUG SEP OCT NOV DEC".split())}
 _STORM_TYPES = (
@@ -219,46 +218,3 @@ def fetch_archived_cone(storm: str, adv: int) -> bytes:
     data = net.get_bytes(ARCHIVE_CONE_URL.format(storm=storm, adv=adv))
     net.write_bytes(path, data)
     return data
-
-
-def active_storms(*, quick: bool = True) -> list[dict]:
-    """Storms NHC lists as active right now (raw entries from CurrentStorms.json)."""
-    data = net.get_json(CURRENT_STORMS_URL, timeout=net.QUICK_TIMEOUT if quick else None, retries=0 if quick else 2)
-    storms = data.get("activeStorms") if isinstance(data, dict) else None
-    if not isinstance(storms, list):
-        raise HazardError("NHC CurrentStorms.json has an unexpected shape")
-    return storms
-
-
-def live_step(storm: dict) -> dict | None:
-    """One scenario step for an active storm, or None if it has no forecast advisory yet."""
-    adv_info = storm.get("forecastAdvisory") or {}
-    url = adv_info.get("url")
-    if not url:
-        return None
-    advisory = parse_forecast_advisory(extract_pre(net.get_text(url, timeout=net.QUICK_TIMEOUT, retries=1)))
-    cone = {"cone": None, "coastal_warnings": []}
-    zip_url = (storm.get("trackCone") or {}).get("zipFile")
-    if zip_url:
-        try:
-            cone = read_cone_zip(net.get_bytes(zip_url, timeout=net.QUICK_TIMEOUT, retries=1))
-        except HazardError:
-            pass  # a storm without a cone is still worth showing
-    return {
-        "id": f"adv{advisory['advisory']}", "issued": advisory["issued"], "label": "Latest forecast",
-        "advisory": advisory, "cone": cone["cone"], "coastal_warnings": cone["coastal_warnings"],
-        "source": {"advisory": url, "cone": zip_url},
-    }
-
-
-def threatens(step: dict, center: tuple[float, float] = HOUSTON_CENTER, within_km: float = 800.0) -> bool:
-    """True if the forecast cone covers the city or any forecast position comes within `within_km`."""
-    lat, lon = center
-    if step.get("cone"):
-        from shapely.geometry import Point, shape
-        try:
-            if shape(step["cone"]).contains(Point(lon, lat)):
-                return True
-        except Exception:
-            pass
-    return any(haversine_km(lat, lon, p["lat"], p["lon"]) <= within_km for p in step["advisory"]["points"])

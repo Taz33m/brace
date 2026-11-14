@@ -216,7 +216,6 @@ export interface Building {
   threat: Threat;
   last_sale: Sale | null;
   /** Rain that actually fell on this building's 10 km cell. Hindsight; shown only at the replay's final step. */
-  observed_rain: { mm: number; inches: number; peak_mm_per_h: number; capped: boolean; source: string } | null;
   reasons: string[];
   plan: (Plan & { events: AgentEvent[] }) | null;
 }

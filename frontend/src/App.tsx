@@ -99,7 +99,7 @@ function PrepareApp({ route, walk = false, scene = false }: { route: PrepareRout
   if (!config || !scenarios) return <div className="fatal quiet">Loading the forecast…</div>;
   if (scenarios.length === 0) return <div className="fatal">No scenarios are available. Run <code>uv run python -m scripts.fetch_hazards</code> and reload.</div>;
 
-  const scenario = scenarios.find((s) => s.id === route.scenario) ?? scenarios.find((s) => !s.live) ?? scenarios[0];
+  const scenario = scenarios.find((s) => s.id === route.scenario) ?? scenarios[0];
   const step = scenario.steps.find((s) => s.id === route.step)?.id ?? scenario.steps[scenario.steps.length - 1]?.id ?? null;
 
   // Keyed by the building alone: moving the forecast clock keeps the walk-through, and its conversation, where they are.

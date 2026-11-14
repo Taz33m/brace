@@ -50,7 +50,7 @@ export function MapPage({ scenarios, scenario, step, onScenario, onStep, onOpen 
         <nav className="scenarios" aria-label="Forecast">
           {scenarios.map((s) => (
             <button key={s.id} className={s.id === scenario.id ? "on" : ""} onClick={() => onScenario(s.id)}>
-              {s.name}<small>{s.live ? "Live" : "Replay"}, {s.city}</small>
+              {s.name}<small>Replay, {s.city}</small>
             </button>
           ))}
         </nav>
@@ -86,7 +86,7 @@ export function MapPage({ scenarios, scenario, step, onScenario, onStep, onOpen 
               <div className="tally">
                 <h2>{num(data.shown)} buildings {what}</h2>
                 <p>{num(data.homes)} apartment homes and {num(data.tenants)} business tenants in them.
-                  {scenario.live ? "" : " This is a replay of a real forecast."}</p>
+                   This is a replay of a real event.</p>
                 {data.value.buildings_with_sale > 0 && (
                   <p className="value">
                     <strong>{money(data.value.last_sale_total)}</strong> is what {num(data.value.buildings_with_sale)} of these buildings last sold for.

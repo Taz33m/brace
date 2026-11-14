@@ -13,7 +13,7 @@ import threading
 import time
 from typing import Callable
 
-from . import alerts, fireweather, net, nhc, wind
+from . import fireweather, net, nhc, wind
 from .errors import HazardError
 from .util import (HOUSTON_CENTER, LA_BOX, hours_between, iso, now_utc, parse_iso, round_geometry, to_utc_iso,
                    trim)
@@ -43,29 +43,21 @@ LA_REPLAY = {
     "summary": "Replay of the real National Weather Service Red Flag Warnings issued for the Los Angeles area "
                "ahead of the 7-8 January 2025 Santa Ana windstorm.",
 }
-LIVE_WILDFIRE_ID = "live-la-fire-weather"
 IEM_EVENT_URL = "https://mesonet.agron.iastate.edu/json/vtec_event.py"
 IEM_EVENT_GEO_URL = "https://mesonet.agron.iastate.edu/geojson/vtec_event.py"
 CALFIRE_PERIMETERS_ALL = ("https://services1.arcgis.com/jUJYIo9tSA7EHvfZ/arcgis/rest/services/"
                           "California_Historic_Fire_Perimeters/FeatureServer/0/query")
 HINDSIGHT_NOTE = ("Final perimeter of a fire that started after these warnings were issued. Shown for context "
                   "only; it was not known at the time and is not used to score exposure.")
-LIVE_TTL_S = 600
-LIVE_RETRY_S = 120
-LIVE_STALE_S = 3 * 3600
 
 _lock = threading.RLock()
 _loaded: dict[str, dict] = {}
 _contexts: dict[tuple, "_Context"] = {}
-_live: dict | None = None
-_live_checked = 0.0
 
 
 def _reset_for_tests() -> None:
-    global _live, _live_checked
     _loaded.clear()
     _contexts.clear()
-    _live, _live_checked = None, 0.0
 
 
 # ------------------------------------------------------------ replay builds
@@ -220,165 +212,6 @@ def _replay(scenario_id: str, *, rebuild: bool = False, log: Callable[[str], Non
         return data
 
 
-# ----------------------------------------------------------------- live data
-
-def _live_hurricanes() -> tuple[list[dict], dict]:
-    storms = nhc.active_storms()
-    atlantic = [s for s in storms if str(s.get("id", "")).lower().startswith("al")]
-    found, skipped = [], 0
-    for storm in atlantic:
-        try:
-            step = nhc.live_step(storm)
-        except HazardError as exc:
-            logger.warning("live storm %s skipped: %s", storm.get("id"), exc)
-            skipped += 1
-            continue
-        if not step or not nhc.threatens(step, HOUSTON_CENTER):
-            continue
-        adv = step["advisory"]
-        name = f"{adv['storm_type']} {adv['storm_name']}".strip()
-        found.append({
-            "id": f"live-{str(storm['id']).lower()}", "kind": "hurricane", "name": name, "city": "Houston",
-            "live": True, "landfall": None, "steps": [step],
-            "summary": f"Live National Hurricane Center forecast for {name}, advisory {adv['advisory']}.",
-        })
-    if found:
-        text = f"{len(found)} active storm(s) forecast near Houston: " + ", ".join(s["name"] for s in found) + "."
-    elif atlantic:
-        text = f"NHC lists {len(atlantic)} active Atlantic storm(s); none is forecast near Houston."
-    else:
-        text = "NHC lists no active tropical cyclones in the Atlantic basin."
-    if skipped:
-        text += f" {skipped} storm(s) could not be read."
-    return found, {"active": bool(found), "summary": text}
-
-
-def _live_wildfire() -> tuple[list[dict], dict]:
-    from shapely.geometry import box, shape
-
-    metro = box(LA_BOX[2], LA_BOX[0], LA_BOX[3], LA_BOX[1])
-    zones: dict[str, dict] = {}
-    records: dict[tuple[str, str], dict] = {}
-    sent_times, headlines, pds = [], [], False
-    for feat in alerts.fire_weather_alerts("CA"):
-        p = feat.get("properties") or {}
-        sig = "W" if p.get("event") == "Red Flag Warning" else "A"
-        desc = p.get("description") or ""
-        gusts = fireweather.parse_wind(fireweather.wind_bullet(desc)) or {}
-        is_pds = fireweather.PDS_PHRASE in f"{p.get('headline') or ''} {desc}".upper()
-        sent = to_utc_iso(p.get("sent")) or iso(now_utc())
-        hit = False
-        for url in p.get("affectedZones") or []:
-            ugc = url.rstrip("/").rsplit("/", 1)[-1]
-            if ugc not in zones:
-                try:
-                    zone = alerts.zone_geometry(url)
-                except HazardError:
-                    zone = None
-                if not zone or not shape(zone["geometry"]).intersects(metro):
-                    continue
-                zones[ugc] = {"name": zone.get("name"), "geometry": round_geometry(zone["geometry"], 4)}
-            prev = records.get((ugc, sig))
-            if prev and prev["_sent"] >= sent:
-                continue
-            hit = True
-            records[(ugc, sig)] = {
-                "ugc": ugc, "sig": sig, "name": zones[ugc]["name"],
-                "start": to_utc_iso(p.get("onset") or p.get("effective")) or sent,
-                "end": to_utc_iso(p.get("ends") or p.get("expires")),
-                "gust_mph": gusts.get("gust_mph"), "peak_gust_mph": gusts.get("peak_gust_mph"),
-                "direction": gusts.get("direction"), "wind_text": gusts.get("text"),
-                "pds": is_pds and sig == "W", "headline": p.get("headline"), "_sent": sent,
-            }
-        if hit:
-            sent_times.append(sent)
-            pds = pds or (is_pds and sig == "W")
-            if sig == "W" and p.get("headline"):
-                headlines.append(p["headline"])
-    zone_recs = sorted(({k: v for k, v in r.items() if k != "_sent"} for r in records.values()),
-                       key=lambda z: (z["sig"] != "W", z["ugc"]))
-    if not zone_recs:
-        return [], {"active": False,
-                    "summary": "NWS has no Red Flag Warning or Fire Weather Watch in effect for the Los Angeles area."}
-    issued = max(sent_times)
-    warned = [z for z in zone_recs if z["sig"] == "W"]
-    kind = "Red Flag Warning" if warned else "Fire Weather Watch"
-    step = {"id": "now", "issued": issued, "label": "Live now", "pds": pds, "zones": zone_recs,
-            "warning_text": trim(headlines[0] if headlines else zone_recs[0].get("headline"), 320),
-            "wind": fireweather.step_wind(zone_recs)}
-    text = f"NWS {kind} in effect or scheduled for {len(warned or zone_recs)} fire weather zone(s) around Los Angeles."
-    scenario = {"id": LIVE_WILDFIRE_ID, "kind": "wildfire", "name": f"{kind}, Los Angeles area", "city": "Los Angeles",
-                "live": True, "summary": text, "steps": [step],
-                "zones": {u: zones[u] for u in sorted({z["ugc"] for z in zone_recs})}, "fire_perimeters": [],
-                "source": {"warnings": "NWS active alerts (api.weather.gov)"}}
-    return [scenario], {"active": True, "summary": text}
-
-
-def live_snapshot(refresh: bool = False) -> dict:
-    """What NHC / NWS show now: {"fetched_at", "scenarios": [...], "status": {"houston", "los_angeles"}}.
-
-    Never raises. Each status is {"active", "summary", "as_of"}; a source that
-    cannot be reached keeps its last good answer (marked "stale": True) for up
-    to 3 hours and after that reads {"active": False, "unavailable": True}.
-    """
-    global _live, _live_checked
-    with _lock:
-        path = net.cache_file("live", "snapshot.json")
-        if _live is None:
-            disk = net.read_json(path)
-            if isinstance(disk, dict) and "scenarios" in disk:
-                _live = disk
-                age = net.file_age_s(path) or 0.0
-                _live_checked = time.monotonic() - age
-        ttl = LIVE_RETRY_S if _live and _live.get("errors") else LIVE_TTL_S
-        if _live is not None and not refresh and time.monotonic() - _live_checked < ttl:
-            return _live
-
-        previous = _live or {}
-        scenarios_out: list[dict] = []
-        status: dict[str, dict] = {}
-        errors: list[str] = []
-        for place, kind, source, fetch in (
-                ("houston", "hurricane", "the National Hurricane Center", _live_hurricanes),
-                ("los_angeles", "wildfire", "the National Weather Service", _live_wildfire)):
-            try:
-                found, state = fetch()
-                state["as_of"] = iso(now_utc())
-            except HazardError as exc:
-                errors.append(str(exc))
-                old = (previous.get("status") or {}).get(place) or {}
-                fresh_enough = bool(old.get("as_of")) and \
-                    (now_utc() - parse_iso(old["as_of"])).total_seconds() < LIVE_STALE_S
-                if fresh_enough:  # keep showing the last good answer, marked stale, for up to 3 hours
-                    found = [s for s in previous.get("scenarios", []) if s["kind"] == kind]
-                    state = dict(old, stale=True)
-                else:
-                    found, state = [], {"active": False, "unavailable": True, "error": str(exc),
-                                        "summary": f"Live check unavailable: could not reach {source}."}
-            except Exception as exc:  # never let a surprise in a live feed take the app down
-                logger.exception("live %s check failed", kind)
-                errors.append(f"{type(exc).__name__}: {exc}")
-                found, state = [], {"active": False, "unavailable": True, "error": f"{type(exc).__name__}: {exc}",
-                                    "summary": "Live check failed unexpectedly."}
-            scenarios_out += found
-            status[place] = state
-        _live = {"fetched_at": iso(now_utc()), "scenarios": scenarios_out, "status": status, "errors": errors}
-        _live_checked = time.monotonic()
-        for key in [k for k in _contexts if k[0].startswith("live-")]:
-            del _contexts[key]
-        try:
-            net.write_json(path, _live)
-        except OSError:
-            pass
-        return _live
-
-
-def live_status() -> dict:
-    """Plain summary of the live check for each metro (see live_snapshot)."""
-    snap = live_snapshot()
-    return {"checked_at": snap["fetched_at"], **snap["status"]}
-
-
 # ------------------------------------------------------------ step contexts
 
 class _Context:
@@ -490,24 +323,17 @@ class _WildfireContext(_Context):
 def _scenario_data(scenario_id: str) -> dict:
     if scenario_id in _BUILDERS:
         return _replay(scenario_id)
-    if scenario_id.startswith("live-"):
-        for scen in live_snapshot()["scenarios"]:
-            if scen["id"] == scenario_id:
-                return scen
-        raise HazardError(f"live scenario {scenario_id!r} is no longer active")
     raise HazardError(f"unknown scenario {scenario_id!r}")
 
 
 def _context(scenario_id: str, step_id: str | None) -> _Context:
     key = (scenario_id, step_id)
-    if scenario_id.startswith("live-"):
-        live_snapshot()  # cheap inside its refresh window; drops stale contexts when it does refresh
     ctx = _contexts.get(key)
     if ctx is not None:
         return ctx
     with _lock:
         scen = _scenario_data(scenario_id)
-        ctx = _contexts.get(key)  # a live refresh inside _scenario_data may have cleared the table
+        ctx = _contexts.get(key)  # loading the scenario may have cleared the table
         if ctx is not None:
             return ctx
         if step_id is None:
@@ -526,8 +352,10 @@ def _context(scenario_id: str, step_id: str | None) -> _Context:
 
 # ---------------------------------------------------------------- public API
 
-def scenarios(include_live: bool = True) -> list[dict]:
-    """Every scenario the app can show (replays first, then anything live).
+def scenarios(include_live: bool = False) -> list[dict]:
+    """Every scenario the app can show. They are all replays of real events from the warnings as they
+    were issued: Brace does not watch or forecast the weather. `include_live` is accepted for older
+    callers and changes nothing.
 
     Each entry: {"id", "kind", "name", "city", "live", "summary", "steps":
     [{"id", "issued", "label"}]}. A replay that has never been downloaded and
@@ -540,8 +368,6 @@ def scenarios(include_live: bool = True) -> list[dict]:
             sources.append(_replay(scenario_id))
         except HazardError as exc:
             logger.warning("scenario %s unavailable: %s", scenario_id, exc)
-    if include_live:
-        sources += live_snapshot()["scenarios"]
     for scen in sources:
         out.append({
             "id": scen["id"], "kind": scen["kind"], "name": scen["name"], "city": scen["city"],
@@ -572,7 +398,7 @@ def exposure(scenario_id: str, lat: float, lon: float, step_id: str | None = Non
 
 
 def refresh(log: Callable[[str], None] = print, rebuild: bool = False) -> dict:
-    """Download everything the package caches (replays, CAL FIRE files, live snapshot).
+    """Download everything the package caches (the replays and the CAL FIRE files).
 
     Safe to re-run: downloads already on disk are reused. rebuild=True
     re-derives the replay files from those downloads. Returns a short report {"scenarios": [...ids], "problems": [...]}.
@@ -593,8 +419,4 @@ def refresh(log: Callable[[str], None] = print, rebuild: bool = False) -> dict:
     except HazardError as exc:
         problems.append(f"CAL FIRE Los Angeles data: {exc}")
         log(f"FAILED CAL FIRE Los Angeles data: {exc}")
-    snap = live_snapshot(refresh=True)
-    problems += snap.get("errors") or []
-    for place, state in snap["status"].items():
-        log(f"live {place}: {state['summary']}")
-    return {"scenarios": built + [s["id"] for s in snap["scenarios"]], "problems": problems}
+    return {"scenarios": built, "problems": problems}
