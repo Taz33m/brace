@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse, Response
 from PIL import Image
 from sse_starlette.sse import EventSourceResponse
 
-from . import hazards, matterport, screen, vexcel
+from . import hazards, matterport, portfolio as portfolio_data, screen, vexcel
 from .agent import VIEW_TO_OBLIQUE, Planner
 from .building import BuildingError, Site, building_dir
 from .config import MATTERPORT_SDK_KEY
@@ -22,6 +22,26 @@ from .config import MATTERPORT_SDK_KEY
 app = FastAPI(title="Brace")
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5174", "http://127.0.0.1:5174"],
                    allow_methods=["*"], allow_headers=["*"])
+
+
+def _warm_standing_risk() -> None:
+    """Fill the flood and fire zoning cache for the whole portfolio, in this process so writes cannot collide.
+
+    The ranking only reads what is cached, so its flood and fire reasons fill in as this runs.
+    """
+    try:
+        points = [(b["lat"], b["lon"]) for b in portfolio_data.buildings()]
+        for i in range(0, len(points), 150):
+            if hazards.warm_static(points[i:i + 150], log=lambda *_: None):
+                screen.rank.cache_clear()  # newly cached zones change the reasons and the order
+    except Exception as e:  # a public service being down must not take the app down
+        print(f"standing-risk warm-up stopped: {e}")
+
+
+@app.on_event("startup")
+def _startup() -> None:
+    if os.environ.get("BRACE_SKIP_WARMUP") != "1":
+        threading.Thread(target=_warm_standing_risk, daemon=True).start()
 
 
 def _site(property_id: int) -> Site:

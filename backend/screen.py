@@ -122,6 +122,20 @@ def signals(kind: str, b: dict, f: dict | None, static: dict | None) -> list[dic
     return sorted(out, key=lambda s: -s["weight"])
 
 
+def as_of(sc: dict, static: dict | None) -> dict | None:
+    """Standing risk as it was known when the scenario's forecast was issued.
+
+    The fire-perimeter data includes the January 2025 fires. In a replay of the
+    warning that preceded them, that would be hindsight, so the distance to a past
+    fire falls back to fires before 2025 and the fire's name is dropped.
+    """
+    if not static or sc.get("live") or sc.get("kind") != "wildfire":
+        return static
+    out = {k: v for k, v in static.items() if k not in ("past_fire", "fire_before_2025")}
+    out["km_to_past_fire"] = static.get("km_to_fire_before_2025")
+    return out
+
+
 def _exposure_weight(e: dict) -> float:
     if e["kind"] == "hurricane":
         return {"hurricane": 3.0, "strong tropical storm": 2.0, "tropical storm": 1.0}.get(e.get("wind_band"), 0.0)
@@ -151,7 +165,7 @@ def rank(scenario_id: str, step_id: str | None = None) -> list[dict]:
         w = _exposure_weight(e)
         if w <= 0:
             continue
-        static = hazards.static_risk(b["lat"], b["lon"], cached_only=True)
+        static = as_of(sc, hazards.static_risk(b["lat"], b["lon"], cached_only=True))
         sig = signals(sc["kind"], b, facts.get(str(b["id"])), static)
         vuln = sum(s["weight"] for s in sig)
         rows.append({
@@ -174,9 +188,15 @@ def threat_for(scenario_id: str, step_id: str | None, b: dict) -> dict:
     sc = next(s for s in hazards.scenarios() if s["id"] == scenario_id)
     step = next((s for s in sc["steps"] if s["id"] == step_id), sc["steps"][-1] if sc["steps"] else {})
     e = hazards.exposure(scenario_id, b["lat"], b["lon"], step.get("id"))
+    notes = {
+        "hurricane": "Wind figures are sustained winds estimated from the forecast's wind radii; gusts run roughly 20 to 30 percent higher. "
+                     "The forecast cone shows uncertainty in the centre's track only, so being outside it is not a sign of safety.",
+        "wildfire": "A Red Flag Warning means wind and dryness that let any fire spread fast. It does not mean a fire is burning.",
+    }
     return {
         "scenario_id": scenario_id, "step_id": step.get("id"), "kind": sc["kind"], "name": sc["name"],
         "label": step.get("label"), "forecast_issued": step.get("issued"), "replay": not sc.get("live"),
         "at_this_site": e, "hours_left": hours_left(e),
-        "standing_risk": hazards.static_risk(b["lat"], b["lon"]),
+        "standing_risk": as_of(sc, hazards.static_risk(b["lat"], b["lon"])),
+        "note": notes[sc["kind"]],
     }

@@ -53,3 +53,13 @@ def test_hours_left_and_exposure_weight():
     assert screen._exposure_weight(hur) == 2.0 and screen._exposure_weight({"kind": "hurricane", "wind_band": "below tropical storm"}) == 0.0
     assert screen._exposure_weight({"kind": "wildfire", "in_warning": False}) == 0.0
     assert screen._people(GARDEN) > screen._people({"units": 10})
+
+
+def test_replay_hides_what_was_not_yet_known():
+    static = {"fire_zone": "Very High", "km_to_past_fire": 0.0, "past_fire": "Palisades 2025", "km_to_fire_before_2025": 0.76,
+              "fire_before_2025": "Mandeville 1978"}
+    replay = screen.as_of({"kind": "wildfire", "live": False}, static)
+    assert replay["km_to_past_fire"] == 0.76 and "past_fire" not in replay and replay["fire_zone"] == "Very High"
+    assert screen.as_of({"kind": "wildfire", "live": True}, static) is static      # live: use everything known today
+    assert screen.as_of({"kind": "hurricane", "live": False}, static) is static
+    assert screen.as_of({"kind": "wildfire", "live": False}, None) is None

@@ -116,7 +116,14 @@ backend (FastAPI, :8001)
 | The agent pads the list | Prompt asks for few specific actions; the "seen" rule forces evidence |
 | Los Angeles kit buildings are mostly outside the highest fire zones | Rank by warning area plus vegetation and construction; show the count honestly |
 
-## 10. Open questions
+## 10. Known limits of the forecast data
+
+- Wind is sustained wind estimated from the advisory's quadrant radii, a band-level estimate. Gusts run 20 to 30 percent higher.
+- At 72 and 60 hours the real Beryl forecast pointed at South Texas, so Houston is untouched until the 48-hour step. That is what happened, and it is the point of the time slider.
+- The fire hazard zone map is today's (March 2025), not the one in force during the January 2025 replay. Past-fire distances in the replay exclude the 2025 fires.
+- The live hurricane and live Red Flag paths are tested only with stand-in feeds, because nothing is active today.
+
+## 11. Open questions
 
 1. Team: who owns the headset demo, and is it worth the setup time?
 2. Should the notice be sent anywhere (email, SMS) or stay as a draft to copy? Currently a draft.

@@ -40,8 +40,9 @@ export const HAZARD: Record<string, string> = { wind: "Wind", flood: "Flood", fi
 
 export function exposureLine(e: Exposure): string {
   if (e.kind === "hurricane") {
-    const wind = e.peak_wind_mph != null ? `Peak wind about ${Math.round(e.peak_wind_mph)} mph` : "Wind forecast unavailable";
-    return `${wind} (${e.wind_band ?? "unknown"})`;
+    if (e.wind_band === "below tropical storm") return "Below tropical-storm force in this forecast";
+    const wind = e.peak_wind_mph != null ? `Sustained wind about ${Math.round(e.peak_wind_mph)} mph` : "Wind forecast unavailable";
+    return `${wind} (${e.wind_band ?? "unknown"}), gusts higher`;
   }
   return e.in_warning ? "Inside the Red Flag Warning area" : "Outside the warning area";
 }
