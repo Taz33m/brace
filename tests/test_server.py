@@ -70,3 +70,26 @@ def test_replay_streams_saved_plan_for_the_right_step(client, site):
     assert client.get("/api/buildings/7/plan/stream?scenario=test-storm&step=t48&replay=true").status_code == 404
     assert client.get("/api/buildings/7?scenario=test-storm").json()["plan"]["headline"] == "Two jobs."
     assert client.get("/api/portfolio?scenario=test-storm").json()["buildings"][0]["plan"] == {"actions": 0, "headline": "Two jobs."}
+
+
+def test_headset_link_round_trip(client):
+    assert client.get("/api/vr/target").json()["rev"] >= 0
+    start = client.get("/api/vr/target").json()["rev"]
+    sent = client.post("/api/vr/target", json={"building": 7, "scan_id": "SCAN1", "sweep_id": "w1", "bearing": 90, "junk": "x"}).json()
+    assert sent["rev"] == start + 1 and sent["sweep_id"] == "w1" and "junk" not in sent
+    client.post("/api/vr/pose", json={"building": 7, "scan_id": "SCAN1", "sweep_id": "w2", "bearing": 182.5})
+    pose = client.get("/api/vr/pose").json()
+    assert pose["sweep_id"] == "w2" and pose["age"] < 5
+    assert "ip" in client.get("/api/lan").json()
+
+
+def test_pano_face_validates_scan_sweep_and_face(client, site, monkeypatch, tmp_path):
+    from PIL import Image
+    face = tmp_path / "f.jpg"
+    Image.new("RGB", (512, 512), (10, 20, 30)).save(face)
+    monkeypatch.setattr(server.matterport, "face_image", lambda scan, sweep, f: face)
+    ok = client.get("/api/buildings/7/pano/SCAN1/w1/0.jpg?size=256")
+    assert ok.status_code == 200 and ok.headers["content-type"] == "image/jpeg"
+    assert client.get("/api/buildings/7/pano/SCAN1/nope/0.jpg").status_code == 404
+    assert client.get("/api/buildings/7/pano/OTHER/w1/0.jpg").status_code == 404
+    assert client.get("/api/buildings/7/pano/SCAN1/w1/6.jpg").status_code == 404

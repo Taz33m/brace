@@ -174,6 +174,66 @@ def run_file(property_id: int, path: str) -> FileResponse:
     return FileResponse(target, media_type="image/jpeg")
 
 
+@app.get("/api/buildings/{property_id}/pano/{scan_id}/{sweep_id}/{face}.jpg")
+def pano_face(property_id: int, scan_id: str, sweep_id: str, face: int, size: int = Query(1024, ge=256, le=2048)) -> Response:
+    """One cube face of a scan position (0 up, 1-4 sides clockwise from the sweep's heading, 5 down), for the headset view."""
+    s = _site(property_id)
+    scan = s.scans.get(scan_id)
+    if scan is None or face not in range(6) or not any(x["id"] == sweep_id for x in scan["sweeps"]):
+        raise HTTPException(404, "no such panorama")
+    try:
+        path = matterport.face_image(scan_id, sweep_id, face)
+    except matterport.MatterportError as e:
+        raise HTTPException(502, str(e))
+    with Image.open(path) as im:
+        im = im.convert("RGB")
+        im.thumbnail((size, size), Image.LANCZOS)
+        return _jpeg(im, quality=80)
+
+
+# --- headset link ----------------------------------------------------------------
+# One phone-in-a-headset follows the laptop. The laptop posts where to look; the phone
+# posts back where it is standing and looking. Held in memory: this is a two-device demo link.
+VR: dict[str, dict] = {"target": {"rev": 0}, "pose": {"at": 0.0}}
+
+
+@app.get("/api/lan")
+def lan() -> dict:
+    """This machine's address on the local network, so a phone can be pointed at it."""
+    import socket
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.connect(("10.255.255.255", 1))  # no packet is sent; this only picks the outbound interface
+            return {"ip": sock.getsockname()[0]}
+    except OSError:
+        return {"ip": None}
+
+
+@app.get("/api/vr/target")
+def vr_target() -> dict:
+    return VR["target"]
+
+
+@app.post("/api/vr/target")
+def set_vr_target(body: dict) -> dict:
+    keep = {k: body.get(k) for k in ("building", "scan_id", "sweep_id", "bearing", "action_id")}
+    VR["target"] = {**keep, "rev": VR["target"]["rev"] + 1}
+    return VR["target"]
+
+
+@app.get("/api/vr/pose")
+def vr_pose() -> dict:
+    import time
+    return {**VR["pose"], "age": round(time.time() - VR["pose"]["at"], 1)}
+
+
+@app.post("/api/vr/pose")
+def set_vr_pose(body: dict) -> dict:
+    import time
+    VR["pose"] = {**{k: body.get(k) for k in ("building", "scan_id", "sweep_id", "bearing", "action_id")}, "at": time.time()}
+    return {"ok": True}
+
+
 # --- plan runs -------------------------------------------------------------------
 class Run:
     """A live plan: a worker thread appending events that any number of streams can follow."""

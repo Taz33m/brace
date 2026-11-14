@@ -2,17 +2,21 @@ import { useEffect, useState } from "react";
 import { api } from "./api";
 import { BuildingPage } from "./components/BuildingPage";
 import { MapPage } from "./components/MapPage";
+import { VrPage } from "./components/VrPage";
 import type { Scenario } from "./types";
 
-interface Route { scenario: string | null; step: string | null; building: number | null }
+interface Route { scenario: string | null; step: string | null; building: number | null; vr: boolean }
 
 function parse(): Route {
-  const parts = window.location.hash.replace(/^#\/?/, "").split("/").filter(Boolean).map(decodeURIComponent);
+  const all = window.location.hash.replace(/^#\/?/, "").split("/").filter(Boolean).map(decodeURIComponent);
+  const vr = all[0] === "vr";   // #/vr/<scenario>/<step>/b/<id> is the headset view of the same building
+  const parts = vr ? all.slice(1) : all;
   const b = parts.indexOf("b");
   return {
     scenario: parts[0] ?? null,
     step: parts[1] && parts[1] !== "b" && parts[1] !== "-" ? parts[1] : null,
     building: b >= 0 && parts[b + 1] ? Number(parts[b + 1]) : null,
+    vr,
   };
 }
 
@@ -44,6 +48,7 @@ export function App() {
   const scenario = scenarios.find((s) => s.id === route.scenario) ?? scenarios.find((s) => !s.live) ?? scenarios[0];
   const step = scenario.steps.find((s) => s.id === route.step)?.id ?? scenario.steps[scenario.steps.length - 1]?.id ?? null;
 
+  if (route.vr && route.building != null) return <VrPage key={route.building} id={route.building} scenario={scenario} step={step} />;
   if (route.building != null) {
     return <BuildingPage key={`${route.building}-${scenario.id}-${step}`} id={route.building} scenario={scenario} step={step}
                          sdkKey={config.sdk_key} agentReady={config.agent_ready} onBack={() => go(scenario.id, step)} />;

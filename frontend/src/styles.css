@@ -180,6 +180,27 @@ code { font-family: ui-monospace, Menlo, monospace; font-size: 0.9em; background
 .thumb { padding: 0; border: 1px solid var(--line); width: 148px; background: var(--dark); overflow: hidden; }
 .thumb img { display: block; width: 100%; height: 98px; object-fit: cover; }
 
+.headset { flex: none; }
+.headset-card { background: var(--surface); padding: 22px 24px; max-width: 420px; display: grid; gap: 12px; justify-items: start; }
+.headset-card h2 { font-family: var(--cond); font-size: 26px; font-weight: 600; }
+.headset-card img { justify-self: center; position: static; max-height: none; }
+.headset-card ol { list-style: decimal; padding-left: 20px; display: grid; gap: 4px; font-size: 14px; }
+.headset-card code { word-break: break-all; font-size: 12.5px; }
+.headset-card p { font-size: 13.5px; color: var(--ink-2); }
+.headset-card button { position: static; }
+
+.vr { position: fixed; inset: 0; background: #000; color: #fff; }
+.vr-canvas { position: absolute; inset: 0; touch-action: none; }
+.vr-canvas canvas { display: block; }
+.vr-gate { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 14px; padding: 24px; background: rgba(11, 21, 34, 0.86); text-align: center; }
+.vr-gate h1 { font-family: var(--cond); font-size: 34px; font-weight: 700; }
+.vr-gate p { max-width: 46ch; color: #c7d1de; }
+.vr-gate button { font-size: 20px; padding: 12px 34px; background: var(--signal); border-color: var(--signal); }
+.vr-gate label { font-size: 14px; color: #c7d1de; display: flex; gap: 6px; align-items: center; }
+.vr-bar { position: absolute; left: 0; right: 0; bottom: 0; display: flex; gap: 10px; align-items: center; padding: 8px 12px; background: rgba(11, 21, 34, 0.7); font-size: 14px; }
+.vr-bar span { margin-right: auto; }
+.vr-bar button { color: var(--ink); font-size: 13.5px; padding: 5px 10px; }
+
 .lightbox { position: fixed; inset: 0; background: rgba(6, 12, 20, 0.9); display: grid; place-items: center; z-index: 1000; padding: 32px; }
 .lightbox img { max-width: 100%; max-height: calc(100vh - 110px); }
 .lightbox button { position: absolute; top: 18px; right: 18px; }

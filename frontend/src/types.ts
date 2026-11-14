@@ -147,7 +147,7 @@ export interface Action {
   basis: "seen" | "record";
   structure: string | null;
   site: null | { lon: number; lat: number; cell: string | null; image?: string; oblique_view?: string; oblique_image?: string };
-  interior: null | { scan_id: string; scan_name: string; sweep_id: string; direction: Direction; image: string; lon: number | null; lat: number | null };
+  interior: null | { scan_id: string; scan_name: string; sweep_id: string; direction: Direction; bearing: number | null; image: string; lon: number | null; lat: number | null };
 }
 
 export interface Message { id: string; kind: "notice" | "work_order"; to: string; subject: string; body: string; action_ids: string[] }

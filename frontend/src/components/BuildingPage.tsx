@@ -1,7 +1,8 @@
+import QRCode from "qrcode";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { exposureLine, hours, num, standingLine, when } from "../format";
-import { nearestScanView, structureAt } from "../geo";
+import { BEARING, nearestScanView, structureAt } from "../geo";
 import type { Action, AgentEvent, Building, Direction, Lead, LonLat, Message, Plan, Scenario, Selection } from "../types";
 import { PlanPanel, type RunState } from "./PlanPanel";
 import { SitePane } from "./SitePane";
@@ -24,8 +25,28 @@ export function BuildingPage({ id, scenario, step, sdkKey, agentReady, onBack }:
   const [runError, setRunError] = useState<string | null>(null);
   const [active, setActive] = useState<string | null>(null);
   const [zoom, setZoom] = useState<string | null>(null);
+  const [headset, setHeadset] = useState<{ url: string; qr: string } | null>(null);
+  const [worn, setWorn] = useState<{ scan_id: string; sweep_id: string; bearing: number | null; action_id: string | null } | null>(null);
   const tour = useRef<TourHandle>(null);
   const stream = useRef<EventSource | null>(null);
+
+  // The phone in the headset reports where it is standing and looking; show that on the site photo.
+  useEffect(() => {
+    const t = window.setInterval(() => {
+      fetch("/api/vr/pose").then((r) => r.json()).then((p) => {
+        const on = p.building === id && p.age < 4;
+        setWorn(on ? p : null);
+        if (on && p.action_id) setActive(p.action_id);
+      }).catch(() => {});
+    }, 800);
+    return () => window.clearInterval(t);
+  }, [id]);
+
+  const openHeadset = async () => {
+    const { ip } = await fetch("/api/lan").then((r) => r.json()).catch(() => ({ ip: null }));
+    const url = `https://${ip ?? "<this-computer's-address>"}:5175/#/vr/${encodeURIComponent(scenario.id)}/${step ? encodeURIComponent(step) : "-"}/b/${id}`;
+    setHeadset({ url, qr: await QRCode.toDataURL(url, { margin: 1, width: 260 }) });
+  };
 
   useEffect(() => {
     api.building(id, scenario.id, step).then((d) => {
@@ -39,7 +60,13 @@ export function BuildingPage({ id, scenario, step, sdkKey, agentReady, onBack }:
     if (!b) return;
     const st = structureAt(b, [lon, lat]);
     setSelection({ lon, lat, label, structure: st?.id ?? null, scanId, sweepId, direction });
-    if (scanId) tour.current?.lookFrom(scanId, sweepId, direction, tag);
+    if (scanId) {
+      tour.current?.lookFrom(scanId, sweepId, direction, tag);
+      // Bring the headset along to the same spot, facing the same way.
+      const bearing = direction in BEARING ? BEARING[direction as keyof typeof BEARING] : null;
+      fetch("/api/vr/target", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ building: b.id, scan_id: scanId, sweep_id: sweepId, bearing }) }).catch(() => {});
+    }
   }, [b]);
 
   const pick = useCallback((p: LonLat) => {
@@ -101,11 +128,16 @@ export function BuildingPage({ id, scenario, step, sdkKey, agentReady, onBack }:
   const standing = standingLine(t);
   const busy = run === "running" || run === "replaying";
   const marks = actions.filter((a) => a.site).map((a) => ({ id: a.id, lon: a.site!.lon, lat: a.site!.lat }));
+  // When someone is wearing the headset, the "you are here" mark follows them instead of the on-screen tour.
+  const wornSweep = worn ? b.scans.find((s) => s.id === worn.scan_id)?.sweeps.find((s) => s.id === worn.sweep_id) : null;
+  const here = wornSweep?.lon != null && wornSweep.lat != null ? { lon: wornSweep.lon, lat: wornSweep.lat, bearing: worn!.bearing }
+    : sweep?.lon != null && sweep.lat != null ? { lon: sweep.lon, lat: sweep.lat, bearing } : null;
 
   return (
     <div className="building-page">
       <header className="topbar">
         <button className="back" onClick={onBack}>Map</button>
+        {b.scans.length > 0 && <button className="headset" onClick={openHeadset}>{worn ? "Headset connected" : "Open in headset"}</button>}
         <div className="title">
           <h1>{r.name}</h1>
           <span>{r.address}, {r.city}, {r.state} {r.zip}</span>
@@ -132,7 +164,7 @@ export function BuildingPage({ id, scenario, step, sdkKey, agentReady, onBack }:
       <main className="stage">
         <SitePane b={b} selection={selection} marks={marks} onPick={pick}
                   onMark={(aid) => { const a = actions.find((x) => x.id === aid); if (a) show(a); }}
-                  tour={sweep?.lon != null && sweep.lat != null ? { lon: sweep.lon, lat: sweep.lat, bearing } : null} />
+                  tour={here} />
         <TourPane ref={tour} scans={b.scans} sdkKey={sdkKey} onMove={(scanId, sweepId) => setAt({ scanId, sweepId })} onTurn={setBearing} />
         {b.reasons.length > 0 && <p className="why">Flagged by the aerial analysis and the record, before anyone has looked: {b.reasons.join("; ")}.</p>}
       </main>
@@ -142,6 +174,22 @@ export function BuildingPage({ id, scenario, step, sdkKey, agentReady, onBack }:
                  error={runError} active={active} onRun={start}
                  onReplay={() => listen(api.streamUrl(id, scenario.id, step, true), "replaying")} onShow={show} onZoom={setZoom} />
 
+      {headset && (
+        <div className="lightbox" role="dialog" aria-label="Open in a phone headset" onClick={() => setHeadset(null)}>
+          <div className="headset-card" onClick={(e) => e.stopPropagation()}>
+            <h2>Stand inside this building</h2>
+            <img src={headset.qr} alt="QR code for the headset view" width={260} height={260} />
+            <ol>
+              <li>Put the phone on the same Wi-Fi as this computer and scan the code.</li>
+              <li>The phone warns about the connection because the certificate is self-made. Choose to continue.</li>
+              <li>Press Start, then slide the phone into the headset.</li>
+            </ol>
+            <code>{headset.url}</code>
+            <p>What you pick here, the headset shows. Where the wearer looks appears on the site photo.</p>
+            <button onClick={() => setHeadset(null)}>Close</button>
+          </div>
+        </div>
+      )}
       {zoom && (
         <div className="lightbox" role="dialog" aria-label="Enlarged image" onClick={() => setZoom(null)}>
           <img src={zoom} alt="" />
