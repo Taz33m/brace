@@ -34,6 +34,7 @@ import { toResidentError } from "../lib/errors";
 import { formatWhen, localInputToIso, toLocalInput } from "../lib/time";
 import { preparePhoto } from "../lib/photos";
 import { useDictation } from "../lib/useDictation";
+import { useFlowLifetime } from "../lib/useFlowLifetime";
 
 const MAX_PHOTOS = 6;
 
@@ -129,6 +130,7 @@ export function ReportFlow(props: ReportFlowProps) {
   /** Photos removed while still preparing; their late result is discarded. */
   const removedRef = useRef(new Set<string>());
   const sendingRef = useRef(false);
+  const lifetimeRef = useFlowLifetime();
 
   const rooms = useMemo(() => verifiedRooms(home), [home]);
   const errors = validate(draft, rooms);
@@ -265,7 +267,8 @@ export function ReportFlow(props: ReportFlowProps) {
   // ---------------- send ----------------
 
   async function send(skip?: ReadonlySet<string>) {
-    if (sendingRef.current || offline) return;
+    const lifetime = lifetimeRef.current;
+    if (!lifetime || lifetime.aborted || sendingRef.current || offline) return;
     const current = draftRef.current;
     if (Object.keys(validate(current, rooms)).length) {
       setAttempted(true);
@@ -287,14 +290,17 @@ export function ReportFlow(props: ReportFlowProps) {
       const pending = photos.filter((p) => !uploadIds.has(p.local_id));
       const failed: { local_id: string; n: number; message: string; retryable: boolean }[] = [];
       for (let i = 0; i < pending.length; i++) {
+        if (lifetime.aborted) return;
         const p = pending[i];
         setPhase({ kind: "uploading", index: i + 1, total: pending.length });
         patchPhoto(p.local_id, { state: "uploading", error: null });
         try {
           const up = await api.upload_image(p.file as File, p.idempotency_key);
+          if (lifetime.aborted) return;
           uploadIds.set(p.local_id, up.upload_id);
           patchPhoto(p.local_id, { state: "uploaded", upload_id: up.upload_id, error: null });
         } catch (e) {
+          if (lifetime.aborted) return;
           const err = toResidentError(e);
           if (err.kind === "expired") {
             setPhase({ kind: "idle" });
@@ -319,6 +325,7 @@ export function ReportFlow(props: ReportFlowProps) {
       }
 
       // 2. The report, with the returned upload IDs.
+      if (lifetime.aborted) return;
       let observed_at: string | null = null;
       if (current.observed_choice === "now") {
         nowStampRef.current ??= new Date().toISOString();
@@ -339,10 +346,12 @@ export function ReportFlow(props: ReportFlowProps) {
       const key = keeperRef.current.keyFor(input);
       try {
         const receipt = await api.submit_report(input, key);
+        if (lifetime.aborted) return;
         keeperRef.current.succeeded();
         nowStampRef.current = null;
         on_submitted(receipt);
       } catch (e) {
+        if (lifetime.aborted) return;
         const err = toResidentError(e);
         if (err.kind === "expired") {
           setPhase({ kind: "idle" });
