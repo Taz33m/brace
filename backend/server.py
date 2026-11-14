@@ -404,6 +404,25 @@ def _site_model(building: int) -> dict:
         raise HTTPException(404, "this building has not been gathered yet")
 
 
+@app.get("/api/scenarios/{scenario_id}/forecast.{kind}")
+def forecast_download(scenario_id: str, kind: str, step: str | None = None):
+    """The forecast as data: one row per building, keyed by the CoStar property id. `step=all` gives every forecast step."""
+    from . import forecast_export
+    sc = _scenario(scenario_id)
+    if kind not in ("csv", "json"):
+        raise HTTPException(404, "forecast.csv or forecast.json")
+    which = "all" if step == "all" else _step(sc, step)
+    try:
+        table = forecast_export.table(sc["id"], which)
+    except hazards.HazardError as e:
+        raise HTTPException(502, str(e))
+    if kind == "json":
+        return {"scenario": sc["id"], "step": which, "columns": forecast_export.COLUMNS, "rows": table}
+    name = f"brace-forecast-{sc['id']}-{'all-steps' if which == 'all' else which or 'now'}.csv"
+    return Response(forecast_export.to_csv(table), media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
 @app.get("/api/site-model/board")
 def site_model_board() -> dict:
     """Each of the six stages across every gathered building: how many sites it has run for, and its number."""

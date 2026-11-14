@@ -54,6 +54,10 @@ export function MapPage({ scenarios, scenario, step, onScenario, onStep, onOpen 
             </button>
           ))}
         </nav>
+        <a className="recover-link" href={api.forecastCsv(scenario.id, "all")} download
+           title="One row per building for every forecast step: when conditions arrive, how strong, and the working hours left. Keyed by the CoStar property id.">
+          Download the forecast per building
+        </a>
         <a className="recover-link" href="#/recovery">Recover</a>
       </header>
 
