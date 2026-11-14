@@ -75,7 +75,7 @@ The pitch transcript and the product differ in ways a judge will notice. Keep th
 |---|---|
 | 1 Public repository | Pushed to `github.com/ryanwatach/HackPrinceton` (team repo). It is **private**; it must be made public before submission if the rule holds |
 | 2 Rebuild the Los Angeles plan | Done: rebuilt after the hindsight fix (7 actions, 3 messages) |
-| 3 Demo set | Plans building; `DEMO.md` still to write once they are read |
+| 3 Demo set | Ten plans saved across both scenarios, including the same two buildings at 36 and 12 hours. `DEMO.md` has the script. The plans have not each been read line by line |
 | 4 Headset on a real phone | Needs a person with the phone |
 | 5 Value exposed | Done and tested. 1,770 of 3,339 buildings have a priced sale, $42.6 billion in total |
 | 6 Photon | Not started; needs Photon's guidelines and an account |
