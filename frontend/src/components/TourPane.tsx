@@ -1,10 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { BEARING } from "../geo";
 import type { Direction, Scan } from "../types";
-
-declare global {
-  interface Window { MP_SDK?: { connect: (iframe: HTMLIFrameElement, key: string, version: string) => Promise<any> } }
-}
+import { loadMatterportSdk } from "../matterport-sdk";
 
 export interface TourHandle {
   /** Open a scan if needed, fly to a position in it and face a direction. With `tag`, pin a labelled marker in that view. */
@@ -23,6 +20,8 @@ const PITCH: Record<string, number> = { up: 70, down: -55 };
 export const TourPane = forwardRef<TourHandle, Props>(function TourPane({ scans, sdkKey, onMove, onTurn }, ref) {
   const [scanId, setScanId] = useState<string | null>(scans[0]?.id ?? null);
   const [state, setState] = useState<"loading" | "ready" | "failed">("loading");
+  const [failure, setFailure] = useState("The scan could not connect.");
+  const [retry, setRetry] = useState(0);
   const frame = useRef<HTMLIFrameElement>(null);
   const sdk = useRef<any>(null);
   const yaw = useRef(0);
@@ -65,14 +64,20 @@ export const TourPane = forwardRef<TourHandle, Props>(function TourPane({ scans,
     let cancelled = false;
     let subs: { cancel: () => void }[] = [];
     let last = 0;
+    let connecting = false;
     sdk.current = null;
     ids.current = new Set();
     tagged.current = new Set();
     setState("loading");
     const connect = async () => {
-      if (!window.MP_SDK) { setState("failed"); return; }
+      if (connecting || cancelled) return;
+      connecting = true;
+      let sdkLoaded = false;
       try {
-        const mp = await window.MP_SDK.connect(el, sdkKey, "");
+        const library = await loadMatterportSdk();
+        if (cancelled) return;
+        sdkLoaded = true;
+        const mp = await library.connect(el, sdkKey, "");
         if (cancelled) return;
         sdk.current = mp;
         subs.push(mp.Sweep.data.subscribe({
@@ -92,13 +97,16 @@ export const TourPane = forwardRef<TourHandle, Props>(function TourPane({ scans,
         }));
         setState("ready");
       } catch {
-        if (!cancelled) setState("failed");
+        if (!cancelled) {
+          setFailure(sdkLoaded ? "The scan could not connect. Try again." : "The Matterport viewer could not load. Check your connection and try again.");
+          setState("failed");
+        }
       }
     };
     el.addEventListener("load", connect);
     return () => { cancelled = true; el.removeEventListener("load", connect); subs.forEach((s) => s.cancel()); subs = []; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scanId, sdkKey]);
+  }, [scanId, sdkKey, retry]);
 
   useImperativeHandle(ref, () => ({
     lookFrom(id, sweepId, direction, tag) {
@@ -122,12 +130,12 @@ export const TourPane = forwardRef<TourHandle, Props>(function TourPane({ scans,
       </header>
       <div className="pane-body">
         {scan
-          ? <iframe key={scan.id} ref={frame} title={`3D scan: ${scan.name}`} allow="xr-spatial-tracking; fullscreen"
+          ? <iframe key={`${scan.id}:${retry}`} ref={frame} title={`3D scan: ${scan.name}`} allow="xr-spatial-tracking; fullscreen"
                     src={`https://my.matterport.com/show?m=${scan.id}&play=1&qs=1&brand=0&title=0&help=0&search=0&applicationKey=${sdkKey}`} />
           : <p className="empty-pane">No space in this building has been scanned. The plan rests on the aerial imagery and the record.</p>}
       </div>
       <footer className="pane-foot">
-        {!scan ? "" : state === "loading" ? "Loading the scan…" : state === "failed" ? "The scan could not connect. Reload the page."
+        {!scan ? "" : state === "loading" ? "Loading the scan…" : state === "failed" ? <span role="alert">{failure} <button type="button" onClick={() => setRetry(value => value + 1)}>Retry viewer</button></span>
           : `${scan.kind[0].toUpperCase()}${scan.kind.slice(1)}${scan.structure ? ` in ${scan.structure}` : ""}${scan.area_sqft ? `, about ${scan.area_sqft.toLocaleString()} sq ft` : ""}. Scans cover single spaces, not the whole building.`}
       </footer>
     </section>
