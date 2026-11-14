@@ -306,3 +306,14 @@ export interface SiteScene {
   fits: { scan_id: string; name: string | null; roof: string | null; moved_m: number; under_roof_before: number; under_roof_after: number;
           raw: [number, number][]; fitted: [number, number][] }[];
 }
+
+/** A scanned building as a place to find your way in. */
+export interface PlacePosition { id: string; x: number; y: number; z: number; room_id: string | null; level: number | null; lon: number | null; lat: number | null; heading: number | null; sees: string[] }
+export interface PlaceRoom { id: string; level: number | null; type: string | null; typed_by: string | null; confidence: string | null; area_sqft: number; positions: number; polygon: [number, number][] | null }
+export interface Place { model_id: string; name: string; levels: { level: number; label: string; positions: number }[]; rooms: PlaceRoom[]; positions: PlacePosition[]; placed_by: string | null }
+export interface PlaceAnswer {
+  found: boolean; asked: string; event: string | null; say: string; place?: string; schedule_source?: string | null;
+  room?: { id: string; type: string; typed_by: string | null; confidence: string | null; area_sqft: number; level: string | null; position_id: string; lon: number | null; lat: number | null };
+  route?: null | { positions: string[]; metres: number; says?: string; levels_changed?: number; arrived: boolean;
+                   legs: { from: string; to: string; metres: number; level_change: number; bearing: number | null }[] };
+}

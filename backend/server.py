@@ -5,6 +5,7 @@ import asyncio
 import io
 import json
 import os
+import re
 import threading
 from collections import Counter
 
@@ -440,6 +441,57 @@ def building_heights(building_id: int) -> FileResponse:
     if not path.exists():
         raise HTTPException(404, "this site has no height model yet")
     return FileResponse(path, media_type="image/png", headers={"Cache-Control": "max-age=3600"})
+
+
+# --- a scanned building as a place to find your way in -------------------------------------------
+def _place(model_id: str) -> dict:
+    from . import wayfind
+    if not re.fullmatch(r"[A-Za-z0-9]{6,20}", model_id) or not (matterport.MP_CACHE / model_id / "model.json").exists():
+        raise HTTPException(404, "this scan is not on this computer")
+    return wayfind.place(model_id)
+
+
+@app.get("/api/places/{model_id}")
+def place(model_id: str) -> dict:
+    """A scanned building as a walkable place: levels, typed rooms, and every scan position with what it sees."""
+    return _place(model_id)
+
+
+@app.get("/api/places/{model_id}/find")
+def place_find(model_id: str, q: str, start: str | None = None) -> dict:
+    """Where something is in this building, and the way there from a scan position."""
+    from . import wayfind
+    _place(model_id)
+    return wayfind.find(model_id, q, start)
+
+
+@app.get("/api/places/{model_id}/pano/{sweep_id}/{face}.jpg")
+def place_pano(model_id: str, sweep_id: str, face: int, size: int = Query(1024, ge=256, le=2048)) -> Response:
+    """One cube face of a scan position (0 up, 1-4 sides clockwise from the position's heading, 5 down)."""
+    where = _place(model_id)
+    if face not in range(6) or not any(p["id"] == sweep_id for p in where["positions"]):
+        raise HTTPException(404, "no such panorama")
+    try:
+        path = matterport.face_image(model_id, sweep_id, face)
+    except matterport.MatterportError as e:
+        raise HTTPException(502, str(e))
+    with Image.open(path) as im:
+        im = im.convert("RGB")
+        im.thumbnail((size, size), Image.LANCZOS)
+        return _jpeg(im, quality=80)
+
+
+@app.post("/api/places/{model_id}/voice")
+def place_voice(model_id: str) -> dict:
+    """A short-lived key for the guide's voice in this building."""
+    from . import wayfind
+    where = _place(model_id)
+    if not voice.ready():
+        raise HTTPException(503, "voice is not configured on this machine")
+    try:
+        return voice.mint(voice.place_session(where, [e for e in wayfind.events() if e.get("model_id") == model_id]))
+    except voice.VoiceError as e:
+        raise HTTPException(502, str(e))
 
 
 @app.get("/api/desk")

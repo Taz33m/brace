@@ -319,3 +319,8 @@ code { font-family: ui-monospace, Menlo, monospace; font-size: 0.9em; background
 @media (prefers-reduced-motion: reduce) { .reports-feed li.is-fresh { animation: none; } }
 .reports-feed li strong button { border: 0; padding: 0; color: #0054a6; background: none; font: inherit; text-align: left; cursor: pointer; text-decoration: underline; }
 .reports-feed li strong button:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+
+/* Asking the way, when the phone is not in the headset: one line to type in. */
+form.vr-bar input { flex: 1 1 240px; min-width: 0; padding: 7px 10px; border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 4px; color: #fff; background: rgba(255, 255, 255, 0.1); }
+form.vr-bar input::placeholder { color: rgba(255, 255, 255, 0.6); }
+form.vr-bar span { margin-right: 0; font-size: 13.5px; }

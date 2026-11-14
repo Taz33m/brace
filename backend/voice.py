@@ -191,6 +191,29 @@ def session(record: dict, threat: dict, plan: dict | None, scans: list[dict], vi
         "tools": tools(), "tool_choice": "auto"}}
 
 
+def place_session(where: dict, schedule: list[dict]) -> dict:
+    """A short-lived voice for someone standing inside a scanned building and asking the way."""
+    rooms = "; ".join(f"{r['type']} on level {r['level']}, about {r['area_sqft']:,} square feet" for r in where["rooms"] if r.get("type")) or "none typed"
+    listed = "; ".join(f"{e['event']} at {e['place']}" for e in schedule) or "nothing"
+    lines = [
+        f"You are Brace, a guide inside {where.get('name') or 'this building'}. The person is wearing a headset, standing in a scan of the building, and looking around.",
+        "When they ask where something is or how to get somewhere, call find_place with their own words. Then answer in one or two short sentences, the name of the place first.",
+        "Say only what the tool returns. If it finds nothing, say you do not have it. Never guess a room, a floor or a distance.",
+        "After you answer, the way is drawn on the floor in front of them. Tell them to follow it. Do not describe turns yourself.",
+        f"Rooms Brace has typed in this scan: {rooms}.",
+        f"On the schedule you were given: {listed}.",
+    ]
+    return {"session": {
+        "type": "realtime", "model": MODEL, "instructions": "\n".join(lines),
+        "audio": {"input": {"turn_detection": {"type": "semantic_vad"}, "noise_reduction": {"type": "near_field"},
+                            "transcription": {"model": "gpt-4o-mini-transcribe"}},
+                  "output": {"voice": VOICE}},
+        "tools": [{"type": "function", "name": "find_place",
+                   "parameters": {"type": "object", "properties": {"query": {"type": "string", "description": "What the person asked for, in their words."}}, "required": ["query"]},
+                   "description": "Find an event or a kind of room in this building. Returns the place, the room it is, and the way there from where the person stands."}],
+        "tool_choice": "auto"}}
+
+
 def mint(body: dict) -> dict:
     """Ask for a short-lived key the phone can use. The real key never leaves this process."""
     key = os.environ.get("OPENAI_API_KEY")
