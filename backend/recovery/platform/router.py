@@ -83,20 +83,45 @@ def parse_cursor(request: Request) -> int:
 
 async def event_stream(store: CaseStore, token: str, role: str, cursor: int, case_id: Optional[str],
                        *, poll_seconds: float = POLL_SECONDS) -> AsyncIterator[dict]:
-    """Persisted-cursor replay, then live polling. Permissions are re-applied on every poll;
-    the stream ends (after delivering pending events, e.g. session.revoked) once the
-    session is no longer valid."""
+    """Persisted-cursor replay with session checks before reads and delivery.
+
+    A revoked/expired session never drains pending private events. An established
+    resident stream may receive only its scoped, persisted revocation notice on
+    its way out; that notice has no report, support, financial, or media content.
+    """
     actor = await run_in_threadpool(store.resolve_session, token)
     if actor is None or actor.role != role:
         return
-    while True:
+
+    async def terminal_notice():
+        if actor.role != "resident":
+            return None
         events = await run_in_threadpool(store.events_after, actor, cursor, case_id)
-        for event in events:
-            cursor = event.event_id
-            yield {"id": str(event.event_id), "data": event.model_dump_json()}
+        notices = [event for event in events if event.type == "session.revoked"]
+        if notices:
+            event = notices[-1]
+            return {"id": str(event.event_id), "data": event.model_dump_json()}
+        return None
+
+    while True:
         current = await run_in_threadpool(store.resolve_session, token)
         if current is None or current != actor:
+            notice = await terminal_notice()
+            if notice:
+                yield notice
             return
+        events = await run_in_threadpool(store.events_after, actor, cursor, case_id)
+        for event in events:
+            # Session revocation can happen during the query or while the client
+            # is consuming an earlier frame in this batch.
+            current = await run_in_threadpool(store.resolve_session, token)
+            if current is None or current != actor:
+                notice = await terminal_notice()
+                if notice:
+                    yield notice
+                return
+            cursor = event.event_id
+            yield {"id": str(event.event_id), "data": event.model_dump_json()}
         if not events:
             await asyncio.sleep(poll_seconds)
 

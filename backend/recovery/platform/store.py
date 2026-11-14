@@ -1008,10 +1008,12 @@ class CaseStore:
             self._resident(conn, actor)
             rows = conn.execute(
                 f"SELECT * FROM events WHERE case_id = ? AND event_id > ? AND audience != 'owner' "
-                f"AND type IN ({','.join('?' * len(RESIDENT_EVENT_TYPES))}) ORDER BY event_id LIMIT ?",
-                (actor.case_id, cursor, *sorted(RESIDENT_EVENT_TYPES), limit)).fetchall()
-            return [self._event_model(r) for r in rows
-                    if r["audience"] == "case" or actor.household_id in json.loads(r["households_json"] or "[]")]
+                f"AND type IN ({','.join('?' * len(RESIDENT_EVENT_TYPES))}) "
+                "AND (audience = 'case' OR (audience = 'households' AND EXISTS ("
+                "SELECT 1 FROM json_each(COALESCE(events.households_json, '[]')) AS household "
+                "WHERE household.value = ?))) ORDER BY event_id LIMIT ?",
+                (actor.case_id, cursor, *sorted(RESIDENT_EVENT_TYPES), actor.household_id, limit)).fetchall()
+            return [self._event_model(r) for r in rows]
 
 
 OBSERVATION_TRANSITIONS = {
