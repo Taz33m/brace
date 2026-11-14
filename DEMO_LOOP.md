@@ -87,6 +87,44 @@ the real one is live:
 dimensions). `at` is where the item is in the scan, so a tag can be drawn on it. A line with no confirmed price has
 null money and is left out of the totals.
 
+## What the research found (14 November, evening)
+
+Answers to the four open questions in `DIRECTION.md`, section 10. "Opened" means the page itself was read; "search
+summary" means only a search result was, so check it before it goes on a slide.
+
+1. **The "$2,000 a scan against $10" claim: drop it.** Nothing supports $2,000. Matterport's own page gives no
+   figure for its insurance sketch ("competitive per-file pricing", opened). Search summaries put it from about $79
+   by floor area, and a photographer's scan at $0.20 to $0.50 a square foot with a $400 to $750 minimum. Use our own
+   numbers: the price run took 112 seconds, 11 searches and 9 confirmed prices.
+2. **How insurers document fit-out, and who buys.**
+   - The standard commercial property form counts the owner's fit-out as part of the **building**: fixtures,
+     permanently installed equipment, floor coverings, and appliances for refrigerating, cooking, dishwashing and
+     laundering (a study guide to the ISO form, opened; the form itself could not be read). That is our schedule.
+     A tenant's own improvements are the tenant's property.
+   - At policy start the owner files a statement of values per location, on rebuilding cost, never sale price; land
+     cannot be insured. Underwriters check it against cost per square foot (search summary).
+   - At a claim the insured must supply an inventory of what was damaged with quantities and values, and a sworn
+     proof of loss, typically within 60 to 90 days (search summary).
+   - The buyer inside an insurer is not established. Underwriting and loss control order inspections; claims uses
+     the estimating software. Our customer is the owner, who files the statement of values with a broker.
+3. **Do scan-to-inventory products exist: yes, after a loss, one property at a time.**
+   - Matterport sells sketches from its scans for Verisk's Xactimate, the adjusters' estimating software (TruePlan,
+     opened). Its own post describes scans taken at first notice of loss and does not claim to list or value
+     contents (opened, 2018).
+   - CoStar has owned Matterport since 28 February 2025 (release opened). The release does not mention insurance.
+   - Encircle: people photograph items after a loss and software writes the descriptions (opened). DocuSketch and
+     Yembo make floor plans, estimates or inventories from a capture (search summaries).
+   - Nothing found builds a fit-out schedule before a loss, from leasing scans that already exist, across a
+     portfolio. A few searches are not proof that nobody does.
+4. **The gap between scan date and loss date.** Values are set at the time of the loss, not the scan: a full
+   appraisal every three to five years (opened), trended each year in between (search summary). So the scan proves
+   what was there and in what condition, and the price comes from today's costs. That is how our schedule already
+   works: quantity from the scan, price from a page read now. Every schedule shows its scan date.
+
+What this changes in the loop: the loss is on rebuilding cost only, never sale price; staged furniture stays out of
+the owner's schedule; the contrast with Matterport is "after the loss, one at a time" against "before it, across a
+portfolio"; and the cost comparison is gone.
+
 ## Who does what
 
 Weighted by who can build fastest. Times are Saturday night into Sunday; submissions are reported to close Sunday
@@ -129,8 +167,8 @@ Weighted by who can build fastest. Times are Saturday night into Sunday; submiss
 1. **The narration.** Word for word against the loop above, under two minutes read aloud.
 2. **The answers.** One or two sentences each for the two judge questions above and for: staged units are not real
    tenants' homes; what happens when the scan is old; who inside an owner's company buys this.
-3. **Checks before the pitch** (from `DIRECTION.md`, section 10): whether Matterport already sells scans into
-   insurance claims; how owners document fit-out at renewal today; and drop any cost comparison we cannot source.
+3. **Checks before the pitch.** The four research questions are answered above. Still open: who inside an owner's
+   company signs for this, and re-reading the lines marked "search summary" at their source.
 4. **The claims list.** Read every line of the video and the deck against `DIRECTION.md`, section 8, and strike
    what we must not say.
 
