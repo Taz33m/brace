@@ -30,14 +30,16 @@ export function ReportsFeed({ id, onOpen }: { id: number; onOpen?: (r: ResidentR
     <aside className="reports-feed" aria-live="polite" aria-label="Reports from residents">
       <h3>From residents <span>{reports.length}</span></h3>
       <ul>
-        {[...reports].reverse().slice(0, 3).map((r) => (
-          <li key={r.id} className={`${r.id === fresh ? "is-fresh" : ""}${r.where && onOpen ? " can-open" : ""}`}
-              onClick={() => { if (r.where && onOpen) onOpen(r); }} title={r.where && onOpen ? "Open this room in the scan" : undefined}>
-            <strong>{r.where ? `${r.where.room ?? "A room"}${r.where.thing ? `, at the ${r.where.thing}` : ""}` : "Not matched to a scanned room"}</strong>
+        {[...reports].reverse().slice(0, 3).map((r) => {
+          const place = r.where ? `${r.where.room ?? "A room"}${r.where.thing ? `, at the ${r.where.thing}` : ""}` : "Not matched to a scanned room";
+          return <li key={r.id} className={r.id === fresh ? "is-fresh" : undefined}>
+            <strong>{r.where && onOpen
+              ? <button type="button" onClick={() => onOpen(r)} title="Open this room in the scan">{place}</button>
+              : place}</strong>
             <p>“{r.text}”</p>
             <small>{r.where ? `${r.where.scan_name}${r.where.placed_by ? ", placed from the resident's words" : ""}. ` : ""}{r.status ? `${r.status.replace(/\.$/, "")}.` : "Reported, not yet reviewed."}</small>
-          </li>
-        ))}
+          </li>;
+        })}
       </ul>
     </aside>
   );

@@ -1,0 +1,10 @@
+Google MediaPipe
+
+The WebAssembly files are from @mediapipe/tasks-vision 0.10.35.
+The Face Landmarker model is the float16 version 1 bundle from Google.
+
+https://github.com/google-ai-edge/mediapipe
+https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task
+
+The assets are served locally so Brace's head gestures can work without fetching a model at runtime.
+See LICENSE for the Apache License, Version 2.0.

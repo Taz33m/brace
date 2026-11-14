@@ -3,7 +3,7 @@ import { api } from "../api";
 import { conversation } from "../conversation";
 import { costRange, monthYear, when } from "../format";
 import { prepareHash, walkHash } from "../recovery/routes";
-import type { Action, Building, ClockChange, Facing, Message, SavedStep, Scenario } from "../types";
+import type { Action, Approval, Building, ClockChange, Facing, Message, SavedStep, Scenario } from "../types";
 import { ConversationPanel } from "./ConversationPanel";
 import { FacingDiagram } from "./FacingDiagram";
 import "./walk.css";
@@ -40,6 +40,10 @@ export function WalkPage({ id, scenario, step, voiceReady }: Props) {
   const [diff, setDiff] = useState<ClockChange | null>(null);
   const [at, setAt] = useState(0);
   const [approved, setApproved] = useState<string[]>([]);
+  const [decision, setDecision] = useState<{ context: string; actionId: string; result: Approval } | null>(null);
+  const approvalContext = JSON.stringify([id, scenario.id, step]);
+  const currentApprovalContext = useRef(approvalContext);
+  currentApprovalContext.current = approvalContext;
   const cameFrom = useRef<string | null>(null);   // the forecast step being left when the clock is moved
 
   // The building and its plan for this forecast step. The previous step's stay on screen until the new one arrives.
@@ -51,11 +55,16 @@ export function WalkPage({ id, scenario, step, voiceReady }: Props) {
   }, [id, scenario.id, step]);
   useEffect(() => { api.savedSteps(id, scenario.id).then(setSaved).catch(() => setSaved([])); }, [id, scenario.id]);
   useEffect(() => {
-    const poll = () => fetch(`/api/vr/approvals?building=${id}`).then((r) => r.json()).then((a) => setApproved(a.action_ids ?? [])).catch(() => {});
+    let current = true;
+    setApproved([]);
+    const query = new URLSearchParams({ building: String(id), scenario: scenario.id, step: step ?? "" });
+    const poll = () => fetch(`/api/vr/approvals?${query}`).then((r) => r.json()).then((a) => {
+      if (current) setApproved(a.action_ids ?? []);
+    }).catch(() => {});
     poll();
     const t = window.setInterval(poll, 1500);
-    return () => window.clearInterval(t);
-  }, [id]);
+    return () => { current = false; window.clearInterval(t); };
+  }, [id, scenario.id, step]);
 
   // When the clock has just been moved, the first thing to show is what changed.
   useEffect(() => {
@@ -82,13 +91,19 @@ export function WalkPage({ id, scenario, step, voiceReady }: Props) {
     return list;
   }, [plan, facing, diff, approved]);
   const moment = moments[Math.min(at, moments.length - 1)];
+  const approvalMessage = decision?.context === approvalContext && (
+    moment.kind === "approved" || (moment.kind === "notice" && moment.actionId === decision.actionId)
+  ) ? decision.result : null;
   const go = useCallback((to: number) => setAt(Math.max(0, Math.min(moments.length - 1, to))), [moments.length]);
 
   const approve = useCallback(async (actionId: string): Promise<{ ok: boolean; say: string }> => {
     const result = await api.approve(id, scenario.id, step, actionId);
-    if (result.ok) setApproved((list) => (list.includes(actionId) ? list : [...list, actionId]));
+    if (currentApprovalContext.current === approvalContext) {
+      setDecision({ context: approvalContext, actionId, result });
+      if (result.ok) setApproved((list) => (list.includes(actionId) ? list : [...list, actionId]));
+    }
     return result;
-  }, [id, scenario.id, step]);
+  }, [id, scenario.id, step, approvalContext]);
 
   /** Move the forecast clock to another step that has a saved plan. The page stays; what changed is shown first. */
   const moveClock = useCallback((to: string) => {
@@ -248,7 +263,7 @@ export function WalkPage({ id, scenario, step, voiceReady }: Props) {
 
       {(moment.kind === "notice" || moment.kind === "approved") && (
         <section className="walk-card walk-notice">
-          <p className="walk-eyebrow">{moment.kind === "approved" ? "Approved. Preview of what residents would receive; nothing has been sent" : "Resident notice, drafted and waiting for you"}</p>
+          <p className="walk-eyebrow">{moment.kind === "approved" ? "Resident notice approved" : "Resident notice, drafted and waiting for you"}</p>
           <h2>{moment.message.subject}</h2>
           <pre>{moment.message.body}</pre>
         </section>
@@ -268,8 +283,10 @@ export function WalkPage({ id, scenario, step, voiceReady }: Props) {
           {moment.kind === "change" && <><h1>{deferred > 0 ? `${deferred} ${deferred === 1 ? "job no longer fits" : "jobs no longer fit"} in the time left`
               : forward > 0 ? `${forward} ${forward === 1 ? "job fits" : "jobs fit"} before arrival again` : "The plan made for this forecast step"}</h1>
             <p>About {moment.diff.to.safe_working_hours ?? 0} hours of safe working time remain at this step. The revised resident notice is the next decision.</p></>}
-          {moment.kind === "notice" && <><h1>Approve the notice to residents?</h1><p>It stays unapproved until you say yes, nod or press Approve. Nothing is sent to anyone.</p></>}
-          {moment.kind === "approved" && <><h1>The resident notice is approved</h1><p>Marked on the plan. Nothing has been sent: the contractor work orders are drafted and waiting for you.</p></>}
+          {moment.kind === "notice" && <><h1>Approve the notice to residents?</h1><p>Say yes, nod or press Approve to publish it.</p>
+            {approvalMessage && !approvalMessage.ok && <p role="alert">{approvalMessage.say}</p>}</>}
+          {moment.kind === "approved" && <><h1>The resident notice is approved</h1>
+            <p role="status">{approvalMessage?.ok ? approvalMessage.say : "The notice is available in the residents’ private Brace updates."}</p></>}
           {source && <p className="walk-source">{source}{t.replay ? ". The forecast is a replay; the imagery is newer than it." : ""}</p>}
         </div>
         <div className="walk-acts">

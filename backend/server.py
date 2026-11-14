@@ -333,10 +333,15 @@ def set_vr_pose(body: dict) -> dict:
 
 
 @app.get("/api/vr/approvals")
-def vr_approvals(building: int) -> dict:
+def vr_approvals(building: int, scenario: str | None = None, step: str | None = None) -> dict:
     """Actions the headset's wearer approved for one building, oldest first."""
-    mine = sorted((at, aid) for (b, aid), at in VR["approved"].items() if b == building)
-    return {"action_ids": [aid for _, aid in mine]}
+    context = None
+    if scenario is not None:
+        sc = _scenario(scenario)
+        context = _plan_key(sc["id"], _step(sc, step))
+    mine = sorted((at, aid) for (b, key, aid), at in VR["approved"].items()
+                  if b == building and (context is None or context == key))
+    return {"action_ids": list(dict.fromkeys(aid for _, aid in mine))}
 
 
 @app.post("/api/vr/approve")
@@ -345,18 +350,20 @@ def vr_approve(body: dict, request: Request) -> dict:
     import time
     building, action_id = body.get("building"), body.get("action_id")
     sc = _scenario(str(body.get("scenario")))
-    plan = _plan(building, _plan_key(sc["id"], _step(sc, body.get("step")))) if isinstance(building, int) else None
+    step = _step(sc, body.get("step"))
+    key = _plan_key(sc["id"], step)
+    plan = _plan(building, key) if isinstance(building, int) else None
     if not plan or not any(a["id"] == action_id for a in plan["actions"]):
         return {"ok": False, "say": voice.UNKNOWN_SAY}
     if any(m.get("kind") == "notice" and action_id in m.get("action_ids", [])
            for m in plan.get("messages", [])):
         from .recovery.preparation_approval import approve_notice
         result = approve_notice(request, building=building, scenario=sc["id"],
-                                step=_step(sc, body.get("step")), action_id=action_id, plan=plan)
+                                step=step, action_id=action_id, plan=plan)
     else:
         result = {"ok": True, "delivery": None,
                   "say": "Action marked approved. No resident notice is linked to this action; work orders remain drafts."}
-    VR["approved"].setdefault((building, action_id), time.time())
+    VR["approved"].setdefault((building, key, action_id), time.time())
     return result
 
 

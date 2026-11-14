@@ -126,6 +126,8 @@ def test_headset_approval_needs_an_action_from_the_saved_plan(client, site):
     assert done["ok"] is True and done["delivery"] is None and "No resident notice is linked" in done["say"] and "work orders remain drafts" in done["say"]
     client.post("/api/vr/approve", json={**ask, "action_id": "A1"})   # approving twice records it once
     assert client.get("/api/vr/approvals?building=7").json() == {"action_ids": ["A1"]}
+    assert client.get("/api/vr/approvals?building=7&scenario=test-storm&step=t36").json() == {"action_ids": ["A1"]}
+    assert client.get("/api/vr/approvals?building=7&scenario=test-storm&step=t48").json() == {"action_ids": []}
     assert client.get("/api/vr/approvals?building=8").json() == {"action_ids": []}
     client.post("/api/vr/reset")
     assert client.get("/api/vr/approvals?building=7").json() == {"action_ids": []}

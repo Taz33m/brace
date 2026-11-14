@@ -70,16 +70,21 @@ export function BuildingPage({ id, scenario, step, sdkKey, agentReady, voiceRead
 
   // The phone in the headset reports where it is standing and looking; show that on the site photo.
   useEffect(() => {
+    let current = true;
+    setApproved([]);
+    const query = new URLSearchParams({ building: String(id), scenario: scenario.id, step: step ?? "" });
     const t = window.setInterval(() => {
       fetch("/api/vr/pose").then((r) => r.json()).then((p) => {
         const on = p.building === id && p.age < 4;
         setWorn(on ? p : null);
         if (on && p.action_id) setActive(p.action_id);
       }).catch(() => {});
-      fetch(`/api/vr/approvals?building=${id}`).then((r) => r.json()).then((a) => setApproved(a.action_ids ?? [])).catch(() => {});
+      fetch(`/api/vr/approvals?${query}`).then((r) => r.json()).then((a) => {
+        if (current) setApproved(a.action_ids ?? []);
+      }).catch(() => {});
     }, 800);
-    return () => window.clearInterval(t);
-  }, [id]);
+    return () => { current = false; window.clearInterval(t); };
+  }, [id, scenario.id, step]);
 
   const openHeadset = async () => {
     const { ip, vr_port } = await fetch("/api/lan").then((r) => r.json()).catch(() => ({ ip: null, vr_port: 5175 }));
