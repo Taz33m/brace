@@ -14,12 +14,12 @@ import json
 import sqlite3
 import uuid
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable, Iterator, Optional
 
 from . import models as m
-from .auth import Actor
+from .auth import Actor, hash_token, new_token
 from .errors import PlatformError, forbidden, invalid, not_found, revision_conflict
 from .schema import migrate
 
@@ -30,6 +30,9 @@ MODE_LABELS = {
 }
 
 OWNER_EVENT_WINDOW = 100
+INVITATION_TTL = timedelta(hours=72)
+RESIDENT_SESSION_TTL = timedelta(days=30)
+OWNER_SESSION_TTL = timedelta(hours=12)
 
 
 def _utc_now() -> datetime:
@@ -267,6 +270,103 @@ class CaseStore:
                            case_revision=row["case_revision"], analysis_revision=row["analysis_revision"],
                            type=row["type"], at=row["at"], entity_id=row["entity_id"],
                            public_summary=row["public_summary"])
+
+    # ------------------------------------------------------------------ invitations / sessions
+
+    def create_invitation(self, actor: Actor, case_id: str, household_id: str, expected_revision: int,
+                          *, ttl: timedelta = INVITATION_TTL) -> m.CommandResult:
+        token = new_token()
+        expires = (self.clock() + ttl).astimezone(timezone.utc).isoformat()
+        with self._write() as conn:
+            row = self._owner_case(conn, actor, case_id)
+            self._check_revision(row, expected_revision)
+            self._household(conn, case_id, household_id)
+            invitation_id = new_id("inv")
+            conn.execute("INSERT INTO invitations VALUES (?,?,?,?,?,?,?,NULL)",
+                         (invitation_id, hash_token(token), case_id, household_id, actor.actor_id,
+                          self.now(), expires))
+            case_rev, analysis_rev = self._bump(conn, case_id)
+            self._event(conn, case_id, "invitation.created", entity_id=invitation_id)
+        return m.CommandResult(case_revision=case_rev, analysis_revision=analysis_rev, run_id=None,
+                               invitation_token=token, invitation_expires_at=expires)
+
+    def invitations(self, actor: Actor, case_id: str) -> list[dict]:
+        """Owner listing for revocation; never includes token material."""
+        with self._read() as conn:
+            self._owner_case(conn, actor, case_id)
+            return [dict(r) for r in conn.execute(
+                "SELECT invitation_id, household_id, created_at, expires_at, revoked_at FROM invitations "
+                "WHERE case_id = ? ORDER BY created_at, rowid", (case_id,))]
+
+    def revoke_invitation(self, actor: Actor, case_id: str, invitation_id: str) -> None:
+        now = self.now()
+        with self._write() as conn:
+            self._owner_case(conn, actor, case_id)
+            inv = conn.execute("SELECT * FROM invitations WHERE invitation_id = ? AND case_id = ?",
+                               (invitation_id, case_id)).fetchone()
+            if inv is None:
+                raise not_found("This invitation")
+            if inv["revoked_at"]:
+                return
+            conn.execute("UPDATE invitations SET revoked_at = ? WHERE invitation_id = ?", (now, invitation_id))
+            conn.execute("UPDATE sessions SET revoked_at = ? WHERE invitation_id = ? AND revoked_at IS NULL",
+                         (now, invitation_id))
+            self._bump(conn, case_id)
+            self._event(conn, case_id, "session.revoked", audience="households",
+                        households=[inv["household_id"]], entity_id=invitation_id)
+
+    def exchange_invitation(self, token: str) -> str:
+        """Swap an invitation token for a resident session token (both returned raw only here)."""
+        now = self.now()
+        with self._write() as conn:
+            inv = conn.execute("SELECT * FROM invitations WHERE token_hash = ?", (hash_token(token),)).fetchone()
+            if inv is None or inv["revoked_at"] or inv["expires_at"] <= now:
+                raise PlatformError(401, "invitation_invalid",
+                                    "This invitation link is not valid. Ask the property team for a new one.")
+            session = new_token()
+            expires = (self.clock() + RESIDENT_SESSION_TTL).astimezone(timezone.utc).isoformat()
+            conn.execute("INSERT INTO sessions VALUES (?,?,?,?,?,?,?,?,NULL)",
+                         (hash_token(session), "resident", "resident:" + inv["household_id"], inv["case_id"],
+                          inv["household_id"], inv["invitation_id"], now, expires))
+        return session
+
+    def create_owner_session(self, owner_id: str) -> str:
+        """Call only after auth.check_owner_secret succeeded."""
+        session = new_token()
+        expires = (self.clock() + OWNER_SESSION_TTL).astimezone(timezone.utc).isoformat()
+        with self._write() as conn:
+            conn.execute("INSERT INTO sessions VALUES (?,?,?,NULL,NULL,NULL,?,?,NULL)",
+                         (hash_token(session), "owner", owner_id, self.now(), expires))
+        return session
+
+    def resolve_session(self, token: Optional[str]) -> Optional[Actor]:
+        if not token:
+            return None
+        with self._read() as conn:
+            row = conn.execute("SELECT * FROM sessions WHERE session_hash = ?", (hash_token(token),)).fetchone()
+            if row is None or row["revoked_at"] or row["expires_at"] <= self.now():
+                return None
+            if row["role"] == "resident":
+                inv = conn.execute("SELECT revoked_at FROM invitations WHERE invitation_id = ?",
+                                   (row["invitation_id"],)).fetchone()
+                if inv is None or inv["revoked_at"]:
+                    return None
+            return Actor(role=row["role"], actor_id=row["actor_id"], case_id=row["case_id"],
+                         household_id=row["household_id"])
+
+    def end_session(self, token: Optional[str]) -> None:
+        if token:
+            with self._write() as conn:
+                conn.execute("UPDATE sessions SET revoked_at = ? WHERE session_hash = ? AND revoked_at IS NULL",
+                             (self.now(), hash_token(token)))
+
+    @staticmethod
+    def _household(conn, case_id: str, household_id: str) -> sqlite3.Row:
+        row = conn.execute("SELECT * FROM households WHERE household_id = ? AND case_id = ?",
+                           (household_id, case_id)).fetchone()
+        if row is None:
+            raise not_found("This household")
+        return row
 
     # Filled in by the reports/support tasks.
     def _report_view(self, conn, row: sqlite3.Row) -> m.ResidentReport:
