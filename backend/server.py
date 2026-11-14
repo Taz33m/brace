@@ -443,6 +443,76 @@ def building_heights(building_id: int) -> FileResponse:
     return FileResponse(path, media_type="image/png", headers={"Cache-Control": "max-age=3600"})
 
 
+# --- a room as it was, cleared, and furnished again ----------------------------------------------
+FURNISHING: dict[str, dict] = {}     # scan id -> the model-making run in progress, if any
+
+
+def _furnish_scene(building_id: int, scan_id: str) -> dict:
+    from .openproblems import furnish3d
+    s = _site(building_id)
+    if scan_id not in s.scans:
+        raise HTTPException(404, "no such scan at this building")
+    found = furnish3d.scene(scan_id)
+    if found is None:
+        raise HTTPException(404, "the furniture in this scan has not been read yet")
+    return {**found, "making": FURNISHING.get(scan_id)}
+
+
+@app.get("/api/buildings/{building_id}/furnish/{scan_id}")
+def furnish_scene(building_id: int, scan_id: str) -> dict:
+    """One room in three states: as scanned, cleared, and furnished again with generated models where the furniture stood."""
+    return _furnish_scene(building_id, scan_id)
+
+
+@app.get("/api/buildings/{building_id}/furnish/{scan_id}/cleared/{sweep_id}/{face}.jpg")
+def furnish_cleared_face(building_id: int, scan_id: str, sweep_id: str, face: int, size: int = Query(1024, ge=256, le=2048)) -> Response:
+    """One cube face of Matterport's defurnished view at a scan position."""
+    from .openproblems import furnish3d
+    s = _site(building_id)
+    scan = s.scans.get(scan_id)
+    if scan is None or face not in range(6) or not any(x["id"] == sweep_id for x in scan["sweeps"]):
+        raise HTTPException(404, "no such panorama")
+    try:
+        path = furnish3d.cleared_face(scan_id, sweep_id, face)
+    except (furnish3d.Furnish3dError, matterport.MatterportError) as e:
+        raise HTTPException(502, str(e))
+    with Image.open(path) as im:
+        im = im.convert("RGB")
+        im.thumbnail((size, size), Image.LANCZOS)
+        return _jpeg(im, quality=82)
+
+
+@app.get("/api/furnish/models/{key}.glb")
+def furnish_model(key: str) -> FileResponse:
+    from .openproblems import furnish3d
+    path = furnish3d.MODELS / f"{key}.glb"
+    if not re.fullmatch(r"[0-9a-f]{14}", key) or not path.exists():
+        raise HTTPException(404, "no such model")
+    return FileResponse(path, media_type="model/gltf-binary", headers={"Cache-Control": "max-age=3600"})
+
+
+@app.post("/api/buildings/{building_id}/furnish/{scan_id}/make")
+def furnish_make(building_id: int, scan_id: str) -> dict:
+    """Make a model for each piece that has none, in the background. Paid, capped, and needs the text-to-3D key."""
+    from .openproblems import furnish3d
+    scene = _furnish_scene(building_id, scan_id)
+    if not scene["can_generate"]:
+        raise HTTPException(409, f"models cannot be made: set {furnish3d.KEY_ENV} in .env, or the limit of {furnish3d.MAX_MODELS} has been reached")
+    if (FURNISHING.get(scan_id) or {}).get("running"):
+        return {"started": False, "running": True}
+
+    def work() -> None:
+        try:
+            done = furnish3d.furnish(scan_id)
+            FURNISHING[scan_id] = {"running": False, "made": done["made"], "stopped": done["stopped"]}
+        except Exception as e:  # reported on the scene, not lost in a thread
+            FURNISHING[scan_id] = {"running": False, "made": [], "stopped": str(e)}
+
+    FURNISHING[scan_id] = {"running": True, "made": [], "stopped": None}
+    threading.Thread(target=work, daemon=True).start()
+    return {"started": True}
+
+
 # --- a scanned building as a place to find your way in -------------------------------------------
 def _place(model_id: str) -> dict:
     from . import wayfind

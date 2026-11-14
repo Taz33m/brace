@@ -1,0 +1,16 @@
+/* One room in three states. The picture is everything; the words are the label the state must carry and one number. */
+.furnish { position: fixed; inset: 0; overflow: hidden; background: #111; color: #fff; font-family: var(--body); }
+.furnish-stage { position: absolute; inset: 0; touch-action: none; cursor: grab; }
+.furnish-stage canvas { display: block; }
+.furnish-label { position: absolute; left: 28px; bottom: 30px; max-width: min(56ch, 60vw); margin: 0; font-size: 15px; line-height: 1.4; text-shadow: 0 1px 10px rgba(0, 0, 0, 0.75); animation: furnish-in 600ms ease both; }
+@keyframes furnish-in { from { opacity: 0; } to { opacity: 1; } }
+.furnish-count { position: absolute; right: 28px; top: 26px; margin: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; font-size: 15px; text-shadow: 0 1px 10px rgba(0, 0, 0, 0.75); }
+.furnish-count strong { font-size: 44px; font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; }
+.furnish-count span { font-size: 13px; color: rgba(255, 255, 255, 0.8); }
+.furnish-count button { padding: 8px 16px; border: 0; border-radius: 4px; font: 600 14px/1 var(--body); color: #fff; background: #0054a6; cursor: pointer; text-shadow: none; }
+.furnish-states { position: absolute; right: 28px; bottom: 26px; display: inline-flex; gap: 2px; padding: 3px; border-radius: 999px; background: rgba(20, 20, 20, 0.55); backdrop-filter: blur(8px); }
+.furnish-states button { display: flex; align-items: center; gap: 8px; padding: 7px 14px 7px 7px; border: 0; border-radius: 999px; font: 500 13px/1 var(--body); color: rgba(255, 255, 255, 0.75); background: none; cursor: pointer; }
+.furnish-states button[aria-pressed="true"] { color: #111; background: #fff; }
+.furnish-states kbd { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; font: 600 11.5px/1 var(--body); color: #fff; background: rgba(255, 255, 255, 0.22); }
+.furnish-states button[aria-pressed="true"] kbd { background: #111; }
+@media (prefers-reduced-motion: reduce) { .furnish-label { animation: none; } }

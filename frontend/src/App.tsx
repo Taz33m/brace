@@ -11,6 +11,7 @@ const BuildingPage = lazy(() => import("./components/BuildingPage").then(module 
 const MapPage = lazy(() => import("./components/MapPage").then(module => ({ default: module.MapPage })));
 const VrPage = lazy(() => import("./components/VrPage").then(module => ({ default: module.VrPage })));
 const SiteModelPage = lazy(() => import("./components/SiteModelPage").then(module => ({ default: module.SiteModelPage })));
+const FurnishPage = lazy(() => import("./components/FurnishPage").then(module => ({ default: module.FurnishPage })));
 const PlacePage = lazy(() => import("./components/PlacePage").then(module => ({ default: module.PlacePage })));
 const ScenePage = lazy(() => import("./components/ScenePage").then(module => ({ default: module.ScenePage })));
 const WalkPage = lazy(() => import("./components/WalkPage").then(module => ({ default: module.WalkPage })));
@@ -51,6 +52,9 @@ export function App() {
     invitation_token={route.invitation_token} on_invitation_consumed={consumed} />;
   if (route.kind === "recovery") return <RecoveryEntry case_id={route.case_id} />;
   if (route.kind === "invalid") return <div className="fatal" role="alert">{route.message}</div>;
+  if (route.kind === "furnish") return <Suspense fallback={<div className="fatal quiet" role="status">Loading the room…</div>}>
+    <FurnishPage key={route.scan} id={route.building} scan={route.scan} />
+  </Suspense>;
   if (route.kind === "place") return <Suspense fallback={<div className="fatal quiet" role="status">Loading the building…</div>}>
     <PlacePage key={route.model} model={route.model} />
   </Suspense>;

@@ -317,3 +317,11 @@ export interface PlaceAnswer {
   route?: null | { positions: string[]; metres: number; says?: string; levels_changed?: number; arrived: boolean;
                    legs: { from: string; to: string; metres: number; level_change: number; bearing: number | null }[] };
 }
+
+/** One room in three states: as scanned, cleared, and furnished again with generated models. */
+export interface FurnishPiece { name: string; look: string | null; width_m: number; depth_m: number; height_m: number; stands_on_m: number; east_m: number; north_m: number; faces_deg: number; prompt: string; model: string | null }
+export interface FurnishScene {
+  scan_id: string; sweep_id: string; room: string | null; standpoint: { e: number; n: number; z: number; h: number }; view: { yaw_deg: number };
+  pieces: FurnishPiece[]; contents: number; models_made: number; can_generate: boolean; service: string;
+  labels: { as_it_was: string; cleared: string; furnished: string }; making: null | { running: boolean; made: string[]; stopped: string | null };
+}
