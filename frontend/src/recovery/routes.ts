@@ -5,7 +5,7 @@ export type AppRoute =
   | { kind: "scene"; scenario: string; step: string | null; building: number }
   | { kind: "place"; model: string; watch: boolean }
   | { kind: "home" }
-  | { kind: "story"; id: "storm" | "desk" | "after" | "fire" | "inside" }
+  | { kind: "story"; id: "storm" | "flood" | "desk" | "after" | "fire" }
   | { kind: "furnish"; building: number; scan: string }
   | { kind: "model"; building: number | null }
   | { kind: "recovery"; case_id: string | null }
@@ -77,7 +77,7 @@ export function parseAppRoute(hash: string): AppRoute {
     }
     // A scenario, told by scrolling.
     if (prefix === "story") {
-      return parts.length === 2 && (parts[1] === "storm" || parts[1] === "desk" || parts[1] === "after" || parts[1] === "fire" || parts[1] === "inside") ? { kind: "story", id: parts[1] } : invalid();
+      return parts.length === 2 && (parts[1] === "storm" || parts[1] === "flood" || parts[1] === "desk" || parts[1] === "after" || parts[1] === "fire") ? { kind: "story", id: parts[1] } : invalid();
     }
     // One room as it was, cleared, and furnished again.
     if (prefix === "furnish") {

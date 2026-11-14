@@ -4,18 +4,18 @@ import { api } from "../api";
 import { Sky, CabinWindow } from "./Cabin";
 import { gsap, ScrollTrigger, prefersReducedMotion, smooth } from "./gsap";
 import { DeskStory } from "./DeskStory";
-import { FireStory, StormStory } from "./StormStory";
+import { FireStory, FloodStory, StormStory } from "./StormStory";
 import "./story.css";
 
-export type StoryId = "storm" | "desk" | "after" | "fire" | "inside";
+export type StoryId = "storm" | "flood" | "desk" | "after" | "fire";
 
 /** The scenarios, by the city they happen in. The home page lists them; each is told by scrolling. */
 export const STORIES: { id: StoryId; where: string; title: string; line: string }[] = [
   { id: "storm", where: "Houston", title: "Before the storm", line: "Hurricane Beryl, thirty-nine hours out. One building, what it is worth, and the work that still fits." },
+  { id: "flood", where: "Houston", title: "Before the water", line: "A community in a high-risk flood zone. Which buildings stand on the lowest ground, and what to move first." },
   { id: "desk", where: "Houston", title: "Five buildings, two crews", line: "Not enough crew hours for every roof. Scroll the clock and watch the desk decide who goes where." },
   { id: "after", where: "Houston", title: "After the storm", line: "One room as it was scanned, cleared, and furnished again." },
   { id: "fire", where: "Los Angeles", title: "Before the fire weather", line: "A Red Flag Warning, forty-three hours out. What stands within five feet of the walls, and what clearing it costs." },
-  { id: "inside", where: "Princeton", title: "Ask the building", line: "Ask where something is. The building draws the way and walks you there in the headset." },
 ];
 
 /** Smooth scrolling, as in the plane project: the page always starts at the top, and the scroll drives every timeline. */
@@ -56,7 +56,7 @@ export function Story({ id }: { id: StoryId }) {
   return (
     <div className="st" data-story={id}>
       <a className="st-home" href="#/">Brace</a>
-      {id === "storm" ? <StormStory /> : id === "fire" ? <FireStory /> : id === "desk" ? <DeskStory /> : id === "after" ? <AfterStory /> : <InsideStory />}
+      {id === "storm" ? <StormStory /> : id === "flood" ? <FloodStory /> : id === "fire" ? <FireStory /> : id === "desk" ? <DeskStory /> : <AfterStory />}
     </div>
   );
 }
@@ -96,15 +96,6 @@ function AfterStory() {
       </section>
       <section className="st-end"><h2>Brace</h2><a href="#/">All scenarios</a></section>
     </>
-  );
-}
-
-/** Ask the building: the laptop shows what the headset sees. This one is done by hand, so it is the page itself, with the way back. */
-function InsideStory() {
-  return (
-    <section className="st-stage st-live" aria-label="Ask the building">
-      <iframe className="st-site st-shown st-hands" title="What the headset sees" src="/#/place/P3S6VUTP3qB/watch" />
-    </section>
   );
 }
 

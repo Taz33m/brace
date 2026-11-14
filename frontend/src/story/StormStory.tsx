@@ -20,6 +20,15 @@ const dollars = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
 /** A large sum the way it is said aloud: $22.9 billion, $29.95 million. */
 const sum = (n: number) => (n >= 1e9 ? `$${(n / 1e9).toFixed(1)} billion` : n >= 1e6 ? `$${(n / 1e6).toFixed(2).replace(/\.?0+$/, "")} million` : dollars(n));
 
+/** Up to three lines on why this building: the chapter's own reasons first, and where the low ground is when that is the point. */
+function why(reasons: string[], first: RegExp | undefined, ground: { lowest: { id: string }[]; spread_m: number } | null | undefined): string[] {
+  const ordered = first ? [...reasons.filter((r) => first.test(r)), ...reasons.filter((r) => !first.test(r))] : reasons;
+  if (!ground) return ordered.slice(0, 3);
+  const ids = ground.lowest.map((s) => s.id);
+  const named = ids.length > 1 ? `${ids.slice(0, -1).join(", ")} and ${ids[ids.length - 1]} stand` : `${ids[0]} stands`;
+  return [ordered[0], `${named} on the lowest ground, ${ground.spread_m.toFixed(1)} m below the highest building (Vexcel terrain model)`, ...ordered.slice(1, 2)].filter(Boolean);
+}
+
 interface Descent { levels: { level: number; bounds: [number, number, number, number]; url: string }[]; site: { bounds: [number, number, number, number]; captured?: string } }
 type Cue = { hash?: string; key?: string; click?: string; text?: RegExp; wait?: number };
 interface Chapter {
@@ -30,6 +39,8 @@ interface Chapter {
   whisper: string;                                 // the line in the cloud
   city: string; counted: string;                   // "Houston, Texas", "buildings in the forecast wind field"
   clock: string;                                   // "hours until the wind arrives"
+  why?: RegExp;                                    // the reasons this chapter is about, shown first
+  ground?: boolean;                                // say which structures stand on the lowest ground
   // What the live site shows at each stretch of scroll, counted from where the site comes up. Each state says
   // everything it needs, so it reads the same scrolling up as down.
   site: { from: number; cues: Cue[] }[];
@@ -39,7 +50,7 @@ interface Chapter {
 }
 
 const at = (scenario: string, step: string, building: number) => `#/scene/${scenario}/${step}/b/${building}`;
-const P = 4303509, V = 9519837;
+const P = 4303509, V = 9519837, G = 1507455;
 const HOUSTON: Chapter = {
   building: P, scenario: "beryl-2024", step: "adv33", room: "39JTmBzqWxr", label: "Houston, then one building",
   hero: { lead: ["A storm", "is coming"], counter: ["Thirty-nine", "hours out"], said: "A storm is coming. Thirty-nine hours out.", aside: ["Hurricane Beryl,", "July 2024"],
@@ -73,7 +84,20 @@ const LOS_ANGELES: Chapter = {
   length: 12.5,
 };
 
+const HOUSTON_WATER: Chapter = {
+  ...HOUSTON, building: G, room: undefined, label: "Houston, then one building in a flood zone", why: /flood|ponding|water/i, ground: true,
+  hero: { ...HOUSTON.hero, lead: ["The water", "is coming"], said: "The water is coming. Thirty-nine hours out." },
+  site: [
+    { from: 0, cues: [{ key: "1" }] },
+    { from: 3.2, cues: [{ key: "1" }, { click: ".scene-jobs button", text: /channel|south lot/i, wait: 1500 }] },
+    { from: 6.2, cues: [{ key: "1" }, { click: ".scene-jobs button", text: /ground-floor/i, wait: 1500 }] },
+    { from: 9.2, cues: [{ key: "1" }, { click: ".scene-jobs button", text: /open roof bay/i, wait: 1500 }] },
+  ],
+  length: 12.5, notice: undefined, stops: undefined,
+};
+
 export function StormStory() { return <Before chapter={HOUSTON} />; }
+export function FloodStory() { return <Before chapter={HOUSTON_WATER} />; }
 export function FireStory() { return <Before chapter={LOS_ANGELES} />; }
 
 function Before({ chapter }: { chapter: Chapter }) {
@@ -261,7 +285,7 @@ function Ground({ chapter: c }: { chapter: Chapter }) {
                  sold: sale?.price ? `Last sold for ${sum(sale.price)}${sale.date ? ` in ${sale.date.slice(0, 4)}` : ""}` : null,
                  soldHow: sale?.price ? (sale.portfolio ? "CoStar sale record: its share of a portfolio sale" : "CoStar sale record") : null,
                  work: before?.count ? `${dollars(before.cost_low)} to ${dollars(before.cost_high)} of work still fits` : null,
-                 why: (b.reasons ?? []).slice(0, 3) });
+                 why: why(b.reasons ?? [], c.why, c.ground ? b.ground : null) });
     }).catch(() => {});
     if (c.room) api.furnish(c.building, c.room).then((r) => { if (current) setRoom({ sweep: r.sweep_id, heading: r.standpoint.h, yaw: r.view.yaw_deg }); }).catch(() => {});
     return () => { current = false; };

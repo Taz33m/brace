@@ -148,7 +148,7 @@ def building(property_id: int, scenario: str, step: str | None = None) -> dict:
     window = rain.REPLAY_WINDOWS.get(scenario) if sc["steps"] and step_id == sc["steps"][-1]["id"] else None
     fell = rain.observed(s.d["record"]["lat"], s.d["record"]["lon"], *window) if window else None
     return {**s.d, "threat": threat, "reasons": reasons, "last_sale": portfolio_data.building(property_id).get("last_sale"),
-            "rent": portfolio_data.rent(property_id),
+            "rent": portfolio_data.rent(property_id), "ground": site_model.ground(property_id),
             "observed_rain": fell,
             "plan": _plan(property_id, _plan_key(scenario, step_id))}
 

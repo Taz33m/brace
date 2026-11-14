@@ -430,6 +430,24 @@ def measured_for(model: dict, action: dict) -> list[dict]:
 
 
 # --- after the event: what residents report is filed into the same model ------------------------------
+def ground(property_id: int) -> dict | None:
+    """Which structures stand on the lowest ground of a site, from Vexcel's terrain model (bare ground).
+
+    Water goes to low ground first, so this is the order a flood would reach the buildings in. It is the
+    level of the ground under each roof and nothing more: not a flood depth and not a forecast. None when
+    the site has no terrain model or fewer than two structures were measured.
+    """
+    heights = _read(OPEN / "reconstruct" / str(property_id) / "heights.json")
+    rows = sorted(((s["ground_elevation_m"], s["id"]) for s in (heights or {}).get("structures") or [] if s.get("ground_elevation_m") is not None))
+    if len(rows) < 2:
+        return None
+    terr = heights["source"]["terrain"]
+    low, high = rows[0][0], rows[-1][0]
+    return {"lowest": [{"id": sid, "elevation_m": m, "below_highest_m": round(high - m, 2)} for m, sid in rows[:3]],
+            "highest": {"id": rows[-1][1], "elevation_m": high}, "spread_m": round(high - low, 2), "structures": len(rows),
+            "source": f"Vexcel terrain model (bare ground), flown {terr['first_capture']} to {terr['last_capture']}"}
+
+
 def _reports_path(property_id: int) -> Path:
     return CACHE_DIR / "site_models" / f"{property_id}_reports.json"
 

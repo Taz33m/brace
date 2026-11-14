@@ -201,6 +201,8 @@ export type AgentEvent =
 export interface Building {
   id: number;
   rent?: Rent | null;
+  /** Which structures stand on the lowest ground, from the terrain model. */
+  ground?: null | { lowest: { id: string; elevation_m: number; below_highest_m: number }[]; highest: { id: string; elevation_m: number }; spread_m: number; structures: number; source: string };
   record: {
     name: string; address: string; city: string; state: string; zip: string; type_label: string; style: string | null;
     year_built: number | null; stories: number | null; gba_sqft: number | null; units: number | null;
