@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
+import { OwnerSignIn } from "../recovery/RecoveryEntry";
 import { modelHash } from "../recovery/routes";
 import type { Board, BoardStage, FactSource, FindHit, ResidentReport, SiteFact, SiteModel, Stage, StageKey } from "../types";
 import "./site-model.css";
@@ -13,6 +14,13 @@ const sourceLine = (s: FactSource) =>
     s.captured ? `dated ${s.captured}` : null].filter(Boolean).join(", ");
 
 export function SiteModelPage({ id }: { id: number | null }) {
+  const [signedOut, setSignedOut] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (signedOut !== null) return;
+    api.config().then(() => setSignedOut(false)).catch((e: { status?: number }) => setSignedOut(e?.status === 401 || e?.status === 403));
+  }, [signedOut]);
+  if (signedOut === null) return <div className="fatal quiet" role="status">Loading the site model…</div>;
+  if (signedOut) return <OwnerSignIn on_signed_in={() => setSignedOut(null)} />;
   return id == null ? <AllSites /> : <OneSite id={id} />;
 }
 

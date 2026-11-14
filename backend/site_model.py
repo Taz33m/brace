@@ -117,15 +117,20 @@ def build(property_id: int, reports: list[dict] | None = None) -> dict:
         dtm = S.add(f"vexcel:terrain:{terr['collection']}", provider="Vexcel", what="terrain model (bare ground)",
                     collection=terr["collection"], captured=f"{terr['first_capture']} to {terr['last_capture']}")
         how = "surface model minus terrain model, less the measured step between the two flights"
+        # A height says how tall, not what. Where someone has looked at the spot on the photo, that is recorded beside it.
+        looked = _read(OPEN / "reconstruct" / str(property_id) / "checked.json") or {}
         for st in heights.get("structures") or []:
             tall = st.get("tallest_nearby") or {}
+            seen = (looked.get("structures") or {}).get(st["id"])
             height_of[st["id"]] = {
                 "roof_height_m": fact(st.get("roof_height_m"), [dsm, dtm], how=how, limits="good to about half a metre"),
                 "tallest_beside_it": fact(
                     None if not tall else {"height_m": tall.get("height_m"), "from_wall_m": tall.get("distance_to_wall_m"),
-                                           "above_roof_m": tall.get("above_roof_m"), "lon": tall.get("lon"), "lat": tall.get("lat")},
-                    [dsm, dtm], how=how + "; the highest cell within 10 m of the footprint",
-                    limits="not proven to be a tree" + ("; Vexcel reports trees within 30 ft of this roof" if tall.get("vexcel_reports_trees_within_30ft") else "")),
+                                           "above_roof_m": tall.get("above_roof_m"), "lon": tall.get("lon"), "lat": tall.get("lat"),
+                                           "what": (seen or {}).get("what")},
+                    [dsm, dtm] + ([photo] if seen else []), how=how + "; the highest cell within 10 m of the footprint",
+                    limits=(f"what it is: {seen['what']}, {looked.get('basis')}. {seen.get('note') or ''}".strip() if seen else
+                            "not proven to be a tree" + ("; Vexcel reports trees within 30 ft of this roof" if tall.get("vexcel_reports_trees_within_30ft") else ""))),
             }
         stages["surface"] = {"state": "ready", "number": len(height_of), "unit": "roofs measured",
                              "headline": f"{len(height_of)} roofs measured at {heights['cell_m'][0]:.1f} m cells"}
@@ -292,7 +297,7 @@ def measured_notes(model: dict, structure_ids: list[str] | None = None) -> list[
         roof, tall = st.get("roof_height_m"), (st.get("tallest_beside_it") or {})
         if roof and roof["value"] is not None and tall.get("value"):
             t = tall["value"]
-            lines.append(f"{st['id']}: roof {_m(roof['value'])} m high; the tallest thing beside it is {_m(t['height_m'])} m, {_m(t['from_wall_m'])} m from the wall and "
+            lines.append(f"{st['id']}: roof {_m(roof['value'])} m high; the tallest thing beside it ({t.get('what') or 'not identified'}) is {_m(t['height_m'])} m, {_m(t['from_wall_m'])} m from the wall and "
                          f"{_m(t['above_roof_m'])} m above the roof ({tall.get('limits')}). Source: {cite(tall)}; {tall.get('how')}.")
     for scan in model["scans"]:
         p = scan["placement"]["value"] or {}
@@ -402,7 +407,7 @@ def measured_for(model: dict, action: dict) -> list[dict]:
         for st in nearest.values():
             t = st["tallest_beside_it"]["value"]
             out.append(_measured(model, f"Beside roof {st['id']}",
-                                 f"something {_m(t['height_m'])} m tall stands {_m(t['from_wall_m'])} m from the wall, {_m(t['above_roof_m'])} m above the roof",
+                                 f"{t.get('what') or 'something'} {_m(t['height_m'])} m tall stands {_m(t['from_wall_m'])} m from the wall, {_m(t['above_roof_m'])} m above the roof",
                                  st["tallest_beside_it"]))
     if _ROOF_UNITS.search(said):
         units = sum(int((st["roof"]["value"]["objects"] or {}).get("ac-unit", 0)) for st in named)
@@ -530,7 +535,7 @@ def facts(model: dict) -> list[dict]:
     for st in sorted(measured, key=lambda st: -((st["tallest_beside_it"]["value"] or {}).get("above_roof_m") or 0)):
         t = st["tallest_beside_it"]["value"]
         add("surface", f"Roof {st['id']}", f"{_m(st['roof_height_m']['value'])} m high"
-            + (f"; something {_m(t['height_m'])} m tall stands {_m(t['from_wall_m'])} m from its wall, {_m(t['above_roof_m'])} m above it" if t and t["above_roof_m"] >= 1 else ""),
+            + (f"; {t.get('what') or 'something'} {_m(t['height_m'])} m tall stands {_m(t['from_wall_m'])} m from its wall, {_m(t['above_roof_m'])} m above it" if t and t["above_roof_m"] >= 1 else ""),
             st["tallest_beside_it"] if t else st["roof_height_m"], structure=st["id"])
     for r in model["reports"]:
         w = r.get("where")

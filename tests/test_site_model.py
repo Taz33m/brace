@@ -127,3 +127,15 @@ def test_the_board_adds_up_across_sites(site):
     assert board["sites"] == 1
     assert stages["join"]["number"] == 1 and stages["join"]["of"] == 1 and stages["join"]["median_move_m"] == 5.3
     assert stages["search"]["of"] == 2
+
+
+def test_a_look_at_the_photo_names_the_tall_thing_and_says_how_it_was_identified(site, tmp_path):
+    (tmp_path / "cache" / "open" / "reconstruct" / "7" / "checked.json").write_text(json.dumps(
+        {"basis": "looked at once on the aerial photo", "structures": {"S1": {"what": "a tree", "note": "bare crown over the roof"}}}))
+    model = sm.build(site)
+    tall = model["structures"][0]["tallest_beside_it"]
+    assert tall["value"]["what"] == "a tree"
+    assert "looked at once on the aerial photo" in tall["limits"] and "not proven" not in tall["limits"]
+    assert "vexcel:aerial" in tall["src"]                                           # the photo it was identified on is a source
+    said = sm.measured_for(model, {"structure": "S1", "title": "Cut back the limbs over S1", "why": ""})[1]["text"]
+    assert said.startswith("a tree 15.5 m tall")

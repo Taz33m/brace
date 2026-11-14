@@ -6,6 +6,7 @@ import { costRange, exposureLine, hours, money, num, standingLine, when } from "
 import { BEARING, nearestScanView, structureAt } from "../geo";
 import type { Action, AgentEvent, Building, Direction, Facing, Lead, LonLat, Measured, Message, Plan, Scenario, Selection } from "../types";
 import { modelHash, prepareHash, walkHash } from "../recovery/routes";
+import { ReportsFeed } from "./ReportsFeed";
 import { ConversationPanel } from "./ConversationPanel";
 import { PlanPanel, type RunState } from "./PlanPanel";
 import { SitePane } from "./SitePane";
@@ -357,6 +358,7 @@ export function BuildingPage({ id, scenario, step, sdkKey, agentReady, voiceRead
                  onReplay={() => listen(api.streamUrl(id, scenario.id, step, true, worn || conversation.get().on ? 2 : 5), "replaying")} onShow={show} onZoom={setZoom} />
 
       <ConversationPanel ready={voiceReady} />
+      <ReportsFeed id={id} />
       {headset && (
         <div className="lightbox" role="dialog" aria-label="Open in a phone headset" onClick={() => setHeadset(null)}>
           <div className="headset-card" onClick={(e) => e.stopPropagation()}>
