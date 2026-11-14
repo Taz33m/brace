@@ -540,6 +540,27 @@ def place_find(model_id: str, q: str, start: str | None = None, mover: str = "wa
     return wayfind.find(model_id, q, start, mover, chair_in)
 
 
+@app.get("/api/flood/{property_id}")
+def flood_test(property_id: int, water_ft: float = Query(4.0, ge=0, le=12), budget: float | None = Query(None, ge=0),
+               hours: float | None = Query(None, ge=0, le=240), crews: int = Query(3, ge=1, le=12)) -> dict:
+    """A flood stress test for one site: the loss if nothing is done at a depth of water, and the plan a budget and the hours left buy."""
+    from . import flood
+    try:
+        return flood.test(property_id, water_ft, budget, hours, crews)
+    except flood.FloodError as e:
+        raise HTTPException(404, str(e))
+
+
+@app.get("/api/flood/{property_id}/water.png")
+def flood_water(property_id: int, water_ft: float = Query(4.0, ge=0, le=12)) -> Response:
+    """Where that depth of water would stand on the site, as a see-through layer on the aerial photo's bounds."""
+    from . import flood
+    try:
+        return Response(flood.water_png(property_id, round(water_ft, 1)), media_type="image/png", headers={"Cache-Control": "max-age=3600"})
+    except flood.FloodError as e:
+        raise HTTPException(404, str(e))
+
+
 # The rendered shots the show plays between the live pages. They sit under data/, which is never committed:
 # some of them carry sponsor imagery.
 FILM_DIR = DATA_DIR / "film"

@@ -5,6 +5,7 @@ export type AppRoute =
   | { kind: "scene"; scenario: string; step: string | null; building: number }
   | { kind: "place"; model: string; watch: boolean }
   | { kind: "home" }
+  | { kind: "flood" }
   | { kind: "story"; id: "storm" | "flood" | "desk" | "after" | "fire" }
   | { kind: "furnish"; building: number; scan: string }
   | { kind: "model"; building: number | null }
@@ -75,6 +76,8 @@ export function parseAppRoute(hash: string): AppRoute {
     if (prefix === "recovery") {
       return parts.length <= 2 ? { kind: "recovery", case_id: parts[1] ?? null } : invalid();
     }
+    // The flood test: one site, the water, the loss, and what a budget buys.
+    if (prefix === "flood") return parts.length === 1 ? { kind: "flood" } : invalid();
     // A scenario, told by scrolling.
     if (prefix === "story") {
       return parts.length === 2 && (parts[1] === "storm" || parts[1] === "flood" || parts[1] === "desk" || parts[1] === "after" || parts[1] === "fire") ? { kind: "story", id: parts[1] } : invalid();
@@ -101,7 +104,7 @@ export function parseAppRoute(hash: string): AppRoute {
     const prepare = vr || walk || scene ? parts.slice(1) : parts;
     if (!prepare.length) return invalid();
     const scenario = prepare[0];
-    if (["resident", "recovery", "vr", "walk", "model", "scene", "place", "furnish", "story"].includes(scenario)) return invalid();
+    if (["resident", "recovery", "vr", "walk", "model", "scene", "place", "furnish", "story", "flood"].includes(scenario)) return invalid();
     let step: string | null = null;
     let building: number | null = null;
     let offset = 1;
@@ -135,7 +138,7 @@ export function prepareHash(scenario: string | null, step: string | null = null,
     if (step !== null || building !== null || vr) throw new Error("A scenario is required for this route.");
     return "#/";
   }
-  if (["resident", "recovery", "vr", "walk", "model", "scene", "place", "furnish", "story"].includes(scenario)) throw new Error("Reserved Brace route identifier.");
+  if (["resident", "recovery", "vr", "walk", "model", "scene", "place", "furnish", "story", "flood"].includes(scenario)) throw new Error("Reserved Brace route identifier.");
   if (step === "b" || step === "-") throw new Error("Reserved Brace step identifier.");
   if (building !== null && !safeBuilding(building)) throw new Error("A positive building ID is required.");
   return `#/${vr ? "vr/" : ""}${encodedPart(scenario)}/${step === null ? "-" : encodedPart(step)}${building === null ? "" : `/b/${building}`}`;

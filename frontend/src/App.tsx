@@ -16,6 +16,7 @@ const PlacePage = lazy(() => import("./components/PlacePage").then(module => ({ 
 const ScenePage = lazy(() => import("./components/ScenePage").then(module => ({ default: module.ScenePage })));
 const Story = lazy(() => import("./story/Story").then(module => ({ default: module.Story })));
 const HomePage = lazy(() => import("./story/Story").then(module => ({ default: module.HomePage })));
+const FloodTest = lazy(() => import("./story/FloodTest").then(module => ({ default: module.FloodTest })));
 const WalkPage = lazy(() => import("./components/WalkPage").then(module => ({ default: module.WalkPage })));
 
 /** Read and scrub invitations before any child can issue a network request. */
@@ -54,6 +55,7 @@ export function App() {
     invitation_token={route.invitation_token} on_invitation_consumed={consumed} />;
   if (route.kind === "recovery") return <RecoveryEntry case_id={route.case_id} />;
   if (route.kind === "invalid") return <div className="fatal" role="alert">{route.message}</div>;
+  if (route.kind === "flood") return <Suspense fallback={<div className="st-wait" />}><FloodTest /></Suspense>;
   if (route.kind === "home") return <Suspense fallback={<div className="st-wait" />}><HomePage /></Suspense>;
   if (route.kind === "story") return <Suspense fallback={<div className="st-wait" />}><Story key={route.id} id={route.id} /></Suspense>;
   if (route.kind === "furnish") return <Suspense fallback={<div className="fatal quiet" role="status">Loading the room…</div>}>

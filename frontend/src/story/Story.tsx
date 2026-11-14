@@ -112,17 +112,14 @@ export function HomePage() {
         <CabinWindow />
         <div className="st-safe">
           <h1 className="st-lead st-home-mark">Brace</h1>
-          <p className="st-home-line">A storm on the way, turned into work,<br />for every building in its path.</p>
-          <nav className="st-menu" aria-label="Scenarios">
-            {STORIES.map((s, i) => (
-              <a key={s.id} href={`#/story/${s.id}`}>
-                {(i === 0 || STORIES[i - 1].where !== s.where) && <em>{s.where}</em>}
-                <strong>{s.title}</strong>
-                <span>{s.line}</span>
-              </a>
-            ))}
+          <p className="st-home-line">Do nothing, and the flood costs this much.<br />Spend this, and it costs less.</p>
+          <nav className="st-menu" aria-label="Start">
+            <a href="#/flood"><strong>Flood test</strong></a>
           </nav>
-          <p className="st-home-more"><a href="#/beryl-2024">The portfolio map</a><a href="#/model">The site model</a></p>
+          <p className="st-home-more">
+            {STORIES.map((x) => <a key={x.id} href={`#/story/${x.id}`}>{x.title}</a>)}
+            <a href="#/beryl-2024">Map</a>
+          </p>
         </div>
       </div>
     </div>
