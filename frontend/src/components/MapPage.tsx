@@ -46,7 +46,7 @@ export function MapPage({ scenarios, scenario, step, onScenario, onStep, onOpen 
   return (
     <div className="map-page">
       <header className="mast">
-        <div className="brand">Brace</div>
+        <div className="brand"><img src="/logo.png" width={32} height={32} alt="" />Brace</div>
         <nav className="scenarios" aria-label="Forecast">
           {scenarios.map((s) => (
             <button key={s.id} className={s.id === scenario.id ? "on" : ""} onClick={() => onScenario(s.id)}>

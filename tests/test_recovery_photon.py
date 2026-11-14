@@ -1,5 +1,6 @@
 """Private bridge isolation and durable retries; no Photon network calls."""
 from datetime import datetime, timedelta, timezone
+from base64 import b64decode
 import json
 
 import pytest
@@ -7,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from backend.recovery.photon import Acknowledgment, Inbound, PhotonService, build_photon_router
+from backend.recovery.forecast_cards import FORECAST_CARDS, forecast_card
 from backend.recovery.platform.auth import OWNER_SECRET_ENV
 from backend.recovery.platform.errors import PlatformError
 from backend.recovery.platform.router import build_router
@@ -66,12 +68,13 @@ def test_forecast_card_poll_and_household_scoped_support(bridge):
     join(bridge)
     published = notice(bridge)
     assert service.queue_notice("case_test", published["notice_id"],
-        "Exercise notice", "Approved update; no work has been booked.", property_name="Parker",
+        "Exercise notice", "Approved update; no work has been booked.", property_name="The Parker at Ellington",
         threat={"name": "Hurricane Beryl", "kind": "hurricane", "replay": True,
+                "scenario_id": "beryl-2024", "step_id": "adv37",
                 "forecast_issued": "2024-07-07T21:00:00Z",
                 "at_this_site": {"peak_wind_mph": 55, "hours_until_tropical_storm_wind": 7.5}}) == 1
     alert, = worker.get(BASE + "/outbox").json()["items"]
-    assert alert["card_png"].startswith("iVBORw0KGgo")
+    assert b64decode(alert["card_png"]) == FORECAST_CARDS["hurricane-beryl"].read_bytes()
     assert "Historical forecast replay" in alert["text"] and "7.5 hours" in alert["text"]
     assert worker.post(BASE + f"/outbox/{alert['id']}/ack",
                        json={"status": "sent", "provider_message_id": "alert-1"}).is_success
@@ -87,6 +90,14 @@ def test_forecast_card_poll_and_household_scoped_support(bridge):
     assert worker.post(BASE + "/inbound", json={**vote, "message_id": "vote-reselected"}).json()["reply"] is None
     snapshot = store.owner_snapshot(OWNER, "case_test")
     assert [record.category for record in snapshot.support_requests] == ["access"]
+
+
+def test_forecast_art_is_scoped_to_the_matching_replays():
+    threat = {"scenario_id": "la-red-flag-jan-2025", "step_id": "20250105T2240Z",
+              "replay": True, "at_this_site": {"in_warning": True}}
+    assert forecast_card("Pasadena Park Place", threat) == "los-angeles-red-flag"
+    assert forecast_card("Pasadena Park Place", {**threat, "replay": False}) is None
+    assert forecast_card("Pasadena Park Place", {**threat, "step_id": "another-issuance"}) is None
 
 
 def test_one_use_join_uses_real_session_without_storing_raw_credentials(bridge):

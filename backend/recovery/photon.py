@@ -20,6 +20,7 @@ from .platform.errors import PlatformError
 from .platform.models import ReportInput, SupportInput
 from .platform.router import EnvelopeRoute, make_owner_dependency
 from .platform.store import dumps, new_id
+from .forecast_cards import FORECAST_CARDS, forecast_card
 
 RESIDENT_CHOICES = ("I'm okay", "I need help with access", "I need somewhere to stay", "Report damage")
 
@@ -92,8 +93,11 @@ class PhotonService:
                     notice_id TEXT NOT NULL, household_id TEXT NOT NULL, sender_id TEXT NOT NULL,
                     space_id TEXT NOT NULL, session_hash TEXT NOT NULL, text TEXT NOT NULL,
                     status TEXT NOT NULL, created_at TEXT NOT NULL, claimed_at TEXT, acknowledged_at TEXT,
-                    provider_message_id TEXT, error TEXT, UNIQUE(case_id,notice_id,sender_id));
+                    provider_message_id TEXT, error TEXT, card_asset TEXT, UNIQUE(case_id,notice_id,sender_id));
             """)
+        with self._db(write=True) as conn:
+            if "card_asset" not in {row["name"] for row in conn.execute("PRAGMA table_info(outbox)")}:
+                conn.execute("ALTER TABLE outbox ADD COLUMN card_asset TEXT")
         self.db_path.chmod(0o600)
 
     @contextmanager
@@ -241,7 +245,8 @@ class PhotonService:
             households = json.loads(row["household_ids_json"]) if row["household_ids_json"] else None
         if property_name and threat:
             return self._queue(case_id, notice_id + ":alert",
-                               forecast_alert(property_name, title, body, threat), households)
+                               forecast_alert(property_name, title, body, threat), households,
+                               card_asset=forecast_card(property_name, threat))
         return self._queue(case_id, notice_id, title + "\n\n" + body, households)
 
     def queue_household_update(self, case_id, household_id, event_id, text):
@@ -255,7 +260,7 @@ class PhotonService:
                 raise PlatformError(404, "update_not_found", "This household update was not found on this case.")
         return self._queue(case_id, "support-event:" + str(event_id), text, [household_id])
 
-    def _queue(self, case_id, notice_id, text, households):
+    def _queue(self, case_id, notice_id, text, households, *, card_asset=None):
         count, seen = 0, set()
         with self._db(write=True) as conn:
             previous = conn.execute("SELECT text FROM outbox WHERE case_id=? AND notice_id=? LIMIT 1", (case_id, notice_id)).fetchone()
@@ -266,9 +271,10 @@ class PhotonService:
                 if binding["sender_id"] in seen or (households is not None and binding["household_id"] not in households) or not self._actor(binding):
                     continue
                 seen.add(binding["sender_id"])
-                count += conn.execute("INSERT OR IGNORE INTO outbox (id,case_id,notice_id,household_id,sender_id,space_id,session_hash,text,status,created_at) "
-                    "VALUES (?,?,?,?,?,?,?,?,?,?)", (new_id("photon"), case_id, notice_id, binding["household_id"],
-                    binding["sender_id"], binding["space_id"], binding["session_hash"], text, "pending", self.store.now())).rowcount
+                count += conn.execute("INSERT OR IGNORE INTO outbox (id,case_id,notice_id,household_id,sender_id,space_id,session_hash,text,status,created_at,card_asset) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?)", (new_id("photon"), case_id, notice_id, binding["household_id"],
+                    binding["sender_id"], binding["space_id"], binding["session_hash"], text, "pending", self.store.now(),
+                    card_asset)).rowcount
         return count
 
     def claim_outbox(self):
@@ -284,9 +290,8 @@ class PhotonService:
                 item = {"id": row["id"], "space_id": row["space_id"], "text": row["text"]}
                 if row["notice_id"].endswith(":choices"):
                     item["choices"] = list(RESIDENT_CHOICES)
-                elif row["notice_id"].endswith(":alert"):
-                    from .forecast_card import render_forecast_card
-                    item["card_png"] = b64encode(render_forecast_card(row["text"])).decode("ascii")
+                elif row["card_asset"] in FORECAST_CARDS:
+                    item["card_png"] = b64encode(FORECAST_CARDS[row["card_asset"]].read_bytes()).decode("ascii")
                 items.append(item)
         return {"items": items}
 

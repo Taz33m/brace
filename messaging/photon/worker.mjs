@@ -6,6 +6,7 @@ import { Spectrum, attachment, poll } from 'spectrum-ts';
 import { imessage } from 'spectrum-ts/providers/imessage';
 
 const MAX_TEXT = 16_000;
+const MAX_CARD_BASE64 = 3_000_000;
 const ref = (id) => createHash('sha256').update(String(id)).digest('hex').slice(0, 12);
 const log = (event, id) => console.log(JSON.stringify({ event, ...(id ? { ref: ref(id) } : {}) }));
 const validId = (id) => typeof id === 'string' && id.length > 0 && id.length <= 2048 && !/[\u0000-\u001f\u007f]/u.test(id);
@@ -109,7 +110,7 @@ export function createOutboxHandler({ bridge, getSpace, emit = log }) {
             let sent;
             if (Array.isArray(item.choices)) {
               sent = await space.send(poll(item.text, ...item.choices));
-            } else if (typeof item.card_png === 'string' && item.card_png.length < 1_000_000) {
+            } else if (typeof item.card_png === 'string' && item.card_png.length <= MAX_CARD_BASE64) {
               const card = attachment(Buffer.from(item.card_png, 'base64'), {
                 name: 'Brace Weather Advisory.png', mimeType: 'image/png',
               });
