@@ -120,7 +120,11 @@ The LangChain track requires a deep agent used in a useful way. Ours is the inve
   back: the same refrigerator seen from two standpoints is one refrigerator.
 - **Files as working memory.** Each room's findings are written to a file the orchestrator reads back, so a long
   run can be inspected afterwards and shown in the pitch.
-- **A pricing sub-agent.** For each kind of item it searches the web for a stated price and hands back the page.
+- **Prices are a second agent's run.** For each kind of item the inventory named, the price research searches the
+  web, opens the page, and keeps a price only when the page confirms it. It runs after the inventory, on its list.
+
+Built and run on the lead home on 14 November: 6 rooms, 60 views looked at, 34 items named in 79 seconds; 20 kinds
+of line priced, every one confirmed against its page.
 
 Rules, enforced in code and not left to the prompt:
 

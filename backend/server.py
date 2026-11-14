@@ -540,6 +540,16 @@ def place_find(model_id: str, q: str, start: str | None = None, mover: str = "wa
     return wayfind.find(model_id, q, start, mover, chair_in)
 
 
+@app.get("/api/schedule/{property_id}")
+def schedule_tree(property_id: int, scan: str | None = None) -> dict:
+    """What an owner would have to replace if fire reached this property, as a tree: property, building, home, room, item."""
+    from . import schedule
+    try:
+        return schedule.schedule(property_id, scan)
+    except schedule.ScheduleError as e:
+        raise HTTPException(404, str(e))
+
+
 @app.get("/api/file/{property_id}/{scan_id}")
 def insurer_file(property_id: int, scan_id: str, water_ft: float = Query(4.0, ge=0, le=12)) -> dict:
     """The file on one home for a property insurer: outside and inside before the water, and the schedule of what that water would cost."""

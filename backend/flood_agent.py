@@ -28,9 +28,9 @@ import httpx
 from . import flood
 from .config import AGENT_MODEL
 
-MAX_TURNS = 14
-MAX_SEARCHES = 12
-MAX_FETCHES = 16
+MAX_TURNS = 20
+MAX_SEARCHES = 16
+MAX_FETCHES = 22
 SEARCH = {"type": "web_search_20260209", "name": "web_search", "max_uses": MAX_SEARCHES}
 FETCH = {"type": "web_fetch_20260209", "name": "web_fetch", "max_uses": MAX_FETCHES}      # the page as the API's own fetcher read it; the check runs on that text
 
@@ -51,7 +51,7 @@ Rules
 - Open the page with web_fetch before you record from it, so the price can be checked against the page as it was read.
 - Prefer a maker's own page, a government or university page, or a news report that quotes a price. Prefer a web page to a PDF file: a PDF cannot be checked here. Leave out pages that only sell something without a stated price.
 - If you cannot find a stated price for a kind of fix, do not record that kind.
-- Stop when you have covered the kinds above or have searched twelve times. Finish with one line saying how many fixes you recorded."""
+- Stop when you have covered the kinds above or have searched sixteen times. Finish with one line saying how many fixes you recorded."""
 
 RECORD = {
     "name": "record_fix",
@@ -287,7 +287,7 @@ Rules
 - Open the page with web_fetch before you record from it, so the price can be checked against the page as it was read.
 - Prefer a web page to a PDF file: a PDF cannot be checked here.
 - If you cannot find a stated price for something, leave it out.
-- Stop when the list is covered or after twelve searches. Finish with one line saying how many you recorded."""
+- Stop when the list is covered or after sixteen searches. Finish with one line saying how many you recorded."""
 
 
 def _price_tool(ids: list[str]) -> dict:
