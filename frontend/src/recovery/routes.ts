@@ -5,7 +5,7 @@ export type AppRoute =
   | { kind: "scene"; scenario: string; step: string | null; building: number }
   | { kind: "place"; model: string; watch: boolean }
   | { kind: "home" }
-  | { kind: "flood" }
+  | { kind: "flood"; site: number | null }
   | { kind: "story"; id: "storm" | "flood" | "desk" | "after" | "fire" }
   | { kind: "furnish"; building: number; scan: string }
   | { kind: "model"; building: number | null }
@@ -77,7 +77,7 @@ export function parseAppRoute(hash: string): AppRoute {
       return parts.length <= 2 ? { kind: "recovery", case_id: parts[1] ?? null } : invalid();
     }
     // The flood test: one site, the water, the loss, and what a budget buys.
-    if (prefix === "flood") return parts.length === 1 ? { kind: "flood" } : invalid();
+    if (prefix === "flood") return parts.length === 1 ? { kind: "flood", site: null } : parts.length === 2 && /^\d+$/.test(parts[1]) ? { kind: "flood", site: Number(parts[1]) } : invalid();
     // A scenario, told by scrolling.
     if (prefix === "story") {
       return parts.length === 2 && (parts[1] === "storm" || parts[1] === "flood" || parts[1] === "desk" || parts[1] === "after" || parts[1] === "fire") ? { kind: "story", id: parts[1] } : invalid();

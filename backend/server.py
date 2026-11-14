@@ -540,6 +540,29 @@ def place_find(model_id: str, q: str, start: str | None = None, mover: str = "wa
     return wayfind.find(model_id, q, start, mover, chair_in)
 
 
+@app.get("/api/flood")
+def flood_sites(water_ft: float = Query(4.0, ge=0, le=12)) -> dict:
+    """Every Houston site the flood test can run on, with what that depth of water costs each if nothing is done."""
+    from . import flood
+    rows = []
+    for s in flood.sites():
+        r = flood.test(s["property_id"], water_ft)
+        rows.append({"property_id": s["property_id"], "name": s["name"], "homes": s["homes"], "sale": s["sale"], "loss": r["do_nothing"]["loss"], "buildings_wet": r["do_nothing"]["buildings_wet"]})
+    rows.sort(key=lambda r: -(r["loss"] or 0))
+    return {"water_ft": water_ft, "sites": rows, "loss": sum(r["loss"] or 0 for r in rows)}
+
+
+@app.get("/api/flood/{property_id}/scenario")
+def flood_scenario(property_id: int, water_ft: float = Query(4.0, ge=0, le=12), budget: float = Query(500_000, ge=0),
+                   hours: float = Query(48, ge=0, le=240), crews: int = Query(3, ge=1, le=12)) -> dict:
+    """One run of the flood test in the shape the team's screens read: property, flood, budget, loss before and after, and each fix with where it goes."""
+    from . import flood
+    try:
+        return flood.scenario(property_id, water_ft, budget, hours, crews)
+    except flood.FloodError as e:
+        raise HTTPException(404, str(e))
+
+
 @app.get("/api/flood/{property_id}")
 def flood_test(property_id: int, water_ft: float = Query(4.0, ge=0, le=12), budget: float | None = Query(None, ge=0),
                hours: float | None = Query(None, ge=0, le=240), crews: int = Query(3, ge=1, le=12)) -> dict:

@@ -222,3 +222,22 @@ html.st-on, html.st-on body, html.st-on #root { height: auto; min-height: 100%; 
 .ft-panel ul { margin: 0; padding: 0 0 0 18px; display: flex; flex-direction: column; gap: 9px; font: 400 13.5px/1.45 var(--sans); color: rgba(243, 236, 224, 0.86); }
 .st-menu a:only-child { border-bottom: 1px solid rgba(215, 194, 158, 0.35); }
 .st-home-more { flex-wrap: wrap; row-gap: 14px; max-width: 34rem; }
+
+.ft-sites { display: flex; flex-wrap: wrap; gap: 6px 22px; margin-top: 18px; }
+.ft-sites a { font: 500 12px/1 var(--sans); letter-spacing: 0.14em; text-transform: uppercase; color: rgba(243, 236, 224, 0.8); text-decoration: none; padding-bottom: 5px; border-bottom: 1px solid rgba(243, 236, 224, 0.3); }
+.ft-sites small { margin-left: 8px; color: #ff8a70; font: inherit; letter-spacing: 0.04em; }
+.ft-why { margin: 20px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 7px; }
+.ft-why li { font: 400 15px/1.3 var(--sans); color: var(--ivory); }
+.ft-why small, .ft-found small { margin-left: 10px; font: 500 10.5px/1 var(--sans); letter-spacing: 0.2em; text-transform: uppercase; color: var(--champagne); }
+.ft-steps { max-width: min(34rem, 42vw); }
+.ft-plan { width: 100%; margin: 0 0 18px; border-collapse: collapse; font: 400 13.5px/1.3 var(--sans); font-variant-numeric: tabular-nums; }
+.ft-plan th { text-align: left; font-weight: 600; color: var(--amber); padding: 5px 12px 5px 0; }
+.ft-plan td { padding: 5px 12px 5px 0; border-bottom: 1px solid rgba(243, 236, 224, 0.08); white-space: nowrap; }
+.ft-plan td:last-child { color: #9be0ff; padding-right: 0; }
+.ft-panel pre + pre { margin-top: 18px; padding-top: 16px; border-top: 1px solid rgba(215, 194, 158, 0.2); }
+.ft-panel .ft-found { margin-top: 16px; padding-top: 14px; border-top: 1px solid rgba(215, 194, 158, 0.2); list-style: none; padding-left: 0; }
+.ft-found li { color: rgba(243, 236, 224, 0.6); }
+.ft-found li.is-used { color: var(--ivory); }
+.ft-found a { color: inherit; }
+.ft-bar button { white-space: nowrap; }
+.ft-sites a { white-space: nowrap; }

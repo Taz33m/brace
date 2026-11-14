@@ -6,27 +6,36 @@ import "./story.css";
  * it costs if nothing is done, and one button that spends a budget inside the hours left and shows what
  * that buys. Three steps, one key: Space or Enter moves on.
  */
-const SITE = 1507455;
+const LEAD = 4303509;      // The Parker at Ellington: the Houston site that also has a scan of the inside
+let started = false;       // once the flood has been run, another site opens straight on its flood
 const WATER = [2, 4, 6], BUDGETS = [250_000, 500_000, 1_000_000], HOURS = [24, 48, 72];
 
 interface Fix { measure: string; name: string; cost: number; crew_hours: number; saves: number }
+interface Found { name: string; type: "quick" | "long-term"; price: number; price_high: number | null; price_unit: string; source: { title: string; url: string } | null; checked: boolean; planned: boolean; why_not: string | null }
+interface Step { kind: "search" | "found"; text: string; checked?: boolean }
+interface SiteRow { property_id: number; name: string; loss: number | null }
 interface Row { id: string; polygon: [number, number][]; ground_m: number; perimeter_ft: number; value: number | null; depth_ft: number; loss: number | null; fix: Fix | null; left_out: string | null }
 interface Result {
   name: string; homes: number | null; sale: { price: number; year: string | null } | null; bounds: [number, number, number, number]; aerial: { width: number; height: number };
   water_ft: number; buildings: Row[]; do_nothing: { loss: number | null; buildings_wet: number };
-  plan: null | { budget: number; hours: number; crews: number; spent: number; buildings_protected: number; saved: number; loss: number; work_order: string };
-  assumptions: string[]; measures: { id: string; name: string; source: { title: string; url: string } }[];
+  plan: null | { budget: number; hours: number; crews: number; spent: number; buildings_protected: number; saved: number; loss: number; work_order: string; notice: string;
+                 fixes: (Fix & { building: string })[]; tradeoffs: string[] };
+  why: { text: string; source: string }[];
+  research: { by: "agent" | "hand"; made_at: string | null; searches: number; found: Found[]; steps: Step[] };
+  assumptions: string[]; measures: { id: string; name: string; type: string; source: { title: string; url: string } | null }[];
 }
 type Stage = "warning" | "flood" | "plan";
 
 const short = (n: number) => (n >= 1e6 ? `$${(n / 1e6).toFixed(1)}M` : `$${Math.round(n / 1e3)}K`);
 const round = (n: number) => short(n).replace(".0M", "M");
-const read = (water: number, budget?: number, hours?: number): Promise<Result> =>
-  fetch(`/api/flood/${SITE}?water_ft=${water}${budget != null ? `&budget=${budget}&hours=${hours}` : ""}`).then((r) => { if (!r.ok) throw new Error("no flood test for this site"); return r.json(); });
+const read = (site: number, water: number, budget?: number, hours?: number): Promise<Result> =>
+  fetch(`/api/flood/${site}?water_ft=${water}${budget != null ? `&budget=${budget}&hours=${hours}` : ""}`).then((r) => { if (!r.ok) throw new Error("no flood test for this site"); return r.json(); });
 
-export function FloodTest() {
+export function FloodTest({ site }: { site: number | null }) {
+  const SITE = site ?? LEAD;
   const [water, setWater] = useState(4), [budget, setBudget] = useState(500_000), [hours, setHours] = useState(48);
-  const [stage, setStage] = useState<Stage>("warning");
+  const [stage, setStage] = useState<Stage>(started ? "flood" : "warning");
+  const [sites, setSites] = useState<SiteRow[]>([]);
   const [base, setBase] = useState<Result | null>(null);          // if nothing is done
   const [plan, setPlan] = useState<Result | null>(null);          // with the budget and the hours spent
   const [shown, setShown] = useState(0);                          // the number on the counter, as it runs
@@ -36,7 +45,9 @@ export function FloodTest() {
   const counter = useRef(0);
 
   useEffect(() => { document.documentElement.classList.add("st-on"); return () => document.documentElement.classList.remove("st-on"); }, []);
-  useEffect(() => { let on = true; setPlan(null); setSteps(0); read(water).then((r) => { if (on) setBase(r); }).catch((e) => { if (on) setError(e.message); }); return () => { on = false; }; }, [water]);
+  useEffect(() => { let on = true; setPlan(null); setSteps(0); read(SITE, water).then((r) => { if (on) setBase(r); }).catch((e) => { if (on) setError(e.message); }); return () => { on = false; }; }, [SITE, water]);
+  useEffect(() => { let on = true; fetch(`/api/flood?water_ft=${water}`).then((r) => (r.ok ? r.json() : { sites: [] })).then((d) => { if (on) setSites(d.sites); }).catch(() => undefined); return () => { on = false; }; }, [water]);
+  useEffect(() => { setStage((st) => (st === "plan" ? "flood" : st)); setPanel(null); }, [SITE]);
 
   // The counter runs to its number rather than jumping.
   const target = stage === "warning" ? 0 : stage === "plan" && plan?.plan ? plan.plan.loss : base?.do_nothing.loss ?? 0;
@@ -55,13 +66,13 @@ export function FloodTest() {
 
   const protect = useCallback(() => {
     setSteps(0);
-    read(water, budget, hours).then((r) => {
+    read(SITE, water, budget, hours).then((r) => {
       setPlan(r); setStage("plan");
-      [1, 2, 3, 4].forEach((n) => window.setTimeout(() => setSteps((s) => Math.max(s, n)), 350 * n));
+      Array.from({ length: 9 }, (_, i) => i + 1).forEach((n) => window.setTimeout(() => setSteps((s) => Math.max(s, n)), 420 * n));
     }).catch((e) => setError(e.message));
-  }, [water, budget, hours]);
+  }, [SITE, water, budget, hours]);
   const next = useCallback(() => {
-    if (stage === "warning") setStage("flood");
+    if (stage === "warning") { started = true; setStage("flood"); }
     else if (stage === "flood") protect();
     else setPanel((p) => (p === "order" ? null : "order"));
   }, [stage, protect]);
@@ -87,12 +98,23 @@ export function FloodTest() {
   if (error) return <div className="fatal" role="alert">{error}</div>;
   if (!base) return <div className="st-wait" />;
   const done = stage === "plan" && plan?.plan ? plan.plan : null;
-  const wet = base.do_nothing.buildings_wet, waiting = done ? plan!.buildings.filter((b) => b.left_out === "the time ran out").length : 0;
+  const wet = base.do_nothing.buildings_wet;
   const tooDeep = done && done.buildings_protected === 0 && plan!.buildings.some((b) => b.left_out?.startsWith("no barrier"));
+  // What the agent did, in the order it did it: its searches, what it found, then why the plan is this plan.
+  const research = base.research, confirmed = research.found.filter((f) => f.checked).length;
+  const lines: { text: string; tag?: string }[] = !done ? [] : research.by === "agent"
+    ? [...research.steps.filter((x) => x.kind === "search").slice(0, 3).map((x) => ({ text: x.text, tag: "Searched" })),
+       { text: `${research.found.length} fixes found in ${research.searches} searches. ${confirmed} prices confirmed on the page`, tag: "Agent" },
+       ...done.tradeoffs.slice(0, 4).map((text) => ({ text }))]
+    : [{ text: `Ground level under ${base.buildings.length} buildings`, tag: "Vexcel" }, { text: `${wet} in the water, valued from the sale`, tag: "CoStar" },
+       ...done.tradeoffs.slice(0, 4).map((text) => ({ text }))];
 
   return (
     <div className={`st ft is-${stage}`}>
-      <div className="ft-map" style={{ aspectRatio: `${base.aerial.width} / ${base.aerial.height}`, width: `max(100vw, calc(100vh * ${base.aerial.width / base.aerial.height}))` }}>
+      {/* A photo taller than it is wide is turned on its side, so the whole site fills a wide screen. */}
+      <div className="ft-map" style={base.aerial.height > base.aerial.width
+        ? { aspectRatio: `${base.aerial.width} / ${base.aerial.height}`, height: `max(100vw, calc(100vh * ${base.aerial.height / base.aerial.width}))`, transform: "translate(-50%, -50%) rotate(-90deg)" }
+        : { aspectRatio: `${base.aerial.width} / ${base.aerial.height}`, width: `max(100vw, calc(100vh * ${base.aerial.width / base.aerial.height}))` }}>
         <img src={`/api/buildings/${SITE}/aerial.jpg`} alt="" draggable={false} />
         {WATER.map((ft) => <img key={ft} className="ft-water" src={`/api/flood/${SITE}/water.png?water_ft=${ft}`} alt="" draggable={false} style={{ opacity: stage !== "warning" && ft === water ? 1 : 0 }} />)}
         <svg viewBox={`0 0 ${base.aerial.width} ${base.aerial.height}`} aria-hidden="true">
@@ -105,7 +127,12 @@ export function FloodTest() {
       <a className="st-home" href="#/">Brace</a>
       <header className="ft-place">
         <h1>{base.name}</h1>
-        <p>{base.homes ? `${base.homes.toLocaleString("en-US")} homes` : ""}{base.sale ? `. Last sold for ${short(base.sale.price)}` : ""}</p>
+        <p>{[base.homes ? `${base.homes.toLocaleString("en-US")} homes` : "", base.sale ? `Last sold for ${short(base.sale.price)}` : ""].filter(Boolean).join(". ")}</p>
+        {stage !== "warning" && sites.length > 1 && (
+          <nav className="ft-sites" aria-label="Other sites">
+            {sites.filter((x) => x.property_id !== SITE).map((x) => <a key={x.property_id} href={`#/flood/${x.property_id}`}>{x.name}{x.loss ? <small>−{short(x.loss)}</small> : null}</a>)}
+          </nav>
+        )}
       </header>
 
       {stage === "warning" ? (
@@ -120,15 +147,13 @@ export function FloodTest() {
           <strong>−{short(shown)}</strong>
           {done && done.buildings_protected > 0 && <em>{short(done.spent)} spent. {short(done.saved)} saved.</em>}
           {tooDeep && <em>No barrier holds {water} ft. Nothing can be bought in {hours} hours.</em>}
+          {!done && stage === "flood" && <ul className="ft-why">{base.why.slice(0, 3).map((w) => <li key={w.text}>{w.text}<small>{w.source}</small></li>)}</ul>}
         </div>
       )}
 
       {stage === "plan" && done && done.buildings_protected > 0 && (
         <ol className="ft-steps">
-          <li className={steps >= 1 ? "is-on" : ""}>Ground level under {base.buildings.length} buildings<small>Vexcel</small></li>
-          <li className={steps >= 2 ? "is-on" : ""}>{wet} in the water, valued from the sale<small>CoStar</small></li>
-          <li className={steps >= 3 ? "is-on" : ""}>{plan!.measures.length} barriers priced</li>
-          <li className={steps >= 4 ? "is-on" : ""}>{done.buildings_protected} buildings protected in {hours} hours{waiting ? `. ${waiting} more need time` : ""}</li>
+          {lines.map((l, i) => <li key={l.text} className={steps > i ? "is-on" : ""}>{l.text}{l.tag && <small>{l.tag}</small>}</li>)}
         </ol>
       )}
 
@@ -143,10 +168,28 @@ export function FloodTest() {
       )}
       <button type="button" className="ft-how" onClick={() => setPanel(panel === "how" ? null : "how")}>How this is worked out</button>
 
-      {panel === "order" && done?.work_order && <aside className="ft-panel"><pre>{done.work_order}</pre></aside>}
+      {panel === "order" && done?.work_order && (
+        <aside className="ft-panel">
+          <table className="ft-plan"><tbody>
+            {done.fixes.map((f) => <tr key={f.building}><th>{f.building}</th><td>{f.name}</td><td>{short(f.cost)}</td><td>saves {short(f.saves)}</td></tr>)}
+          </tbody></table>
+          <pre>{done.work_order}</pre>
+          <pre>{done.notice}</pre>
+        </aside>
+      )}
       {panel === "how" && (
         <aside className="ft-panel">
           <ul>{base.assumptions.map((a) => <li key={a}>{a}</li>)}</ul>
+          {research.found.length > 0 && (
+            <ul className="ft-found">
+              {research.found.map((f) => (
+                <li key={f.name + f.price} className={f.planned ? "is-used" : ""}>
+                  {f.source ? <a href={f.source.url} target="_blank" rel="noreferrer">{f.name}</a> : f.name}: ${f.price.toLocaleString("en-US")}{f.price_high ? ` to $${f.price_high.toLocaleString("en-US")}` : ""} {f.price_unit}
+                  <small>{f.planned ? "planned from" : f.why_not}</small>
+                </li>
+              ))}
+            </ul>
+          )}
         </aside>
       )}
     </div>
