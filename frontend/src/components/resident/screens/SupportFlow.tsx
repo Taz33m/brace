@@ -6,7 +6,7 @@
  * - One idempotency key per intended request; a retry of the same text reuses it.
  * - Never sends in the background: nothing goes out unless the person presses Send.
  */
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { SupportInput } from "../contract";
 import { SUPPORT_CATEGORIES } from "../lib/status";
 import { toResidentError, type ResidentError } from "../lib/errors";
@@ -32,7 +32,10 @@ const PROMPT: Record<SupportInput["category"] | "none", { label: string; hint: s
 
 type Phase = { kind: "idle" } | { kind: "sending" } | { kind: "error"; error: ResidentError };
 
-export function SupportFlow({ api, connection, draft, set_draft, keeper: sharedKeeper, on_submitted, on_expired }: SupportFlowProps) {
+export function SupportFlow({ api, connection, draft, set_draft, keeper: sharedKeeper, on_submitted, on_expired, on_busy }: SupportFlowProps) {
+  const onBusyRef = useRef(on_busy);
+  onBusyRef.current = on_busy;
+  useEffect(() => () => onBusyRef.current(false), []);
   const keeper = useRef(sharedKeeper);
   const pending = useRef(false);
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
@@ -73,20 +76,31 @@ export function SupportFlow({ api, connection, draft, set_draft, keeper: sharedK
     const input: SupportInput = { category: draft.category, description };
     const key = keeper.current.keyFor(input);
     pending.current = true;
+    onBusyRef.current(true);
     setPhase({ kind: "sending" });
     try {
       const receipt = await api.request_support(input, key);
       keeper.current.succeeded();
       pending.current = false;
+      onBusyRef.current(false);
       setPhase({ kind: "idle" });
       on_submitted(receipt);
     } catch (e) {
       pending.current = false;
+      onBusyRef.current(false);
       const error = toResidentError(e);
       if (error.kind === "expired") {
         on_expired();
         return;
       }
+      if (error.code === "idempotency_conflict") {
+        // The earlier send (reply lost) arrived; the server refused an edited second copy.
+        keeper.current.succeeded();
+        setPhase({ kind: "error", error: { ...error, retryable: false, message: "Your earlier request already reached the property team, so this version wasn't sent again. Check My updates to see it." } });
+        return;
+      }
+      if (error.kind === "invalid") keeper.current.rejected();
+      else if (error.kind === "network" || error.kind === "unknown" || error.kind === "unavailable") keeper.current.markUncertain();
       setPhase({ kind: "error", error });
     }
   }
@@ -139,6 +153,7 @@ export function SupportFlow({ api, connection, draft, set_draft, keeper: sharedK
             ref={textRef}
             className="r-textarea"
             value={draft.description}
+            maxLength={4000}
             onChange={(e) => {
               const value = e.target.value;
               edit((d) => ({ ...d, description: value }));

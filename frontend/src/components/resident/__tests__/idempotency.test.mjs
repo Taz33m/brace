@@ -49,3 +49,29 @@ test("newIdempotencyKey falls back without randomUUID", () => {
     Object.defineProperty(globalThis, "crypto", original);
   }
 });
+
+test("while an outcome is uncertain an edited payload keeps the key (server stores once or answers 409)", async () => {
+  (void 0);
+  let n = 0;
+  const k = createSubmissionKeeper(() => `key-${++n}`);
+  const first = k.keyFor({ text: "water in lobby" });
+  k.markUncertain();
+  assert.equal(k.uncertain(), true);
+  assert.equal(k.keyFor({ text: "water in the lobby" }), first);
+  k.succeeded();
+  assert.equal(k.uncertain(), false);
+  assert.notEqual(k.keyFor({ text: "a new report" }), first);
+});
+
+test("a definite rejection frees the key; an uncertain one does not", async () => {
+  (void 0);
+  let n = 0;
+  const k = createSubmissionKeeper(() => `key-${++n}`);
+  const a = k.keyFor({ x: 1 });
+  k.rejected();
+  assert.notEqual(k.keyFor({ x: 1 }), a);
+  const b = k.keyFor({ x: 2 });
+  k.markUncertain();
+  k.rejected();
+  assert.equal(k.keyFor({ x: 3 }), b);
+});

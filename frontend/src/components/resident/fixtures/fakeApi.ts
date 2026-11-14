@@ -121,7 +121,12 @@ export class FakeResidentApi implements ResidentApi {
       throw expiredError();
     }
     const prior = this.idem.get(`r:${idempotency_key}`) as ReportReceipt | undefined;
-    if (prior) return { ...clone(prior), duplicate: true };
+    if (prior) {
+      if (this.idem.get(`rp:${idempotency_key}`) !== JSON.stringify(input)) {
+        throw new HttpError(409, { error: { code: "idempotency_conflict", message: "This key was already used for a different report.", retryable: false } });
+      }
+      return { ...clone(prior), duplicate: true };
+    }
     if (!input.text.trim()) {
       throw new HttpError(422, { error: { code: "text_required", message: "Say what happened before sending.", retryable: false } });
     }
@@ -129,7 +134,7 @@ export class FakeResidentApi implements ResidentApi {
       ? this.home.selectable_locations.find((l) => l.location_id === input.selected_location_id && l.binding === "verified_unit") ?? null
       : null;
     if (input.selected_location_id && !loc) {
-      throw new HttpError(422, { error: { code: "location_not_selectable", message: "That room can't be selected. Describe where it is instead.", retryable: false } });
+      throw new HttpError(422, { error: { code: "location_unavailable", message: "That room can't be selected. Describe where it is instead.", retryable: false } });
     }
     const uploads = [...this.idem.entries()].filter(([k]) => k.startsWith("u:")).map(([, v]) => v as UploadedMedia);
     const media = input.upload_ids.map((u) => {
@@ -154,6 +159,7 @@ export class FakeResidentApi implements ResidentApi {
     this.bump("report.updated", report.report_id);
     const receipt: ReportReceipt = { report: clone(report), case_revision: this.home.case_revision, analysis_revision: 1, duplicate: false };
     this.idem.set(`r:${idempotency_key}`, receipt);
+    this.idem.set(`rp:${idempotency_key}`, JSON.stringify(input));
     if (this.scenario === "lost_response" && !this.failedOnce.has(`r:${idempotency_key}`)) {
       this.failedOnce.add(`r:${idempotency_key}`);
       throw new TypeError("Failed to fetch"); // saved server-side, reply lost on the way back

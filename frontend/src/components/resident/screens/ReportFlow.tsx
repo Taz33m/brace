@@ -60,7 +60,7 @@ type Phase =
   | { kind: "uploading"; index: number; total: number }
   | { kind: "submitting" }
   | { kind: "upload_failed"; local_ids: string[]; message: string; retryable: boolean }
-  | { kind: "error"; message: string; retryable: boolean };
+  | { kind: "error"; message: string; retryable: boolean; settled?: boolean };
 
 /** Only rooms in the resident's own verified unit scan can be picked as an exact room. */
 function verifiedRooms(home: ResidentHome): LocationRef[] {
@@ -108,7 +108,11 @@ function prefersReducedMotion(): boolean {
 }
 
 export function ReportFlow(props: ReportFlowProps) {
-  const { api, home, connection, draft, set_draft, on_submitted, on_expired } = props;
+  const { api, home, connection, draft, set_draft, on_submitted, on_expired, on_busy } = props;
+  const onBusyRef = useRef(on_busy);
+  onBusyRef.current = on_busy;
+  // Leaving the screen ends any busy state this flow reported.
+  useEffect(() => () => onBusyRef.current(false), []);
 
   const [step, setStep] = useState<"form" | "review">("form");
   const [attempted, setAttempted] = useState(false);
@@ -273,6 +277,7 @@ export function ReportFlow(props: ReportFlowProps) {
       return;
     }
     sendingRef.current = true;
+    onBusyRef.current(true);
     try {
       let photos = current.photos.filter((p) => p.file);
       if (skip?.size) {
@@ -347,18 +352,43 @@ export function ReportFlow(props: ReportFlowProps) {
         if (err.kind === "expired") {
           setPhase({ kind: "idle" });
           on_expired();
+        } else if (err.code === "idempotency_conflict") {
+          // An earlier send whose reply was lost did arrive; the server refused a second, edited copy.
+          keeperRef.current.succeeded();
+          nowStampRef.current = null;
+          setPhase({
+            kind: "error",
+            message: "Your earlier send already reached the property team, so this version wasn't sent again. Check My updates to see it.",
+            retryable: false,
+            settled: true,
+          });
         } else if (err.kind === "invalid") {
-          if (err.code === "location_not_selectable") update({ selected_location_id: null });
+          keeperRef.current.rejected();
+          if (err.code === "location_unavailable" || err.code === "location_not_selectable") update({ selected_location_id: null });
+          if (err.code === "upload_unavailable") {
+            // Those uploads can't be attached again (e.g. already used): upload the photos afresh.
+            set_draft((d) => ({
+              ...d,
+              photos: d.photos.map((p) =>
+                p.upload_id && p.file
+                  ? { ...p, state: "ready", upload_id: null, idempotency_key: newIdempotencyKey(), error: null }
+                  : p,
+              ),
+            }));
+          }
           setPhase({ kind: "idle" });
           setFormNotice(err.message);
           setAttempted(true);
           setStep("form");
         } else {
+          // No answer from the server: it may have stored the report. Keep the key until we know.
+          if (err.kind === "network" || err.kind === "unknown" || err.kind === "unavailable") keeperRef.current.markUncertain();
           setPhase({ kind: "error", message: err.message, retryable: err.retryable });
         }
       }
     } finally {
       sendingRef.current = false;
+      onBusyRef.current(false);
     }
   }
 
@@ -472,7 +502,7 @@ export function ReportFlow(props: ReportFlowProps) {
                 }
               >
                 {phase.message}
-                {phase.retryable ? null : " Tap Edit to change your report, or go back to home."}
+                {phase.retryable || phase.settled ? null : " Tap Edit to change your report, or go back to home."}
               </Message>
             ) : null}
             {offline ? (
@@ -598,6 +628,7 @@ export function ReportFlow(props: ReportFlowProps) {
               enterKeyHint="next"
               placeholder="Lobby, near the mail room"
               value={draft.location_description}
+              maxLength={500}
               onChange={(e) => update({ location_description: e.target.value })}
               aria-invalid={shown.where ? true : undefined}
               aria-describedby={
@@ -616,6 +647,7 @@ export function ReportFlow(props: ReportFlowProps) {
             id="rr-text"
             className="r-textarea"
             value={draft.text}
+            maxLength={4000}
             onChange={(e) => update({ text: e.target.value })}
             placeholder="Water is coming through the ceiling by the window."
             aria-invalid={shown.text ? true : undefined}
@@ -734,7 +766,7 @@ export function ReportFlow(props: ReportFlowProps) {
             <input
               ref={libraryRef}
               type="file"
-              accept="image/*,.heic,.heif"
+              accept="image/*"
               multiple
               className="r-sr"
               tabIndex={-1}
