@@ -9,6 +9,9 @@ from __future__ import annotations
 
 import asyncio
 import os
+import threading
+import time
+from collections import deque
 from typing import AsyncIterator, Callable, Optional
 
 from fastapi import APIRouter, Header, HTTPException, Request, Response
@@ -30,6 +33,10 @@ COOKIE_PATH = "/api"
 ALLOWED_ORIGINS_ENV = "BRACE_ALLOWED_ORIGINS"
 HEARTBEAT_SECONDS = 15
 POLL_SECONDS = 1.0
+OWNER_LOGIN_MAX_FAILURES = 10
+OWNER_LOGIN_WINDOW_SECONDS = 300
+LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
+_monotonic = time.monotonic
 
 AssessmentLauncher = Callable[[dict], object]
 
@@ -127,8 +134,14 @@ async def event_stream(store: CaseStore, token: str, role: str, cursor: int, cas
 
 
 def _secure(request: Request) -> bool:
-    proto = request.headers.get("x-forwarded-proto", request.url.scheme)
-    return proto.split(",")[0].strip() == "https"
+    """Secure cookies on HTTPS. uvicorn already applies X-Forwarded-Proto from trusted
+    proxies to the scheme; the raw header is honored only from a loopback client (the
+    local Vite proxy), never from an arbitrary device."""
+    if request.url.scheme == "https":
+        return True
+    client = request.client.host if request.client else None
+    proto = request.headers.get("x-forwarded-proto", "")
+    return client in LOOPBACK_HOSTS and proto.split(",")[0].strip().lower() == "https"
 
 
 def _set_cookie(response: Response, request: Request, name: str, token: str, max_age: int) -> None:
@@ -170,9 +183,25 @@ def build_router(store: CaseStore, assessment_launcher: Optional[AssessmentLaunc
 
     # ---------------------------------------------------------------- owner
 
+    login_failures: deque[float] = deque()
+    login_lock = threading.Lock()
+
+    def throttle_owner_login() -> None:
+        # Global, not per-IP: every request arrives from the loopback proxy.
+        with login_lock:
+            cutoff = _monotonic() - OWNER_LOGIN_WINDOW_SECONDS
+            while login_failures and login_failures[0] <= cutoff:
+                login_failures.popleft()
+            if len(login_failures) >= OWNER_LOGIN_MAX_FAILURES:
+                raise PlatformError(429, "too_many_attempts",
+                                    "Too many sign-in attempts. Wait a few minutes and try again.", retryable=True)
+
     @router.post("/api/recovery/session")
     def owner_session(body: m.OwnerSessionInput, request: Request, response: Response):
+        throttle_owner_login()
         if not check_owner_secret(body.secret):
+            with login_lock:
+                login_failures.append(_monotonic())
             raise PlatformError(401, "invalid_secret", "That owner secret is not correct.")
         store.end_session(request.cookies.get(OWNER_COOKIE))
         _set_cookie(response, request, OWNER_COOKIE, store.create_owner_session(LOCAL_OWNER_ID),

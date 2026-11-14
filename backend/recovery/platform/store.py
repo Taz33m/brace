@@ -38,6 +38,7 @@ INVITATION_TTL = timedelta(hours=72)
 RESIDENT_SESSION_TTL = timedelta(days=30)
 OWNER_SESSION_TTL = timedelta(hours=12)
 ORPHAN_MIN_AGE = timedelta(minutes=10)
+IDEMPOTENCY_RETENTION = timedelta(days=7)
 
 
 def _utc_now() -> datetime:
@@ -70,6 +71,7 @@ class CaseStore:
             conn.close()
         self.recover_interrupted_runs()
         self.sweep_orphan_media()
+        self.purge_expired()
 
     # ------------------------------------------------------------------ plumbing
 
@@ -724,6 +726,8 @@ class CaseStore:
             if assessment.status == "draft":
                 known = {r["household_id"] for r in conn.execute(
                     "SELECT household_id FROM households WHERE case_id = ?", (case_id,))}
+                known_evidence = {r["evidence_id"] for r in conn.execute(
+                    "SELECT evidence_id FROM evidence WHERE case_id = ?", (case_id,))}
                 for proposal in result.get("proposed_tasks", []):
                     task = m.RecoveryTask.model_validate(proposal)
                     taken = conn.execute("SELECT 1 FROM tasks WHERE task_id = ?", (task.task_id,)).fetchone()
@@ -731,7 +735,8 @@ class CaseStore:
                         conn, case_id, title=task.title, scope=task.scope,
                         household_ids=[h for h in task.household_ids if h in known],
                         location=task.location.model_dump(mode="json") if task.location else None,
-                        evidence_ids=task.evidence_ids, assignee_label=task.assignee_label,
+                        evidence_ids=[e for e in task.evidence_ids if e in known_evidence],
+                        assignee_label=task.assignee_label,
                         actor_id="agent:" + run_id, task_id=None if taken else task.task_id)
                 for draft in result.get("draft_notices", []):
                     conn.execute("INSERT INTO notices VALUES (?,?,?,NULL,?,?)",
@@ -970,6 +975,17 @@ class CaseStore:
             if isinstance(exc, _AlreadyStored):
                 return m.UploadedMedia(**exc.stored)
             raise
+
+    def purge_expired(self) -> None:
+        """Startup housekeeping: drop dead sessions and idempotency receipts past retention.
+
+        A retry older than IDEMPOTENCY_RETENTION is treated as a new submission.
+        Invitations are kept for the owner's audit/revocation list.
+        """
+        cutoff = (self.clock() - IDEMPOTENCY_RETENTION).astimezone(timezone.utc).isoformat()
+        with self._write() as conn:
+            conn.execute("DELETE FROM sessions WHERE expires_at <= ? OR revoked_at IS NOT NULL", (self.now(),))
+            conn.execute("DELETE FROM idempotency WHERE created_at < ?", (cutoff,))
 
     def sweep_orphan_media(self, *, min_age: timedelta = ORPHAN_MIN_AGE) -> int:
         """Delete media files with no committed row (a crash between file write and commit).

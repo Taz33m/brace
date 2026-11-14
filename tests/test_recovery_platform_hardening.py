@@ -147,3 +147,89 @@ def test_startup_sweep_removes_old_orphans_only(tmp_path):
     assert not any(p.exists() for p in old_orphan)
     assert fresh_orphan.exists() and unrelated.exists()
     assert len(committed) == 2 and all(p.exists() for p in committed)
+
+
+# ---------------------------------------------------------------- Task 3
+
+def test_startup_purges_expired_sessions_and_old_idempotency(tmp_path):
+    import sqlite3
+    from datetime import datetime, timedelta, timezone
+
+    from tests.test_recovery_platform_support import report
+
+    class Clock:
+        t = datetime(2026, 11, 14, 12, tzinfo=timezone.utc)
+
+        def __call__(self):
+            return self.t
+
+    clock = Clock()
+    db, media = tmp_path / "recovery.db", tmp_path / "media"
+    store = CaseStore(db, media, clock=clock)
+    ha, _, res_a, _ = seeded(store)
+    store.create_owner_session("owner:local")
+    token = store.create_invitation(OWNER, "case_test", ha, rev(store)).invitation_token
+    live_session = store.exchange_invitation(token)
+    store.append_report(res_a, report(), "report-key-1")
+    clock.t += timedelta(days=8)
+    store.append_report(res_a, report("newer"), "report-key-2")
+
+    reopened = CaseStore(db, media, clock=clock)
+    conn = sqlite3.connect(db)
+    assert conn.execute("SELECT COUNT(*) FROM sessions WHERE role = 'owner'").fetchone()[0] == 0
+    assert reopened.resolve_session(live_session) is not None  # 30-day resident session survives
+    keys = [r[0] for r in conn.execute("SELECT idem_key FROM idempotency")]
+    assert keys == ["report-key-2"]
+
+
+def test_owner_secret_throttled_after_ten_failures(app, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from backend.recovery.platform import router as router_mod
+    from tests.test_recovery_platform_api import SECRET
+
+    now = [1000.0]
+    monkeypatch.setattr(router_mod, "_monotonic", lambda: now[0])
+    c = TestClient(app)
+    for _ in range(router_mod.OWNER_LOGIN_MAX_FAILURES):
+        assert c.post("/api/recovery/session", json={"secret": "wrong"}).status_code == 401
+    blocked = c.post("/api/recovery/session", json={"secret": SECRET})
+    assert blocked.status_code == 429
+    assert blocked.json()["error"]["code"] == "too_many_attempts" and blocked.json()["error"]["retryable"]
+    now[0] += router_mod.OWNER_LOGIN_WINDOW_SECONDS + 1
+    assert c.post("/api/recovery/session", json={"secret": SECRET}).status_code == 200
+
+
+def test_proposal_unknown_evidence_ids_dropped(store, world):
+    from tests.test_recovery_platform_assessments import envelope
+
+    ha, _, _, _ = world
+    store.add_evidence(OWNER, "case_test", m.Evidence(
+        evidence_id="ev_known", kind="inspection", source_id="i1", source_label="Inspection",
+        captured_at=None, effective_at=None, available_at=None, received_at="2026-11-14T12:00:00+00:00",
+        model_created_at=None, location=None, media=None, summary="s", limitations=[]), rev(store))
+    cmd = TypeAdapter(m.OwnerCommand).validate_python({"type": "start_assessment", "expected_revision": rev(store)})
+    run = store.apply_command(OWNER, "case_test", cmd, launcher=lambda ticket: None)
+    base = store.snapshot_for_analysis("case_test")["case"]["analysis_revision"]
+    result = envelope(run.run_id, base, task_households=[ha])
+    result["proposed_tasks"][0]["evidence_ids"] = ["ev_known", "ev_invented"]
+    store.complete_assessment(run.run_id, base, result)
+    assert store.owner_snapshot(OWNER, "case_test").tasks[0].evidence_ids == ["ev_known"]
+
+
+@pytest.mark.parametrize("client_host, scheme, header, secure", [
+    ("127.0.0.1", "http", "https", True),     # trusted local proxy (Vite xfwd)
+    ("::1", "http", "https", True),
+    ("192.168.1.30", "http", "https", False), # header from an untrusted client is ignored
+    ("192.168.1.30", "https", None, True),    # uvicorn already applied trusted proxy headers
+    ("127.0.0.1", "http", None, False),
+])
+def test_forwarded_proto_trusted_only_from_loopback(client_host, scheme, header, secure):
+    from starlette.requests import Request
+
+    from backend.recovery.platform.router import _secure
+
+    headers = [(b"x-forwarded-proto", header.encode())] if header else []
+    request = Request({"type": "http", "method": "POST", "path": "/", "headers": headers, "scheme": scheme,
+                       "server": ("127.0.0.1", 8001), "client": (client_host, 5555), "query_string": b""})
+    assert _secure(request) is secure
