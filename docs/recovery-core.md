@@ -82,6 +82,10 @@ The lead supplies `input_provider(snapshot) -> (inputs, inspect_image_callback)`
 
 No new unauthenticated HTTP endpoint was added. Platform router mounting, legacy owner API authentication, and the owner/resident components are the next integration checkpoint once those teammates deliver their exports.
 
+The lead-owned `backend.recovery.integration.install_legacy_owner_gate(app, authorize_owner)` is now available for that checkpoint. Install it with the platform router before startup. The callback receives the request and must establish owner identity and property scope from server state; do not pass a role-only check when access is property-restricted. Its API responses are private/no-store, including legacy images and event streams. Development proxies preserve the original Host/Origin and forward the original scheme, so the platform can validate allowed origins and issue secure phone cookies; trust forwarded headers only from the loopback proxy.
+
+Browser integration is in `frontend/src/recovery/`: `client.ts` implements the shared owner/resident endpoints and reconnecting event streams; `routes.ts` isolates resident routing and scrubs invitation fragments; `owner-controller.ts` protects against stale fetches and keeps idempotency keys across lost command responses. These modules currently import the canonical handoff types until Person 2 installs the identical frontend contract. Run `npm run test:recovery` in `frontend` for transport, routing, and controller checks.
+
 ## Image identity and permissions
 
 `EvidenceImages(assets, snapshot['evidence'], allow_network=False)` is the agent image callback. It only accepts registered evidence IDs and trusted-cache files. Local bytes are SHA-256 pinned at inventory creation, bounded in size, decoded, and re-encoded without EXIF. Capture requests require an explicit collection and validate returned collection/date. Arbitrary URLs and paths from report text are never fetched.

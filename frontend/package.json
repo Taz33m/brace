@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:recovery": "node --test tests/recovery-*.test.mjs"
   },
   "dependencies": {
     "leaflet": "^1.9.4",
