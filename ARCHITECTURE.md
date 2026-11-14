@@ -149,6 +149,30 @@ Rules that hold everywhere:
 - Every extrapolation is marked as one, in the data and on the screen.
 - The scenario is stated ("fire reaches the building"), never forecast.
 
+## Talking to it, and the phone
+
+The schedule is not driven by a chat box. It is spoken to, and it answers by opening things on the screen.
+
+```mermaid
+flowchart LR
+  PHONE["Phone: #/ctl<br/>microphone, the voice"] -- "what it opened" --> LIVE[("POST /api/schedule/{id}/live")]
+  LIVE -- "polled every 0.6 s" --> SCREEN["Big screen: #/schedule<br/>the tree"]
+  PHONE <-- "speech, tool calls" --> RT[Realtime voice session]
+  SERVER["POST /api/schedule/{id}/voice<br/>short-lived key, the brief, four tools"] --> PHONE
+```
+
+- The voice layer already existed for the preparation product (`frontend/src/voice.ts`, `conversation.ts`,
+  `backend/voice.py`). The schedule registers itself with it as a stage: a brief and four tools.
+- The brief (`voice.schedule_instructions`) is built from the schedule and nothing else: the total, how it was
+  multiplied, the ranking, the rooms. The voice is told to say only that and what a tool returns.
+- The tools run in the browser against the schedule already loaded: `open_building`, `open_room`,
+  `explain_line`, `show_working`. Each moves the screen and returns the figures it is now showing. None changes a
+  figure, sends anything or books anything.
+- `#/ctl` is the same schedule on a phone. It shows the name, the figure and the conversation; whatever a tool
+  opens is posted to the server, and `#/schedule` on the big screen follows. The "Phone" button on the big screen
+  shows a QR code for it. The phone needs the HTTPS server on the local network for its microphone.
+- Typing is the fallback: shift-click "Talk with Brace" to start without a microphone, then `/` to type.
+
 ## Files
 
 ```

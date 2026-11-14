@@ -115,3 +115,30 @@ def test_the_listings_kinds_of_home_set_the_multiplication_and_an_unscanned_kind
     monkeypatch.setattr(schedule.portfolio, "floor_plans", lambda pid: [])
     only = schedule.kinds_of_home(7, unit, 268)
     assert len(only) == 1 and only[0]["homes"] == 268 and only[0]["rent_low"] is None
+
+
+def test_the_voice_is_told_only_what_the_schedule_holds_and_can_only_open_things():
+    from backend import voice
+    sched = {"property": {"name": "Hill Court", "homes": 132}, "total": {"low": 3_300_000, "high": 8_300_000}, "lost_rent_per_month": {"low": 314_000, "high": 320_000},
+             "kinds_of_home": [{"name": "2 Bedroom", "homes": 73, "per_home": {"low": 25_715, "high": 64_730}, "scanned": True}],
+             "numbers": {"views_looked_at": 60, "rooms_read": 6, "items_named": 34, "prices_confirmed": 20},
+             "buildings": [{"id": "S10", "exposure_rank": 1, "brush_within_5ft_percent": 82.0, "homes_assumed": 6, "units": []},
+                           {"id": "S2", "exposure_rank": 2, "brush_within_5ft_percent": 20.0, "homes_assumed": 10, "units": [{"name": "2BR", "rooms": [{"name": "Kitchen"}, {"name": "Bathroom"}]}]}]}
+    told = voice.schedule_instructions(sched)
+    assert "3.3 million to 8.3 million dollars" in told and "extrapolation" in told and "never 'when' or 'will'" in told and "Rooms of the scanned home: Kitchen, Bathroom." in told
+    assert "building S10, rank 1, 82 percent of walls, 6 homes" in told and "Never estimate a price" in told
+    assert [t["name"] for t in voice.schedule_tools()] == ["open_building", "open_room", "explain_line", "show_working"]      # nothing that sends, books or changes a figure
+    assert voice._spoken({"low": None, "high": None}) == "no confirmed price" and voice._spoken({"low": 600, "high": 600}) == "600 dollars"
+    body = voice.schedule_session(sched)["session"]
+    assert body["type"] == "realtime" and len(body["tools"]) == 4
+
+
+def test_the_big_screen_follows_what_the_phone_opens():
+    from fastapi.testclient import TestClient
+    from backend import server
+    c = TestClient(server.app)
+    assert c.get("/api/schedule/424242/live").json() == {"rev": 0}
+    c.post("/api/schedule/424242/live", json={"open": "S10", "room": None, "pointed": None, "how": False})
+    c.post("/api/schedule/424242/live", json={"open": "S2", "room": "Kitchen", "pointed": "Kitchen:Refrigerator", "how": False, "extra": {"x": 1}})
+    live = c.get("/api/schedule/424242/live").json()
+    assert (live["rev"], live["open"], live["room"], live["pointed"], live["how"]) == (2, "S2", "Kitchen", "Kitchen:Refrigerator", False) and "extra" not in live

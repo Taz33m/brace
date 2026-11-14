@@ -214,6 +214,66 @@ def place_session(where: dict, schedule: list[dict]) -> dict:
         "tool_choice": "auto"}}
 
 
+def _spoken(m: dict | None) -> str:
+    """A range of money as it would be said aloud."""
+    if not m or m.get("low") is None or m.get("high") is None:
+        return "no confirmed price"
+    say = lambda n: f"{n / 1e6:.1f} million" if n >= 1e6 else f"{round(n / 1e3):,} thousand" if n >= 1e4 else f"{round(n):,}"
+    return f"{say(m['low'])} dollars" if m["low"] == m["high"] else f"{say(m['low'])} to {say(m['high'])} dollars"
+
+
+def schedule_instructions(schedule: dict) -> str:
+    """What the voice is told about one property's schedule. It may say only this and what its tools return."""
+    p, n = schedule["property"], schedule["numbers"]
+    unit = next((u for b in schedule["buildings"] for u in b["units"]), None)
+    rent = schedule.get("lost_rent_per_month")
+    lines = [
+        f"You are Brace. You are talking with the owner of {p['name']}, an apartment community, who is looking at a big screen. "
+        "The screen shows what the owner would have to replace inside the homes if fire reached the property, as a list they can open: the property, its buildings, one scanned home, its rooms, and each line.",
+        "Speak plainly and briefly: one or two short sentences, then stop. Lead with the number. Give money as a range, as it is written here. Never number your answers and never read out a web address.",
+        "Say only what is in these notes or what a tool returns. Never estimate a price, a count or a chance of fire. If you do not have it, say so.",
+        "When the owner asks about a building, a room or a line, call the tool for it first: the screen opens to it, and you answer from what it returns.",
+        "This is a stated scenario, not a forecast: say 'if fire reached it', never 'when' or 'will'.",
+        f"The property: {p['homes']:,} homes counted. To put back the fit-out the owner owns inside them: {_spoken(schedule['total'])}."
+        + (f" Rent at the asking rents: {_spoken(rent)} for each month the homes are empty." if rent else ""),
+        "How that was reached: " + "; ".join(f"{k['homes']} {k['name']} homes at {_spoken(k['per_home'])} each ({'the scanned home' if k['scanned'] else 'scaled by floor area from the scanned home, not scanned itself'})"
+                                             for k in schedule.get("kinds_of_home") or []) + ". That multiplication is an extrapolation; say so when you give the total.",
+        f"One home was scanned by Matterport{', ' + unit['name'] if unit else ''}. An agent looked at {n['views_looked_at']} views in {n['rooms_read']} rooms and named {n['items_named']} items. "
+        f"{n['prices_confirmed']} kinds of line were priced, each from a web page that was fetched and found to state that price.",
+        "Buildings are ranked by how much of their walls has vegetation within 5 feet, from Vexcel's aerials. It is a ranking, not a chance of fire. The first five: "
+        + "; ".join(f"building {b['id']}, rank {b['exposure_rank']}, {round(b['brush_within_5ft_percent'] or 0)} percent of walls, {b['homes_assumed']} homes" for b in schedule["buildings"][:5]) + ".",
+        ("Rooms of the scanned home: " + ", ".join(r["name"] for r in unit["rooms"]) + ".") if unit else "",
+        "Not counted: furniture and anything a tenant owns, the structure itself, ceilings, common areas.",
+    ]
+    return "\n".join(l for l in lines if l)
+
+
+def schedule_tools() -> list[dict]:
+    text = lambda name, what: {"type": "object", "properties": {name: {"type": "string", "description": what}}, "required": [name]}
+    return [
+        {"type": "function", "name": "open_building", "parameters": text("building", "A building id such as S2, or its rank as a number, or 'scanned' for the one that holds the scanned home."),
+         "description": "Open one building on the screen and return its rank, the vegetation at its walls, its homes and its figure."},
+        {"type": "function", "name": "open_room", "parameters": text("room", "A room of the scanned home, such as Kitchen or Bathroom."),
+         "description": "Open one room of the scanned home on the screen and return its lines: what, how many, and what each costs."},
+        {"type": "function", "name": "explain_line",
+         "parameters": {"type": "object", "properties": {"room": {"type": "string", "description": "The room the line is in."},
+                                                         "item": {"type": "string", "description": "The line, such as Refrigerator or Flooring."}}, "required": ["room", "item"]},
+         "description": "Point at one line on the screen and return where its quantity and its price came from."},
+        {"type": "function", "name": "show_working", "parameters": {"type": "object", "properties": {}},
+         "description": "Open the list of how the schedule is worked out and what is not counted, and return it."},
+    ]
+
+
+def schedule_session(schedule: dict) -> dict:
+    """The request body for a short-lived voice over one property's schedule, on a laptop or a phone."""
+    return {"session": {
+        "type": "realtime", "model": MODEL, "instructions": schedule_instructions(schedule),
+        "audio": {"input": {"turn_detection": {"type": "semantic_vad"}, "noise_reduction": {"type": "near_field"},
+                            "transcription": {"model": "gpt-4o-mini-transcribe"}},
+                  "output": {"voice": VOICE}},
+        "tools": schedule_tools(), "tool_choice": "auto"}}
+
+
 def mint(body: dict) -> dict:
     """Ask for a short-lived key the phone can use. The real key never leaves this process."""
     key = os.environ.get("OPENAI_API_KEY")

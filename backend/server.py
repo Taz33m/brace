@@ -550,6 +550,47 @@ def schedule_tree(property_id: int, scan: str | None = None) -> dict:
         raise HTTPException(404, str(e))
 
 
+SCHEDULE_LIVE: dict[int, dict] = {}     # what the phone last opened on the schedule, for the big screen to follow
+
+
+@app.post("/api/schedule/{property_id}/live")
+def schedule_live_set(property_id: int, body: dict) -> dict:
+    """The phone says what it has opened on the schedule: a building, a room, a line, or the working."""
+    kept = {k: (str(body[k])[:80] if isinstance(body.get(k), str) else None) for k in ("open", "room", "pointed")}
+    SCHEDULE_LIVE[property_id] = {**kept, "how": bool(body.get("how")), "rev": (SCHEDULE_LIVE.get(property_id) or {}).get("rev", 0) + 1, "at": time.time()}
+    return {"ok": True}
+
+
+@app.get("/api/schedule/{property_id}/live")
+def schedule_live(property_id: int) -> dict:
+    """What the phone last opened, for the big screen."""
+    return SCHEDULE_LIVE.get(property_id) or {"rev": 0}
+
+
+@app.post("/api/schedule/{property_id}/voice")
+def schedule_voice(property_id: int) -> dict:
+    """A short-lived key for the voice, already told about this property's schedule."""
+    from . import schedule
+    if not voice.ready():
+        raise HTTPException(503, "voice is not configured on this machine")
+    try:
+        return voice.mint(voice.schedule_session(schedule.schedule(property_id)))
+    except schedule.ScheduleError as e:
+        raise HTTPException(404, str(e))
+    except voice.VoiceError as e:
+        raise HTTPException(502, str(e))
+
+
+@app.get("/api/schedule/{property_id}/voice/notes")
+def schedule_voice_notes(property_id: int) -> dict:
+    """What the voice is told about this property's schedule."""
+    from . import schedule
+    try:
+        return {"instructions": voice.schedule_instructions(schedule.schedule(property_id))}
+    except schedule.ScheduleError as e:
+        raise HTTPException(404, str(e))
+
+
 @app.get("/api/file/{property_id}/{scan_id}")
 def insurer_file(property_id: int, scan_id: str, water_ft: float = Query(4.0, ge=0, le=12)) -> dict:
     """The file on one home for a property insurer: outside and inside before the water, and the schedule of what that water would cost."""
