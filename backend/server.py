@@ -148,6 +148,7 @@ def building(property_id: int, scenario: str, step: str | None = None) -> dict:
     window = rain.REPLAY_WINDOWS.get(scenario) if sc["steps"] and step_id == sc["steps"][-1]["id"] else None
     fell = rain.observed(s.d["record"]["lat"], s.d["record"]["lon"], *window) if window else None
     return {**s.d, "threat": threat, "reasons": reasons, "last_sale": portfolio_data.building(property_id).get("last_sale"),
+            "rent": portfolio_data.rent(property_id),
             "observed_rain": fell,
             "plan": _plan(property_id, _plan_key(scenario, step_id))}
 
@@ -620,8 +621,14 @@ def storm_desk(scenario: str, step: str | None = None) -> dict:
     from . import desk
     sc = _scenario(scenario)
     step_id = _step(sc, step)
-    return {"scenario": sc["id"], "step": step_id, "run": desk.load(sc["id"], step_id), "schedule": desk.schedule(sc["id"], step_id),
-            "buildings": [r for r in desk.portfolio(sc["id"], step_id) if r["plan_saved"]]}
+    rows = []
+    for r in desk.portfolio(sc["id"], step_id):
+        if not r["plan_saved"]:
+            continue
+        record = portfolio_data.building(r["building_id"])
+        # Where it is, and what its homes rent for, so the desk can be drawn on the ground.
+        rows.append({**r, "lat": record.get("lat"), "lon": record.get("lon"), "rent": portfolio_data.rent(r["building_id"])})
+    return {"scenario": sc["id"], "step": step_id, "run": desk.load(sc["id"], step_id), "schedule": desk.schedule(sc["id"], step_id), "buildings": rows}
 
 
 @app.get("/api/site-model/board")

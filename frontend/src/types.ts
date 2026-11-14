@@ -200,6 +200,7 @@ export type AgentEvent =
 
 export interface Building {
   id: number;
+  rent?: Rent | null;
   record: {
     name: string; address: string; city: string; state: string; zip: string; type_label: string; style: string | null;
     year_built: number | null; stories: number | null; gba_sqft: number | null; units: number | null;
@@ -330,4 +331,17 @@ export interface FurnishScene {
   scan_id: string; sweep_id: string; room: string | null; standpoint: { e: number; n: number; z: number; h: number }; view: { yaw_deg: number };
   pieces: FurnishPiece[]; contents: number; models_made: number; can_generate: boolean; service: string;
   labels: { as_it_was: string; cleared: string; furnished: string }; making: null | { running: boolean; made: string[]; stopped: string | null };
+}
+
+/** What a building's homes are advertised at, from its CoStar apartment listing. */
+export interface Rent { low: number; high: number; currency: string; homes_listed: number | null; available: number | null; floor_plans: number; source: string }
+export interface DeskJob { building_id: number; building: string; job_id: string; title: string; trade: string; hours: number; cost_low: number; cost_high: number; people: number;
+  safe_until_h: number; crew?: number; start_h?: number; end_h?: number; start_local?: string; end_local?: string; reason?: string }
+export interface DeskTrade { trade: string; crews: number; jobs: number; scheduled: DeskJob[]; deferred: DeskJob[]; people_covered: number; cost_low: number; cost_high: number }
+export interface DeskSchedule { rule: string; trades: DeskTrade[]; forecast_issued_local: string; crews?: Record<string, number> }
+export interface DeskBuilding { building_id: number; name: string; type: string; homes: number; tenants: number; hours_left: number; safe_crew_hours: number; lat: number | null; lon: number | null; rent: Rent | null }
+/** What the storm desk decided for every building with a plan at one forecast step. */
+export interface Desk {
+  scenario: string; step: string; schedule: DeskSchedule; buildings: DeskBuilding[];
+  run: null | { seconds: number; model: string; buildings_touched: number; what_more_crews_buy: DeskSchedule[]; statement: string; events: { kind: string }[] };
 }

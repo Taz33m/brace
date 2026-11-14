@@ -176,7 +176,7 @@ function Ground() {
   const section = useRef<HTMLElement>(null);
   const [descent, setDescent] = useState<Descent | null>(null);
   const [hours, setHours] = useState<number | null>(null);
-  const [homes, setHomes] = useState<{ name: string; units: number | null; built: number | null } | null>(null);
+  const [homes, setHomes] = useState<{ name: string; units: number | null; built: number | null; rent: string | null } | null>(null);
   const [count, setCount] = useState<number | null>(null);
   const [room, setRoom] = useState<{ sweep: string; heading: number; yaw: number } | null>(null);
   const [siteLoaded, setSiteLoaded] = useState(false);
@@ -193,7 +193,9 @@ function Ground() {
       if (!current) return;
       setHours(b.threat.hours_left ?? null);
       const record = b.record as { name?: string; units?: number; year_built?: number };
-      setHomes({ name: record.name ?? "", units: record.units ?? null, built: record.year_built ?? null });
+      const dollars = (n: number) => `$${n.toLocaleString("en-US")}`;
+      setHomes({ name: record.name ?? "", units: record.units ?? null, built: record.year_built ?? null,
+                 rent: b.rent ? `Homes advertised at ${dollars(b.rent.low)} to ${dollars(b.rent.high)} a month` : null });
     }).catch(() => {});
     api.furnish(PARKER, SCAN).then((r) => { if (current) setRoom({ sweep: r.sweep_id, heading: r.standpoint.h, yaw: r.view.yaw_deg }); }).catch(() => {});
     return () => { current = false; };
@@ -367,6 +369,7 @@ function Ground() {
         <div data-g="place" className="st-place">
           <h2>{homes?.name}</h2>
           <p>{[homes?.units ? `${homes.units} homes` : null, homes?.built ? `built ${homes.built}` : null].filter(Boolean).join(", ")}</p>
+          {homes?.rent && <p className="st-place-rent">{homes.rent}<small>CoStar apartment listing</small></p>}
         </div>
         {hours != null && (
           <div data-g="clock" className="st-clock">

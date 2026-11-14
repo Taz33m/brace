@@ -3,14 +3,16 @@ import Lenis from "lenis";
 import { api } from "../api";
 import { Sky, CabinWindow } from "./Cabin";
 import { gsap, ScrollTrigger, prefersReducedMotion } from "./gsap";
+import { DeskStory } from "./DeskStory";
 import { StormStory } from "./StormStory";
 import "./story.css";
 
-export type StoryId = "storm" | "after" | "inside";
+export type StoryId = "storm" | "desk" | "after" | "inside";
 
 /** The scenarios, in the order they are told. The home page lists them; each is told by scrolling. */
 export const STORIES: { id: StoryId; title: string; line: string }[] = [
   { id: "storm", title: "Before the storm", line: "Hurricane Beryl, thirty-nine hours out. One building, measured, and the work that still fits." },
+  { id: "desk", title: "Five buildings, two crews", line: "Not enough crew hours for every roof. Scroll the clock and watch the desk decide who goes where." },
   { id: "after", title: "After the storm", line: "One room as it was scanned, cleared, and furnished again." },
   { id: "inside", title: "The way out", line: "The lifts are out. Ask the building for the way, then ask again from a wheelchair." },
 ];
@@ -51,7 +53,7 @@ export function Story({ id }: { id: StoryId }) {
   return (
     <div className="st" data-story={id}>
       <a className="st-home" href="#/">Brace</a>
-      {id === "storm" ? <StormStory /> : id === "after" ? <AfterStory /> : <InsideStory />}
+      {id === "storm" ? <StormStory /> : id === "desk" ? <DeskStory /> : id === "after" ? <AfterStory /> : <InsideStory />}
     </div>
   );
 }

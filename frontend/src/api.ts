@@ -1,4 +1,4 @@
-import type { Approval, Board, FurnishScene, Place, PlaceAnswer, PlaceLive, Building, ClockChange, Facing, FindHit, Measured, Portfolio, ResidentReport, SavedStep, Scenario, ScenarioMap, SiteModel, SiteScene } from "./types";
+import type { Approval, Board, Desk, FurnishScene, Place, PlaceAnswer, PlaceLive, Building, ClockChange, Facing, FindHit, Measured, Portfolio, ResidentReport, SavedStep, Scenario, ScenarioMap, SiteModel, SiteScene } from "./types";
 
 async function get<T>(path: string): Promise<T> {
   const r = await fetch(path);
@@ -35,6 +35,7 @@ export const api = {
   place: (model: string) => get<Place>(`/api/places/${model}`),
   placeFind: (model: string, query: string, start: string | null, mover: "walking" | "wheelchair" = "walking", chairIn = 27) =>
     get<PlaceAnswer>(`/api/places/${model}/find${q({ q: query, start, mover, chair_in: String(chairIn) })}`),
+  desk: (scenario: string, step: string) => get<Desk>(`/api/desk${q({ scenario, step })}`),
   placeLive: (model: string) => get<PlaceLive>(`/api/places/${model}/live`),
   placeTell: (model: string, body: Omit<PlaceLive, "rev">) =>
     fetch(`/api/places/${model}/live`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).catch(() => undefined),

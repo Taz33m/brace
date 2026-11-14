@@ -89,6 +89,8 @@ html.st-on, html.st-on body, html.st-on #root { height: auto; min-height: 100%; 
 .st-place { left: 6vw; top: 15%; }
 .st-place h2 { margin: 0; font: 400 clamp(2.4rem, 4.6vw, 5rem)/0.95 var(--heading); letter-spacing: -0.01em; }
 .st-place p { margin: 14px 0 0; font: 300 clamp(1.3rem, 2vw, 2rem)/1.2 var(--heading); color: rgba(243, 236, 224, 0.88); }
+.st-place .st-place-rent { margin-top: 8px; font-size: clamp(1.05rem, 1.5vw, 1.5rem); color: var(--champagne); }
+.st-place-rent small { display: block; margin-top: 8px; font: 500 11px/1 var(--sans); letter-spacing: 0.2em; text-transform: uppercase; color: rgba(243, 236, 224, 0.6); }
 .st-clock { right: 6vw; bottom: 13%; text-align: right; transform-origin: 100% 100%; }
 .st-clock strong { display: block; font: 400 clamp(8rem, 21vw, 22rem)/0.8 var(--heading); letter-spacing: -0.03em; color: var(--amber); font-variant-numeric: lining-nums; }
 .st-clock span { display: block; margin-top: 18px; font: 300 clamp(1.5rem, 2.6vw, 2.6rem)/1.1 var(--heading); }
@@ -100,6 +102,25 @@ html.st-on, html.st-on body, html.st-on #root { height: auto; min-height: 100%; 
 .st-site.st-shown { visibility: visible; }
 .st-site.st-hands { pointer-events: auto; }
 .st-credit { position: absolute; right: 14px; bottom: 10px; margin: 0; font: 400 10.5px/1 var(--sans); color: rgba(243, 236, 224, 0.5); pointer-events: none; mix-blend-mode: difference; }
+
+/* ---- the storm desk: the city, the buildings with a plan, and the crews on the clock ---- */
+.st-desk-section { position: relative; z-index: 10; height: 1250vh; background: var(--obsidian); }
+.st-desk { background: radial-gradient(ellipse at 55% 45%, #14161a 0%, var(--obsidian) 70%); }
+.st-desk-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.st-desk-say, .st-desk-note { position: absolute; left: 6vw; top: 13%; max-width: min(34rem, 38vw); margin: 0; visibility: hidden; }
+.st-desk-say h2 { margin: 0 0 14px; font: 400 clamp(2.2rem, 3.9vw, 4.2rem)/1 var(--heading); letter-spacing: -0.01em; text-wrap: balance; }
+.st-desk-say h2 small { display: block; margin-top: 8px; font: 300 clamp(1.2rem, 1.8vw, 1.8rem)/1.2 var(--heading); color: var(--champagne); }
+.st-desk-say p:not(.st-kicker), .st-desk-note p:not(.st-kicker) { margin: 0; font: 400 15px/1.55 var(--sans); color: rgba(243, 236, 224, 0.8); }
+.st-desk-hud { position: absolute; left: 6vw; right: 6vw; bottom: 8%; display: flex; align-items: flex-end; justify-content: space-between; gap: 40px; visibility: hidden; }
+.st-desk-crews { display: flex; flex-direction: column; gap: 12px; max-width: min(40rem, 46vw); }
+.st-desk-crews p { display: grid; grid-template-columns: 10px 1fr; column-gap: 12px; align-items: baseline; margin: 0; font: 400 14px/1.4 var(--sans); color: rgba(243, 236, 224, 0.86); }
+.st-desk-crews i { width: 10px; height: 10px; border-radius: 50%; transform: translateY(1px); }
+.st-desk-crews span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.st-desk-crews em { grid-column: 2; font-style: normal; font-size: 12px; letter-spacing: 0.04em; color: var(--champagne); min-height: 1.2em; }
+.st-desk-clock { display: flex; align-items: flex-end; gap: 18px; text-align: left; }
+.st-desk-clock strong { font: 400 clamp(5rem, 11vw, 11rem)/0.78 var(--heading); letter-spacing: -0.03em; color: var(--amber); font-variant-numeric: lining-nums tabular-nums; }
+.st-desk-clock span { padding-bottom: 6px; font: 300 clamp(1.1rem, 1.6vw, 1.6rem)/1.15 var(--heading); max-width: 9em; }
+.st-desk-clock small { display: block; margin-top: 8px; font: 500 12px/1 var(--sans); letter-spacing: 0.2em; text-transform: uppercase; color: var(--champagne); }
 
 .st-room-section { position: relative; z-index: 10; height: 340vh; }
 .st-live { position: fixed; inset: 0; height: auto; }

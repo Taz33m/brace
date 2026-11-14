@@ -167,6 +167,33 @@ def building(property_id: int) -> dict:
     return _index()["buildings"][str(property_id)]
 
 
+_RENTS: dict[int, dict] | None = None
+
+
+def rent(property_id: int) -> dict | None:
+    """What a building's homes are advertised at, from its CoStar apartment listing. None when it has no listing.
+
+    These are asking rents and the listing's own count of homes, which can differ from the property record's:
+    both are shown with where they came from, and nothing is multiplied into a total.
+    """
+    global _RENTS
+    if _RENTS is None:
+        found: dict[int, dict] = {}
+        try:
+            with open(KIT_DIR / "data" / "apartment-listing.jsonl") as f:
+                for line in f:
+                    r = json.loads(line)
+                    if r.get("propertyId") and r.get("minRent") and r.get("maxRent"):
+                        found[int(r["propertyId"])] = {
+                            "low": r["minRent"], "high": r["maxRent"], "currency": r.get("monetaryUnit") or "USD",
+                            "homes_listed": r.get("totalNumUnits"), "available": r.get("numUnitsAvailable"),
+                            "floor_plans": len(r.get("apartmentModels") or []), "source": "CoStar apartment listing"}
+        except OSError:
+            pass
+        _RENTS = found
+    return _RENTS.get(int(property_id))
+
+
 def tenants(property_id: int) -> list[dict]:
     """Companies recorded as occupying the building now, largest first."""
     rows = _index()["tenants"].get(str(property_id), [])
