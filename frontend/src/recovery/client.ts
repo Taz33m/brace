@@ -15,6 +15,15 @@ import type {
 } from "../../../docs/recovery-handoffs/shared-contract";
 import type { RecoverySpatial } from "./spatial";
 
+export interface HouseholdInput { expected_revision: number; unit_label: string | null }
+export interface HouseholdReceipt {
+  case_id: string;
+  household: { household_id: string; unit_label: string | null; unit_confirmed: false };
+  case_revision: number;
+  analysis_revision: number;
+  duplicate: boolean;
+}
+
 export class RecoveryApiError extends Error {
   readonly status: number;
   readonly code: string;
@@ -272,6 +281,8 @@ export function createRecoveryClient(options: RecoveryClientOptions = {}) {
     get_cases: () => request<{ cases: RecoveryCaseSummary[] }>("/api/recovery/cases"),
     get_case: (case_id: string) => request<OwnerCaseView>(`/api/recovery/cases/${encodeURIComponent(case_id)}`),
     get_spatial: (case_id: string, signal?: AbortSignal) => request<RecoverySpatial>(`/api/recovery/cases/${encodeURIComponent(case_id)}/spatial`, { signal }),
+    create_household: (case_id: string, input: HouseholdInput, idempotency_key: string) =>
+      post<HouseholdReceipt>(`/api/recovery/cases/${encodeURIComponent(case_id)}/households`, input, idempotency_key),
     command: (case_id: string, command: OwnerCommand, idempotency_key: string) =>
       post<CommandResult>(`/api/recovery/cases/${encodeURIComponent(case_id)}/commands`, command, idempotency_key),
     subscribe_case: (case_id: string, args: RecoverySubscription) =>

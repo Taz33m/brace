@@ -42,15 +42,24 @@ const noticeClientUrl = await compile("../src/recovery/notice-client.ts", { "./c
 const draftNoticesUrl = await compile("../src/recovery/DraftNotices.tsx", { "./client": clientUrl, "./notice-client": noticeClientUrl });
 const supportClientUrl = await compile("../src/recovery/support-client.ts", { "./client": clientUrl });
 const supportInboxUrl = await compile("../src/recovery/SupportInbox.tsx", { "./client": clientUrl, "./support-client": supportClientUrl });
+const householdOnboardingUrl = await compile("../src/recovery/HouseholdOnboarding.tsx", { "./client": clientUrl });
 const geometryUrl = await compile("../src/recovery/spatial-geometry.ts");
-const spatialViewerUrl = await compile("../src/recovery/SpatialViewer.tsx", { "./spatial-geometry": geometryUrl, "./spatial": spatialUrl });
+const captureDataUrl = await compile("../src/recovery/capture-comparison.ts");
+const captureComparisonUrl = await compile("../src/recovery/CaptureComparison.tsx", {
+  "./spatial": spatialUrl, "./capture-comparison": captureDataUrl,
+});
+const spatialViewerUrl = await compile("../src/recovery/SpatialViewer.tsx", {
+  "./spatial-geometry": geometryUrl, "./spatial": spatialUrl, "./CaptureComparison": captureComparisonUrl,
+});
 const entryUrl = await compile("../src/recovery/RecoveryEntry.tsx", {
   "./client": clientUrl, "./owner-controller": controllerUrl, "./routes": routesUrl, "./spatial": spatialUrl,
   "./DraftNotices": draftNoticesUrl,
   "./SupportInbox": supportInboxUrl,
+  "./HouseholdOnboarding": householdOnboardingUrl,
   "./SpatialViewer": spatialViewerUrl,
 });
 const { ResidentBootstrap, EvidenceSlot, commandForCurrentCase } = await import(entryUrl);
+const { CaptureComparison } = await import(captureComparisonUrl);
 
 function browser(hash) {
   let location = new URL(`http://localhost:5174/${hash}`);
@@ -89,6 +98,28 @@ function replayEffects() {
   }
   return () => cleanups.forEach(cleanup => cleanup());
 }
+
+test("dated comparison renders only matched case images and honest missing sides", () => {
+  browser("#/recovery/case-a");
+  const snapshot = { case: { case_id: "case-a", analysis_revision: 2, property_ref: { id: "property-a" },
+    incident_at: "2025-01-07", incident_name: "Wildfire exercise", mode_label: "Scenario exercise" },
+    evidence: [{ evidence_id: "before-a", kind: "vexcel_image", source_id: "vexcel:collection:flight-a:property-a",
+      source_label: "Vexcel source", summary: "Before-incident capture" }] };
+  const spatial = { case_id: "case-a", analysis_revision: 2, image_evidence_ids: ["before-a"], capture_pairs: {
+    before: { evidence_id: "before-a", image_available: true, first_date: "2024-08-02", last_date: "2024-08-13" }, after: null,
+  } };
+  const html = renderToStaticMarkup(React.createElement(CaptureComparison, { snapshot, spatial }));
+  assert.match(html, /Aug 2, 2024 – Aug 13, 2024/);
+  assert.match(html, /No eligible after-incident capture/);
+  assert.equal((html.match(/<img /g) ?? []).length, 1);
+  assert.match(html, /href="\/api\/recovery\/cases\/case-a\/evidence\/before-a\/image"/);
+  assert.equal(renderToStaticMarkup(React.createElement(CaptureComparison, {
+    snapshot, spatial: { ...spatial, analysis_revision: 1 },
+  })), "");
+  assert.equal(renderToStaticMarkup(React.createElement(CaptureComparison, {
+    snapshot, spatial: { ...spatial, case_id: "case-b" },
+  })), "");
+});
 
 test("resident initial route captures invitation once and scrubs before bootstrap", async () => {
   const replaced = browser("#/resident?invite=private-token");

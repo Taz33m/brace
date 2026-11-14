@@ -74,6 +74,26 @@ test("structured HTTP errors retain revision, status, code and retry policy", as
   await assert.rejects(api.get_cases(), (error) => error.code === "request_failed" && !error.message.includes("private"));
 });
 
+test("household addition keeps the original revision and key after an uncertain response", async () => {
+  const calls = [];
+  const api = createRecoveryClient({ fetch: async (url, init) => {
+    calls.push({ url, init });
+    if (calls.length === 1) throw new Error("connection lost after commit");
+    return json({ case_id: "case / 1", household: { household_id: "hh_1", unit_label: "Unit 204", unit_confirmed: false },
+      case_revision: 8, analysis_revision: 2, duplicate: true });
+  } });
+  const input = { expected_revision: 7, unit_label: "Unit 204" };
+  await assert.rejects(api.create_household("case / 1", input, "household-key"), error => error.retryable);
+  const result = await api.create_household("case / 1", input, "household-key");
+  assert.equal(result.household.household_id, "hh_1");
+  assert.equal(result.household.unit_confirmed, false);
+  for (const { url, init } of calls) {
+    assert.equal(url, "/api/recovery/cases/case%20%2F%201/households");
+    assert.equal(init.headers["Idempotency-Key"], "household-key");
+    assert.deepEqual(JSON.parse(init.body), input);
+  }
+});
+
 test("sessions and resident writes use only scoped endpoints and multipart upload headers", async () => {
   const calls = [];
   const api = createRecoveryClient({ fetch: async (url, init) => { calls.push({ url, init }); return json({ ok: true }); } });

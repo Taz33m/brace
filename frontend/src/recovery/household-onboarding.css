@@ -1,0 +1,10 @@
+.brace-households{margin:24px auto;padding:24px;max-width:1280px;background:#fff;border:1px solid #dce4de;border-radius:16px;color:#24382d}
+.brace-households header p{margin:0;color:#587363;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+.brace-households h2{margin:6px 0 12px;font-size:24px}.brace-households p{line-height:1.5;max-width:760px}
+.brace-households label{display:block;font-weight:600;margin:18px 0 8px}.brace-households label span{font-weight:400;color:#607366}
+.brace-households-form-row{display:flex;gap:12px;max-width:760px}.brace-households input{min-width:0;flex:1;border:1px solid #9eafa3;border-radius:8px;padding:12px;font:inherit}
+.brace-households button{padding:11px 16px;border:1px solid #385b43;background:#284d36;color:#fff;border-radius:8px;font:inherit;cursor:pointer}
+.brace-households button:disabled{cursor:default;opacity:.55}.brace-households button:focus-visible,.brace-households input:focus-visible{outline:3px solid #8eb877;outline-offset:3px}
+.brace-households ul{padding:0;list-style:none}.brace-households li{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 0;border-bottom:1px solid #e3e9e5}
+.brace-households small{display:block;color:#68766d;margin-top:6px;overflow-wrap:anywhere}.brace-households-success{color:#27623b}.brace-households-error{color:#9b312a}.brace-households-note{font-size:13px;color:#607366}
+@media(max-width:620px){.brace-households{padding:20px 16px;margin:16px 0}.brace-households-form-row,.brace-households li{flex-direction:column;align-items:stretch}.brace-households button{min-height:44px}}

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
-import type { LocationRef } from "../../../docs/recovery-handoffs/shared-contract";
+import type { LocationRef, OwnerCaseView } from "../../../docs/recovery-handoffs/shared-contract";
+import { CaptureComparison } from "./CaptureComparison";
 import type { RecoverySpatial, SpatialScan } from "./spatial";
 import { interiorFloor, spatialFocusKey } from "./spatial";
 import type { InteriorChoice } from "./spatial";
@@ -13,6 +14,7 @@ export interface SpatialViewerProps {
   selected_location: LocationRef | null;
   on_focus: (location: LocationRef) => void;
   mode: "site" | "interior";
+  snapshot?: OwnerCaseView | null;
 }
 type Sweep = NonNullable<SpatialScan["sweeps"]>[number] & {
   model_position?: { x?: number | null; y?: number | null; z?: number | null };
@@ -185,5 +187,6 @@ export function SpatialViewer(props: SpatialViewerProps) {
   const scopedSelection = props.selected_location && props.spatial.locations.some(location => location.location_id === props.selected_location?.location_id
     || (location.scan_id && location.scan_id === props.selected_location?.scan_id)) ? props.selected_location : null;
   const common = { ...props, spatial: props.spatial, selected_location: scopedSelection };
-  return props.mode === "site" ? <SiteView {...common} /> : <InteriorView {...common} />;
+  return props.mode === "site" ? <><CaptureComparison spatial={props.spatial} snapshot={props.snapshot ?? null} />
+    <SiteView {...common} /></> : <InteriorView {...common} />;
 }

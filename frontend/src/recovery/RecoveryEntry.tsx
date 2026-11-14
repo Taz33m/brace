@@ -13,6 +13,7 @@ import "./entry.css";
 import { DraftNotices } from "./DraftNotices";
 import { SupportInbox } from "./SupportInbox";
 import { SpatialViewer } from "./SpatialViewer";
+import { HouseholdOnboarding } from "./HouseholdOnboarding";
 
 type Client = ReturnType<typeof createRecoveryClient>;
 const client = createRecoveryClient();
@@ -153,7 +154,7 @@ export function RecoveryEntry({ case_id }: { case_id: string | null }) {
   const [spatialState, setSpatialState] = useState<SpatialState>(emptySpatial);
   const [selected, setSelected] = useState<string | null>(null);
   const [focused, setFocused] = useState<LocationRef | null>(null);
-  const [invitation, setInvitation] = useState<{ case_id: string; url: string; expires: string | null } | null>(null);
+  const [invitation, setInvitation] = useState<{ case_id: string; household_id: string; url: string; expires: string | null } | null>(null);
   const controller = useRef<OwnerCaseController | null>(null);
   const openId = case_id ?? cases[0]?.case_id ?? null;
   // Route changes can render before effect cleanup. Do not display the previous
@@ -210,11 +211,12 @@ export function RecoveryEntry({ case_id }: { case_id: string | null }) {
 
   async function command(value: OwnerCommand): Promise<void> {
     const active = controller.current;
+    if (value.type === "create_invitation" && active?.state.case_id === openId) setInvitation(null);
     const receipt = await commandForCurrentCase(active, openId, value);
     if (!active) return;
     if (controller.current !== active) return;
-    if (receipt.invitation_token) {
-      setInvitation({ case_id: active.state.case_id!, url: `${window.location.origin}${window.location.pathname}${window.location.search}${residentHash(receipt.invitation_token)}`,
+    if (receipt.invitation_token && value.type === "create_invitation") {
+      setInvitation({ case_id: active.state.case_id!, household_id: value.household_id, url: `${window.location.origin}${window.location.pathname}${window.location.search}${residentHash(receipt.invitation_token)}`,
         expires: receipt.invitation_expires_at });
     }
   }
@@ -233,10 +235,10 @@ export function RecoveryEntry({ case_id }: { case_id: string | null }) {
     cases, snapshot, state: listError ? "error" : listing ? "loading" : !openId ? "ready" : currentView.state,
     error: listError ?? currentView.error, busy: currentView.busy, selected_evidence_id: snapshot ? selected : null,
     map_slot: <><EvidenceSlot key={`${openId}:${analysisRevision}:aerial`} title="Aerial evidence" evidence={aerial} image_url={imageUrl(aerial)} location={snapshot ? focused : null} />
-      <SpatialViewer spatial={spatial} selected_location={snapshot ? focused : null} on_focus={focus} mode="site" />
+      <SpatialViewer spatial={spatial} snapshot={snapshot} selected_location={snapshot ? focused : null} on_focus={focus} mode="site" />
       <SpatialContext spatial={spatial} evidence={aerial} /></>,
     interior_slot: <><EvidenceSlot key={`${openId}:${analysisRevision}:interior`} title="Interior evidence" evidence={interior} image_url={imageUrl(interior)} location={snapshot ? focused : null} />
-      <SpatialViewer spatial={spatial} selected_location={snapshot ? focused : null} on_focus={focus} mode="interior" />
+      <SpatialViewer spatial={spatial} selected_location={snapshot ? focused ?? interior?.location ?? null : null} on_focus={focus} mode="interior" />
       <SpatialContext spatial={spatial} evidence={interior} /></>,
     on_open_case: id => { window.location.hash = recoveryHash(id); },
     on_back_to_prepare: () => { window.location.hash = "#/"; },
@@ -247,6 +249,7 @@ export function RecoveryEntry({ case_id }: { case_id: string | null }) {
   return <div className="brace-recovery-entry">
     {invitation && invitation.case_id === openId && <section className="brace-entry-invitation" aria-label="Resident invitation">
       <h2>Resident invitation</h2><p>Share this private link with the intended resident.</p>
+      <p>For {snapshot?.household_labels.find(row => row.household_id === invitation.household_id)?.unit_label || "household"} · {invitation.household_id}</p>
       <input aria-label="Private resident invitation link" readOnly value={invitation.url} onFocus={event => event.target.select()} />
       {invitation.expires && <p>Expires {invitation.expires}</p>}<button type="button" onClick={() => setInvitation(null)}>Dismiss link</button>
     </section>}
@@ -254,8 +257,14 @@ export function RecoveryEntry({ case_id }: { case_id: string | null }) {
     {spatialError && <div className="brace-entry-status" role="alert"><span>{spatialError}</span><button type="button" onClick={retry}>Reload evidence</button></div>}
     {spatialLoading && <p className="brace-entry-status" role="status">Loading registered spatial evidence…</p>}
     {currentView.connection === "reconnecting" && snapshot && <p className="brace-entry-status" role="status">Reconnecting to case updates…</p>}
-    <EntryBoundary key={openId ?? "cases"}><Suspense fallback={<EntryMessage title="Opening recovery workspace…" />}>
+    <EntryBoundary key={`workspace:${openId ?? "cases"}`}><Suspense fallback={<EntryMessage title="Opening recovery workspace…" />}>
       {Workspace ? <Workspace {...props} /> : <>
+        {cases.length > 1 && <nav className="brace-entry-status" aria-label="Recovery case selection">
+          <label htmlFor="brace-recovery-case">Recovery case </label>
+          <select id="brace-recovery-case" value={openId ?? ""} onChange={event => props.on_open_case(event.target.value)}>
+            {cases.map(item => <option key={item.case_id} value={item.case_id}>{item.property_name} · {item.incident_name} · as of {item.assessment_as_of}</option>)}
+          </select>
+        </nav>}
         <EntryMessage title={snapshot?.case.property_name ?? "Recovery sources"}
           message={snapshot ? `${snapshot.case.address} · ${snapshot.case.mode_label}` : listing || openId ? "Loading your registered recovery case…" : "No recovery cases are assigned to this owner."} />
         {snapshot && <section className="brace-entry-source-workspace" aria-label="Recovery source explorer">
@@ -264,7 +273,9 @@ export function RecoveryEntry({ case_id }: { case_id: string | null }) {
         </section>}
       </>}
     </Suspense></EntryBoundary>
-    {snapshot && <DraftNotices key={snapshot.case.case_id} snapshot={snapshot} busy={currentView.busy}
+    {snapshot && <HouseholdOnboarding key={`households:${snapshot.case.case_id}`} snapshot={snapshot} busy={currentView.busy}
+      on_command={command} on_session_expired={() => setNeedsSignIn(true)} />}
+    {snapshot && <DraftNotices key={`notices:${snapshot.case.case_id}`} snapshot={snapshot} busy={currentView.busy}
       on_published={retry} on_session_expired={() => setNeedsSignIn(true)} />}
     {snapshot && <SupportInbox key={`support:${snapshot.case.case_id}`} snapshot={snapshot} busy={currentView.busy}
       on_updated={retry} on_session_expired={() => setNeedsSignIn(true)} />}

@@ -13,6 +13,7 @@
 .brace-recovery-entry .brace-entry-status :focus-visible,
 .brace-recovery-entry .brace-entry-invitation :focus-visible { outline: 3px solid #b07822; outline-offset: 3px; }
 .brace-recovery-entry .brace-entry-status { display: flex; gap: 1rem; align-items: center; justify-content: space-between; padding: 1rem; margin: 0; background: #fff0cf; }
+.brace-recovery-entry .brace-entry-status select { min-width: 0; max-width: 100%; padding: .6rem; font: inherit; border: 1px solid #8a948d; border-radius: .35rem; background: white; color: #26332d; }
 .brace-recovery-entry .brace-entry-invitation { padding: 1rem 1.5rem; border-bottom: 1px solid #8a948d; background: #e7eee5; }
 .brace-recovery-entry .brace-entry-invitation h2 { font-size: 1.1rem; margin: 0; }
 .brace-recovery-entry .brace-entry-invitation button { margin-top: .75rem; }

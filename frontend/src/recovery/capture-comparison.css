@@ -1,0 +1,23 @@
+.brace-capture-comparison { padding: 20px; color: #29382f; background: #faf9f4; border: 1px solid #dedfd5; border-radius: 12px; margin-bottom: 14px; }
+.brace-capture-comparison .brace-spatial-heading { margin-bottom: 8px; }
+.brace-capture-context { margin: 0 0 16px; font-size: 11px; line-height: 1.5; color: #6a786e; }
+.brace-capture-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.brace-capture-side { margin: 0; min-width: 0; border: 1px solid #dce0d4; border-radius: 9px; overflow: hidden; background: #fffef8; }
+.brace-capture-side figcaption { display: grid; gap: 5px; padding: 12px; }
+.brace-capture-side figcaption strong { font-size: 13px; font-weight: 600; line-height: 1.5; }
+.brace-capture-side figcaption > span:last-child { font-size: 10px; color: #73806f; }
+.brace-capture-role { color: #556b4e; font-size: 10px; text-transform: uppercase; letter-spacing: .08em; font-weight: 650; }
+.brace-capture-image { position: relative; aspect-ratio: 1; background: #e9ecdf; border-block: 1px solid #dce0d4; display: grid; place-items: center; }
+.brace-capture-image img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.brace-capture-missing { padding: 22px; margin: 0; color: #6a786e; font-size: 12px; line-height: 1.6; text-align: center; }
+.brace-capture-loading { position: absolute; inset: auto 10px 10px; margin: 0; padding: 7px; border-radius: 4px; background: #fffef8ed; color: #556b4e; font-size: 11px; text-align: center; }
+.brace-capture-source { padding: 11px 12px; font-size: 11px; line-height: 1.5; }
+.brace-capture-source summary, .brace-capture-limitations summary { cursor: pointer; color: #526649; }
+.brace-capture-source p { margin: 8px 0; color: #6a786e; overflow-wrap: anywhere; }
+.brace-capture-source .brace-capture-source-id { font-family: ui-monospace, monospace; font-size: 10px; }
+.brace-capture-source a { display: inline-block; color: #335b42; text-underline-offset: 3px; }
+.brace-capture-note { margin: 13px 0 0; font-size: 11px; line-height: 1.6; color: #6a786e; }
+.brace-capture-limitations { margin-top: 8px; font-size: 11px; line-height: 1.5; color: #6a786e; }
+.brace-capture-limitations p { margin: 8px 0 0; }
+.brace-capture-comparison :is(a, summary):focus-visible { outline: 3px solid #ae662d; outline-offset: 3px; border-radius: 2px; }
+@media (max-width: 600px) { .brace-capture-comparison { padding: 14px; } .brace-capture-grid { grid-template-columns: 1fr; } }
