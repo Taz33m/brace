@@ -1,129 +1,211 @@
-# Brace — PRD
+# Brace: PRD
 
-**What to fix on your building before the storm or fire arrives.**
-HackPrinceton 2026, CoStar track ("Inside and Out: AI for the Built World").
+**What a fire would cost an owner to put back, line by line, from the leasing scan they already have.**
+HackPrinceton Fall 2026, CoStar track ("Inside and Out: AI for the Built World").
 
-Status: draft v1, 2026-11-14. Built on the registration, imagery clients and viewer from the earlier Plumbline project.
+Status: 14 November 2026, 17:45. This replaces the storm and wildfire preparation PRD written at 00:41 the same
+day; that version is in the git history. It follows the team's `DIRECTION.md` (17:13 version). The two-minute loop
+is in `DEMO_LOOP.md`.
 
 ---
 
 ## 1. Summary
 
-Brace is an AI agent for owners and property managers of commercial buildings. It watches the forecast, finds which buildings in a portfolio a hurricane (Houston) or a wildfire wind event (Los Angeles) will touch, and for each one writes a short fix list sized to the hours left: what to do, where on the building, who does it, what it costs. It then drafts the tenant notice and the contractor work orders that get it done.
+Brace reads the Matterport scan an apartment community already has for leasing, names what the owner would have to
+replace, puts a price range with a source on each line, and multiplies it across the homes like it. Vexcel's
+aerials say which of the community's buildings have fuel at the wall. CoStar says how many homes there are and
+what they rent for. The output is one schedule: a total at the top, then building, home, room, item.
 
-The output is "here is what to fix and what it costs", not a risk score. Owners push back on scores.
+It is not a forecast and not a risk score. It states a scenario ("fire reaches this building") and says what that
+would cost.
 
 ## 2. Who it is for
 
 | User | What they do today | What Brace gives them |
-|---|---|---|
-| **Property manager** with tens of buildings (primary) | A generic storm checklist emailed to every site | A different, specific list per building, ranked by which to call first, with the messages already written |
-| Owner or asset manager | Learns about damage afterwards | The pre-event spend that avoids it, and a record that it was offered |
-| Lender or insurer (secondary) | Exposure by address | Exposure plus the specific vulnerabilities and whether they were addressed |
+| --- | --- | --- |
+| **Owner or asset manager of an apartment community** (primary) | Files a statement of values with a broker, often from a cost per square foot | An itemised list of the fit-out they actually own, priced, with the scan as its record |
+| The owner's broker | Asks the owner for values at each renewal | The same schedule, to check the cover is enough |
+| An insurer's underwriter (secondary) | Benchmarks reported values against a database | The values with what they are made of, per building |
 
-The kit supports this user: of 3,339 commercial properties, 1,731 name their property manager and 1,937 have current tenants on record. 2,765 are apartment communities, so the typical user manages residents, not just business tenants.
+What the owner insures is the fit-out: floors, cabinets, counters, appliances, doors, fixtures. Under the standard
+commercial property form these count as part of the building. Tenants' belongings are the tenants' own cover and
+are out of scope.
 
 ## 3. What is different
 
-Address-to-risk-score products, wildfire photo checks and post-storm damage reports exist. Brace differs in three ways:
+Scan-based products for insurance exist, and they work after a loss, one property at a time: Matterport sells
+sketches from its scans for the adjusters' estimating software, and others have people photograph items once the
+damage is done. Brace differs in three ways:
 
-1. **It acts on a specific forecast**, and the plan changes with the hours left. With 60 hours a tree crew is possible; with 18 it is not.
-2. **It looks at the actual building, outside and inside.** Roof condition, rooftop units and nearby trees from the air; glass, ground-level spaces and what sits on the floor from the scans.
-3. **It ends in actions and messages**, not a number.
+1. **Before the loss.** At renewal and before a fire, not at first notice of loss.
+2. **From scans that already exist.** Nobody is sent to the site. The leasing scan is the input.
+3. **Across a portfolio, with every figure sourced.** A quantity from the scan times a price from a page that can be opened.
 
 ## 4. The data, as it really is
 
-Checked against the live APIs.
-
 | Layer | What it gives Brace | Limits |
-|---|---|---|
-| **CoStar** | Type, age, storeys, construction, size, homes, parking; property manager and owner where named; current tenants with head counts | Owner named on only 262 properties; apartment residents are not listed |
-| **Vexcel** | Per structure: roof material, condition 1 to 5, defects, counted rooftop units, vents, skylights, solar; tree cover over the roof and at 0 to 5, 5 to 30 and 30 to 100 ft; overhead and four angled photos; open-vocabulary detection | The roof analysis can be older than the photo |
-| **Matterport** | Scans of individual spaces: suites, apartment units, leasing offices, gyms, lobbies, warehouse bays. Panoramas at every position, a GPS fix, floor from the title | **Not whole buildings and not plant rooms.** Windows are not labelled on commercial scans, so glass is read by a vision model |
-| **Public hazard data** | NHC forecast advisories and cones, NWS alerts and Red Flag Warnings, FEMA flood zones, California fire hazard severity zones, past fire perimeters | Hurricane season ends 30 November, so the demo replays real past forecasts |
+| --- | --- | --- |
+| **Matterport** | Rooms with floor area and ceiling height, walls, doors, and panoramas at every standpoint | Scans cover one space (a home, an office, a gym), not a building. Homes are staged, so furniture is not a tenant's |
+| **Vexcel** | Per building: vegetation within 5 ft of the walls, trees over the roof, footprint, heights; the aerial itself | A ranking of exposure, not a chance of fire |
+| **CoStar** | Unit counts, building size, asking rents, type and age | Asking rents are listings, not leases. Many properties have no sale on record |
+| **Public fire data** | California fire hazard severity zones | Today's map. Most kit buildings in Los Angeles are outside the highest zones; the count is shown as it is |
 
-Across the portfolio the aerial analysis alone flags plenty to work with. Houston: 283 buildings with a roof at 2 of 5 or worse, 687 with four or more rooftop units, 338 with trees over the roof. Los Angeles: 345 with vegetation within 5 ft of the walls, 424 wood-frame.
+The index read for this PRD holds 3,339 properties and 13,096 scans; 11,872 of the scans are of apartment
+communities. Scans in the kit are proof of concept, not an insured owner's data, and every deck and video says so.
 
-**Correction to the original pitch:** the scans cannot show ground-floor electrical or mechanical rooms of a tower, because those rooms were never scanned. Brace uses the scans for what they do show and says plainly when a risk depends on a space with no scan.
+## 5. The product
 
-## 5. Product
+Each requirement has what counts as done.
 
-### 5.1 Flow
+| # | Requirement | Done when |
+| --- | --- | --- |
+| R1 | **Exposure.** Rank a site's buildings by fuel at the wall, trees over the roof, and fire zone | Every building at the lead site has a rank and the three facts behind it, each with its source |
+| R2 | **Inventory.** Go through a scan room by room and name what the owner would replace, with a count or a measured quantity and where it is in the scan | Kitchen and bathroom fit-out and every room's floor, walls and doors are listed for the lead home; each item says whether it was read or measured |
+| R3 | **Prices.** A price range per item, found on the web, kept only when the page confirms it | Each priced line links to its page; a line without a confirmed price shows no figure |
+| R4 | **Schedule.** Item to room to home, with totals at each level | Totals add up; the count of priced lines is shown beside each total |
+| R5 | **Rollup.** One scanned home times the homes like it, to building and property | The multiplication is on screen and labelled an extrapolation |
+| R6 | **Lost rent.** Homes out of use, times months, times asking rent | A per-month figure with its arithmetic |
+| R7 | **The tree screen.** Total at the top; open a building, a home, a room, an item | Any figure can be opened down to its source in three clicks or fewer |
+| R8 | **The loop.** The home page plays the seven beats in `DEMO_LOOP.md` by scrolling | Runs three times in a row with no model call while it plays |
+| R9 | **The numbers.** Scans read, items named, prices confirmed, minutes, model cost | Recorded by the run itself, not typed in |
+| R10 | **Headset** (optional). Stand in the home while the tags appear | Works on the real phone and viewer by Sunday 01:00, or it is cut |
 
-1. **Forecast.** Pick a scenario: a live alert, or a replay of a real one. Scrub the forecast back and forth in time.
-2. **Portfolio.** The map shows the track, cone and wind field (or the warning area) and every building it touches. The list ranks them and says why each is there. Filter to one property manager.
-3. **Building.** Open one. The site from the air on the left, its scanned spaces on the right, the threat at this exact site across the top.
-4. **Plan.** The agent builds the plan while the viewers follow where it looks. Actions are grouped: do before it arrives, do after this event, plan and budget.
-5. **Messages.** A notice for the people in the building and a work order per outside trade, ready to copy.
+Scenarios, stated on screen:
 
-### 5.2 Scenarios
+- **Fire reaches the building.** The fit-out of the affected homes is a total loss, so the schedule is the figure, plus rent for the months they cannot be lived in.
+- **Fire stops nearby** (only if time allows). Smoke and ash: soft finishes and cleaning, not the whole schedule.
 
-| Scenario | Source | Why |
-|---|---|---|
-| Hurricane Beryl, July 2024, Houston (replay) | NHC forecast advisories and cones as issued | A real storm that hit this portfolio; several forecast steps so the clock moves |
-| Santa Ana wind event, January 2025, Los Angeles (replay) | NWS Red Flag Warning areas as issued | The warning that preceded the Palisades and Eaton fires; fire perimeters shown as hindsight |
-| Live | NWS and NHC right now | Proves it is a watcher, not a canned demo; may be quiet |
+## 6. The schedule
 
-### 5.3 The ranking
+One schedule per property, served as `GET /api/schedule/{property_id}`. Every screen reads this and nothing else.
 
-No model call. For each building the forecast touches: the forecast at that point, standing flood or fire zoning, and the aerial facts, combined into an ordering. The interface shows the reasons, never a score.
+```json
+{
+  "property": { "id": 0, "name": "", "homes": 0, "scenario": "fire reaches the building", "scan_date": "" },
+  "total": { "low": 0, "high": 0, "lines": 0, "lines_priced": 0 },
+  "lost_rent_per_month": { "low": 0, "high": 0, "how": "homes x asking rent" },
+  "numbers": { "scans_read": 0, "items_named": 0, "prices_confirmed": 0, "minutes": 0, "model_cost_usd": 0 },
+  "buildings": [
+    { "id": "S1", "exposure_rank": 1, "brush_within_5ft_percent": 0, "in_fire_zone": true, "homes_assumed": 0,
+      "total": { "low": 0, "high": 0 },
+      "units": [
+        { "scan_id": "", "name": "", "multiplied_by": 0, "extrapolated": true,
+          "rooms": [
+            { "name": "Kitchen",
+              "items": [
+                { "what": "Refrigerator", "quantity": 1, "unit": "each",
+                  "from": "read from the scan",
+                  "price_low": 0, "price_high": 0, "low": 0, "high": 0,
+                  "source_url": "", "at": { "sweep_id": "", "yaw_deg": 0, "pitch_deg": 0 } }
+              ] }
+          ] }
+      ] }
+  ]
+}
+```
 
-## 6. The agent
+- `from` is `read from the scan` (a vision model named it) or `measured from the scan` (Matterport's dimensions).
+- `at` is where the item is in the scan, so a tag can be drawn on it.
+- Money that is not known is null, never zero, and is left out of the totals.
 
-A tool loop on Claude with vision, one run per building per forecast step.
+## 7. The agent
 
-**Tools:** building record; the threat at this site; site facts per structure; aerial views (overhead with a grid, four angled); a detector to point at the site; the list of scans; a first-pass survey of a scan; a look from any scan position; leads; actions; messages.
+A deep agent on LangChain's `deepagents`, as `backend/desk_agent.py` already is. One orchestrator takes a scan and
+gives each room to a sub-agent with its own context. A room's sub-agent looks at that room's panoramas, names the
+fit-out it can see, and returns items with where each is. The orchestrator merges the rooms, asks the price
+research for a range per kind of item, and writes the schedule.
 
-**Rules enforced in code, not left to the prompt:**
-- An action filed as "before it arrives" must fit in the hours left, less a six-hour stand-down for crews. Otherwise the tool refuses it and the agent must split it or file it for later.
-- An action whose basis is "seen" must point at a structure, a grid cell or a scan position.
-- Every lead must be resolved: actions, not a concern, or could not check.
-- No finish without a notice to the people in the building.
+Rules, enforced in code and not left to the prompt:
 
-## 7. Architecture
+- An item needs a standpoint and a direction it was seen in. No sighting, no item.
+- A quantity that Matterport measured (floor area, wall length, door count) comes from the measurement, never from the model.
+- A price is kept only when a fetch of its page finds the price and the sentence that states it.
+- The agent names and counts. It does not total; code does.
+- Furniture and anything a tenant would own is not listed.
+
+## 8. Out of scope, and claims we do not make
+
+- No forecast, no probability that a building burns, no percentage of a home that burns.
+- No fire-spread rate from what the furniture is made of.
+- No valuing of personal belongings, and no claim to verify a homeowner's contents.
+- No cost comparison against manual scanning; the "$2,000 against $10" line has no source.
+- No claim that the Los Angeles ranking was validated by the January 2025 fires.
+- No invented examples. Everything on screen is from the kit.
+- The preparation product (plans, crews, resident messages) and the flood test stay in the repo but are not pitched. `#/file` stays reachable as the partial-loss example.
+
+## 9. Who builds what
+
+Weighted by who can build fastest. Hours are estimates from now to Sunday 07:00.
+
+### Tazeem: the engine and the loop (about 60% of the build)
+
+| # | Task | Done when | By |
+| --- | --- | --- | --- |
+| T1 | Fetch the lead scan's wall measurements and quantities (R2, measured part) | Floor, wall and door quantities exist for every room of scan `CaSLe7ZwnfF` | Sat 19:00 |
+| T2 | The inventory agent on `deepagents`, one sub-agent per room (R2, read part; section 7) | Kitchen and bathroom items are named with a standpoint and direction each; a test holds the "no sighting, no item" rule | Sat 21:00 |
+| T3 | Prices for those items (R3) | Each kind of item has a confirmed range or shows none | Sat 21:30 |
+| T4 | The schedule, the rollup and lost rent, served at `/api/schedule/{id}` (R4, R5, R6) | Returns the shape in section 6 for Verdugo Mesa with real figures; totals tested | Sat 22:00 |
+| T5 | The tree screen (R7) | Opens from total to source | Sat 23:30 |
+| T6 | The loop on the home page (R8) | All seven beats play by scrolling | Sun 01:00 |
+| T7 | Final numbers to Kevin and Jimmy; fixes from the three runs | The narration and the video match the screen | Sun 05:00 |
+
+### Ryan: the outside, the portfolio, and making it hold (about 25%)
+
+| # | Task | Done when | By |
+| --- | --- | --- | --- |
+| R-1 | Exposure per building (R1): brush within 5 ft, trees over the roof, fire zone. New `backend/exposure.py`, `GET /api/exposure/{id}` | One rank per building at Verdugo Mesa with its three facts and sources; tested | Sat 19:30 |
+| R-2 | The portfolio list for beat 6: scanned communities in the zone with homes and rents, ranked | `GET /api/schedule` lists them; missing rents are null | Sat 22:00 |
+| R-3 | Saved runs and the `numbers` block (R9) | The schedule is read from disk; the run records its own counts, minutes and cost | Sun 00:00 |
+| R-4 | One start command and three clean runs on the presenting laptop | Three in a row, written down with the time of each | Sun 05:00 |
+
+### Jimmy: the headset and the film (about 15%)
+
+| # | Task | Done when | By |
+| --- | --- | --- | --- |
+| J-1 | The headset beat (R10): point `#/inside` at the lead home and draw tags from the schedule's `at` fields | Works on the real phone in the viewer, or is cut | Sun 01:00 |
+| J-2 | Screen recordings of each beat, the two-minute edit, an offline backup | The video plays without a network | Sun 05:00 |
+| J-3 | Upload the video and screenshots to Devpost | Submitted | Sun 07:00 |
+
+### Kevin: the script and the argument (no build)
+
+| # | Task | Done when | By |
+| --- | --- | --- | --- |
+| K-1 | The narration, word for word against the seven beats | Under two minutes read aloud; first draft Saturday 19:00 | Sun 01:00 |
+| K-2 | The answers to the judge questions in `DEMO_LOOP.md`, plus who inside an owner's company signs for this | One or two sentences each, rehearsed | Sun 01:00 |
+| K-3 | Re-read each research line marked "search summary" at its page | Each is confirmed or struck | Sat 23:00 |
+| K-4 | Read the video and the deck against section 8 | Nothing in section 8 is said | Sun 05:00 |
+| K-5 | The Devpost text: what it does, how it was built, what is real and what is extrapolated | Ready for Jimmy to paste | Sun 05:00 |
+
+## 10. Architecture
 
 ```
-frontend (React + Vite, localhost:5174)     map (Leaflet), site pane, Matterport tour, plan panel
-backend (FastAPI, :8001)
-  portfolio.py   CoStar buildings, managers, tenants
-  hazards/       forecasts, alerts, flood and fire zoning (public sources, cached)
-  screen.py      which buildings a forecast touches, and why
-  building.py    per-building bundle: record + site photo + structures + scans
-  vision.py      first-pass read of a scan's panoramas
-  agent.py       the planner: tools, rules, loop
-  server.py      API and the live event stream
+frontend (React + Vite)
+  story/Home.tsx          the loop: the 2.5D site, played by the scroll
+  story/InsurerFile.tsx   the schedule for one home; grows into the tree screen
+  story/InsidePov.tsx     the room from where a person stands, for one eye or two
+backend (FastAPI)
+  portfolio.py            CoStar: homes, size, rents
+  exposure.py             Vexcel and fire zones: a rank per building            (new, Ryan)
+  inventory_agent.py      the deep agent that reads a scan room by room         (new, Tazeem)
+  flood_agent.py          price research, each price checked against its page
+  insurer_file.py         quantities from a scan; grows into the schedule
+  server.py               /api/schedule, /api/exposure
 ```
 
-## 8. Demo (3 minutes)
+## 11. Risks
 
-1. Forecast map: Beryl, 60 hours out. Scrub forward; buildings enter the wind field and the count climbs.
-2. Filter to one property manager: their buildings, ranked, each with reasons.
-3. Open the top one. Threat strip: hours left, peak wind, flood zone.
-4. Replay the plan being built: the site view jumps to the rooftop units, the scan flies to the glass-fronted leasing office.
-5. The plan: before-arrival actions with cost and crew hours; the re-roof filed for afterwards because it cannot be done in time.
-6. Messages: the resident notice and the work order.
-7. Switch to Los Angeles and the Red Flag Warning: same product, different threat, different list.
+| Risk | What we do about it |
+| --- | --- |
+| The vision read miscounts cabinets or misses an appliance | Each item carries the standpoint it was seen from, so a person can check it; counts that Matterport measured never come from the model |
+| One scanned home stands for hundreds | Labelled an extrapolation everywhere, with the multiplication shown |
+| Cost-guide prices are national ranges, not Los Angeles quotes | Ranges, both ends carried through, each linked to its page |
+| "Why itemise a total loss?" | Lead with renewal and the dated record; `#/file` shows a partial loss |
+| The lead building may not sit in a mapped fire zone | Show what the map says. The exposure rank rests on vegetation as well |
+| A fourth change of direction costs the night | The table of what is settled in `DEMO_LOOP.md` closes at 19:00 |
+| The headset has only been tried on a laptop | It is optional and has a cut-off |
 
-**VR:** the Matterport tour runs in a headset browser, but the SDK key that drives the highlighted jumps only works on `localhost`. Treat the headset as a way to stand in the scanned space, not as the demo's spine.
+## 12. Open questions
 
-## 9. Risks
-
-| Risk | Mitigation |
-|---|---|
-| Scans do not cover the spaces that matter most (plant rooms, roofs) | Lean on the aerial layer for those; say what was not scanned |
-| Forecast replays feel canned | Real advisories as issued, a time slider, and a live tab |
-| Cost figures challenged | Ranges from stated anchors, labelled rough |
-| The agent pads the list | Prompt asks for few specific actions; the "seen" rule forces evidence |
-| Los Angeles kit buildings are mostly outside the highest fire zones | Rank by warning area plus vegetation and construction; show the count honestly |
-
-## 10. Known limits of the forecast data
-
-- Wind is sustained wind estimated from the advisory's quadrant radii, a band-level estimate. Gusts run 20 to 30 percent higher.
-- At 72 and 60 hours the real Beryl forecast pointed at South Texas, so Houston is untouched until the 48-hour step. That is what happened, and it is the point of the time slider.
-- The fire hazard zone map is today's (March 2025), not the one in force during the January 2025 replay. Past-fire distances in the replay exclude the 2025 fires.
-- The live hurricane and live Red Flag paths are tested only with stand-in feeds, because nothing is active today.
-
-## 11. Open questions
-
-1. Team: who owns the headset demo, and is it worth the setup time?
-2. Should the notice be sent anywhere (email, SMS) or stay as a draft to copy? Currently a draft.
+1. Who inside an owner's company buys this: the asset manager, the risk manager, or the broker on their behalf?
+2. Does the LangChain track need more than an agent built on its library? Nobody has re-read that track's rules.
+3. Does the smoke scenario get built, or is one scenario enough for two minutes?

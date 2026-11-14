@@ -1,26 +1,55 @@
 # The demo loop
 
-Written Saturday 14 November 2026, about 17:20. It follows the team's `DIRECTION.md`, which is not in this repo yet (wildfire in Los Angeles, an
-itemised replacement schedule, the customer is the owner of an apartment community). That file marks the customer
-as proposed, not decided. If the team changes it, this loop changes with it.
+Final as of Saturday 14 November 2026, 17:40. It follows the team's `DIRECTION.md` (the 17:13 version, not in this
+repo). The requirements and the full split of the work are in `PRD.md`.
 
-Two minutes, one building, one number at the end. The loop is one move at three scales: outside, inside, then
-multiplied.
+**The product in one sentence:** Brace tells the owner of an apartment community what a fire would cost to put
+back, line by line, from the leasing scan they already have.
+
+## What is settled
+
+| Question | Answer | Who settled it |
+| --- | --- | --- |
+| Hazard | Wildfire, Los Angeles | The team, in the feedback session |
+| Output | An itemised schedule as a tree: total, building, home, room, item | The team |
+| Forecasts | None | The team |
+| The preparation product (plans, crews, resident messages) | Cut from the pitch. The code stays | Tazeem, 14 November |
+| Customer | The owner of an apartment community | Proposed in `DIRECTION.md`; this loop is built on it |
+| Fire-spread rate from furniture | Dropped. "Fire reaches the building" is a stated scenario | Proposed in `DIRECTION.md`; this loop is built on it |
+| Flood | Not in the two minutes. `#/file` stays open in a tab as the partial-loss answer | Tazeem's recommendation |
+| Style | Real data, sober. No mascot, no toy diorama | Tazeem's recommendation |
+| Headset | A live extra at the table. Not in the video's critical path | Tazeem's recommendation |
+| Tracks | Business and Enterprise, CoStar, and LangChain if the inventory agent is built on it | `DIRECTION.md`, current thinking |
+
+If anyone disagrees with a row marked proposed or recommended, say so before 19:00. After that we build on it.
 
 ## The loop
 
-| Time | On screen | Say | Exists on `main` today |
-| --- | --- | --- | --- |
-| 0:00 | Los Angeles from above. The apartment communities in the fire zones light up, with a count | "These owners know what their buildings sold for. They don't know what's in them." | Mostly. The lit-city descent in `frontend/src/story/StormStory.tsx` (Los Angeles chapter) |
-| 0:12 | Push in to Verdugo Mesa Apartments standing up in 2.5D. Brush within 5 ft of the walls is marked and its buildings rank by exposure | "From Vexcel's aerials: which buildings have fuel at the wall." | Mostly. The 2.5D scene in `frontend/src/story/Home.tsx`; vegetation per building is in the height files |
-| 0:30 | A floor plan slides under the roof it belongs to | "This is the unit Matterport scanned for leasing, placed under its roof." | Yes. The snap in `frontend/src/components/ScenePage.tsx`, from `backend/openproblems/geolocation.py` |
-| 0:40 | Inside the scan. An agent turns through the rooms. Each thing it names gets a tag and a line in the schedule: flooring, cabinets, range, refrigerator, doors | "Every line is a quantity from the scan and a price from a page you can open." | Half. Measurements and confirmed prices exist (`backend/insurer_file.py`, `backend/flood_agent.py`). Reading cabinets and appliances does not |
-| 1:15 | The schedule folds into a tree: item, room, unit, then times the homes like it, plus the rent lost for each month they are empty | "One scanned home, multiplied across the homes like it." | No |
-| 1:40 | Pull back out. Every community in the zone, ranked by exposed value | "Before the fire, across a portfolio." | No |
-| 1:50 | One line and three uses: at renewal, before a fire, after a loss | "From the scan you already have." | No |
+Two minutes, one building, one number at the end. One move at three scales: outside, inside, multiplied.
 
-The unit count and asking rents come from CoStar and appear on screen from the kit. They are not written in this
-file because kit data is never committed.
+| # | Time | On screen | Say | Needs | If it is not ready |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 0:00 | Los Angeles from above. The apartment communities inside the fire zones light up, with a count | "These owners know what their buildings sold for. They don't know what's in them." | The lit-city descent that exists, pointed at the fire zones | Open on beat 2 |
+| 2 | 0:12 | Push in to Verdugo Mesa Apartments standing up in 2.5D. Brush at the walls is marked; its 24 buildings rank by exposure | "From Vexcel's aerials: which buildings have fuel at the wall." | Ryan's rank per building; the 2.5D scene pointed at this site | Show the site standing up, no ranking |
+| 3 | 0:30 | The scanned home's floor plan slides under the roof it belongs to | "This is the home Matterport scanned for leasing, placed under its roof." | Exists | Cut; go straight inside |
+| 4 | 0:40 | Inside the scan. The view turns through the rooms. Each thing the agent named gets a tag and a line in the schedule: flooring, cabinets, range, refrigerator, doors | "Every line is a quantity from the scan and a price from a page you can open." | Tazeem's inventory and prices | The schedule fills beside a still of the room |
+| 5 | 1:15 | The schedule folds into a tree: item, room, home, then times the homes like it, plus rent lost for each month they are empty | "One scanned home, multiplied across the homes like it." | Tazeem's rollup and the tree screen | The one home's schedule and the multiplication as one line |
+| 6 | 1:40 | Pull back out. Every community in the zone, ranked by exposed value | "Before the fire, across a portfolio." | Ryan's portfolio list | End on the property total |
+| 7 | 1:50 | One line and three uses: at renewal, before a fire, after a loss | "From the scan you already have." | Words only | |
+
+Beats 4 and 5 are the product. If time runs short, everything else gives way to them.
+
+Kit figures for one property (unit counts, rents, vegetation percentages) appear on screen from the data. They are
+not written in this file because sponsor records are never committed.
+
+## Done means
+
+- The loop runs start to finish on the presenting laptop three times in a row, with no model call while it plays.
+- Every dollar on screen opens to a quantity from the scan and a price from a page.
+- A line with no confirmed price shows no figure and is left out of the totals, and the screen says how many lines the total covers.
+- The multiplication from one scanned home to the rest is shown and labelled an extrapolation.
+- Nothing on screen says forecast, probability, or percent burned.
+- A backup video of the loop plays offline.
 
 ## The pitch, in five lines
 
@@ -30,62 +59,28 @@ file because kit data is never committed.
 4. **Why all three datasets.** Vexcel says which buildings. Matterport says what is in them. CoStar says how many homes and what rent.
 5. **The number.** The property total, on screen at the end.
 
-## The two questions a judge will ask
+## What a judge will ask
 
-- **"If fire takes everything, why itemise?"** Lead with renewal (is the cover enough for what is there) and the dated
-  record after a loss. Fire is the scenario, not the argument.
-- **"One scan for a whole community?"** Yes, and the screen says so: the multiplication is shown and labelled an
-  extrapolation.
+| Question | Answer |
+| --- | --- |
+| If fire takes everything, why itemise? | The schedule is for renewal (is the cover enough for what is there) and for the claim (a dated record). And most losses are partial: open `#/file`, where the same kind of schedule changes with two feet of water |
+| One scan for a whole community? | Yes, and the screen says so. The multiplication is shown and labelled |
+| These are staged homes, not real tenants' things | Right. The owner insures the fit-out: floors, cabinets, appliances, doors. Under the standard commercial form those are part of the building. Tenants' belongings are the tenants' own cover, and we leave them out |
+| The scan is old by the time of a loss | Values are set at the time of loss. The scan proves what was there; the price is read today. Every schedule shows its scan date |
+| Doesn't Matterport already do this? | It sells sketches from scans into claims, after a loss, one property at a time. This is before the loss, from scans that already exist, across a portfolio |
+| Where does a number come from? | Click it |
 
 ## The lead building
 
-Verdugo Mesa Apartments (CoStar 9519837). It has the unit count and asking rents the multiplication needs, 24
-buildings with measured ground and vegetation, and one scanned two-bedroom home. Prime Hollywood Hills (10655549)
-has more scans but no unit count or rent on record, so it cannot carry the last two beats.
-
-## The headset
-
-It fits the inside beat: the judge stands in the unit while the tags appear round them. `#/inside` already plays a
-room for one eye or two; it needs pointing at this unit and given the tags.
-
-## What is cut from the loop
-
-Flood, the $500K and 48 hours budget, forecasts, a fire-spread rate from furniture, and tenants' belongings. The
-flood pages stay in the repo and open by address; they are not shown.
+Verdugo Mesa Apartments, Los Angeles (CoStar 9519837, scan `CaSLe7ZwnfF`). It has what the last two beats need: a
+unit count and asking rents on record, 24 buildings with measured vegetation, and one scanned two-bedroom home
+with a kitchen and a bathroom. Two things it lacks today: the scan's walls have not been measured (one fetch from
+Matterport), and no sale price is on record, which no longer matters because the loss is on rebuilding cost.
 
 ## What every screen reads
 
-One schedule, served as `GET /api/schedule/{property_id}`. Build against this shape with placeholder numbers until
-the real one is live:
-
-```json
-{
-  "property": { "id": 0, "name": "", "homes": 0, "scenario": "fire reaches the building" },
-  "total": { "low": 0, "high": 0 },
-  "lost_rent_per_month": { "low": 0, "high": 0, "how": "homes x asking rent" },
-  "numbers": { "scans_read": 0, "items_named": 0, "prices_confirmed": 0, "minutes": 0, "model_cost_usd": 0 },
-  "buildings": [
-    { "id": "S1", "exposure_rank": 1, "brush_within_5ft_percent": 0, "homes_assumed": 0,
-      "total": { "low": 0, "high": 0 },
-      "units": [
-        { "scan_id": "", "name": "", "multiplied_by": 0, "extrapolated": true,
-          "rooms": [
-            { "name": "Kitchen",
-              "items": [
-                { "what": "Refrigerator", "quantity": 1, "unit": "each",
-                  "from": "read from the scan",
-                  "price_low": 0, "price_high": 0, "low": 0, "high": 0,
-                  "source_url": "", "at": { "sweep_id": "", "yaw_deg": 0, "pitch_deg": 0 } }
-              ] }
-          ] }
-      ] }
-  ]
-}
-```
-
-`from` is either `read from the scan` (a vision model named it) or `measured from the scan` (Matterport's own
-dimensions). `at` is where the item is in the scan, so a tag can be drawn on it. A line with no confirmed price has
-null money and is left out of the totals.
+One schedule, served as `GET /api/schedule/{property_id}`. The shape is in `PRD.md`, section 6. Build against it
+with placeholder numbers until the real one is live.
 
 ## What the research found (14 November, evening)
 
@@ -127,57 +122,17 @@ portfolio"; and the cost comparison is gone.
 
 ## Who does what
 
-Weighted by who can build fastest. Times are Saturday night into Sunday; submissions are reported to close Sunday
-08:00.
+The tasks, what counts as done for each, and the hours are in `PRD.md`, section 9. In short:
 
-### Tazeem: the engine and the loop (most of the build)
-
-1. **The inventory.** A vision pass over each room of the scan that names what the owner would replace (cabinets,
-   counters, appliances, fixtures, doors, flooring) and where it is. New module beside `backend/vision.py`.
-2. **The prices.** Run the existing price research (`flood_agent.price`) on those items. A line is priced only when
-   its page confirms it.
-3. **The schedule and the rollup.** Item to room to unit, times the homes like it, to building and property, with
-   the lost-rent line. Grows out of `backend/insurer_file.py`. Serve it as `/api/schedule/{id}`.
-4. **The loop on the home page.** Point the scroll at Los Angeles and Verdugo Mesa: the lit zone, the 2.5D site with
-   exposure, the snap, the inside beat with tags, the tree, the pull back.
-5. **The tree screen.** Total at the top; open a building, a unit, a room, an item; every figure links to its source.
-6. **Final numbers** into the narration and the video once the real run is saved.
-
-### Ryan: the outside, the portfolio, and making it hold
-
-1. **Exposure ranking.** For each building at a site: brush within 5 ft of the walls, trees over the roof, and
-   whether it stands in a Los Angeles fire hazard zone. One rank per building, no probability. From
-   `backend/vexcel.py` and the height files. Feeds `exposure_rank` in the schedule.
-2. **The portfolio beat.** Every scanned community in the zone with its homes and rents, ranked, for the pull-back
-   shot. From `backend/portfolio.py`.
-3. **Saved runs.** The schedule is computed once and saved, so the loop never waits on a model. Record the
-   `numbers` block as it runs: scans read, items named, prices confirmed, minutes, model cost.
-4. **Three clean runs.** One start command, the whole loop start to finish three times in a row on the laptop that
-   will present.
-
-### Jimmy: the headset and the film
-
-1. **The headset beat.** Point `#/inside` at the Verdugo Mesa unit and draw the tags from the schedule's `at`
-   fields as the view turns. Test it on the real phone and viewer early; it has only been checked on a laptop.
-2. **Screen recordings** of each beat once it is live, then the two-minute edit and an offline backup copy.
-3. **Devpost page**: the video, the screenshots, the build notes.
-
-### Kevin: the script and the argument (no build)
-
-1. **The narration.** Word for word against the loop above, under two minutes read aloud.
-2. **The answers.** One or two sentences each for the two judge questions above and for: staged units are not real
-   tenants' homes; what happens when the scan is old; who inside an owner's company buys this.
-3. **Checks before the pitch.** The four research questions are answered above. Still open: who inside an owner's
-   company signs for this, and re-reading the lines marked "search summary" at their source.
-4. **The claims list.** Read every line of the video and the deck against `DIRECTION.md`, section 8, and strike
-   what we must not say.
-
-### Handoffs
+- **Tazeem** (most of the build): the inventory agent, the prices, the schedule and rollup, the tree screen, the loop on the home page.
+- **Ryan:** the exposure rank per building, the portfolio list, saved runs, three clean runs.
+- **Jimmy:** the headset beat on the real phone, the recordings and the edit.
+- **Kevin** (no build): the narration, the answers, re-checking the sources, the claims list, the Devpost text.
 
 | When | What |
 | --- | --- |
-| Saturday 19:00 | The schedule shape above is agreed. Ryan has a rank per building. Kevin has a first narration |
+| Saturday 19:00 | Objections to the settled table are in. Ryan has a rank per building. Kevin has a first narration |
 | Saturday 22:00 | `/api/schedule` returns real numbers for Verdugo Mesa. The tree screen opens |
-| Sunday 01:00 | The whole loop runs on the home page. Jimmy starts recording |
+| Sunday 01:00 | The whole loop runs on the home page. The headset works or is cut. Jimmy starts recording |
 | Sunday 05:00 | Three clean runs. The video is cut with the final numbers |
 | Sunday 07:00 | Submitted, with an hour in hand |
