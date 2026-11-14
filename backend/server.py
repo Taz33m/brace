@@ -641,10 +641,47 @@ def site_model_board() -> dict:
 def building_site_model(building_id: int, request: Request) -> dict:
     """Everything known about one address, each fact with the sources it rests on."""
     model = _site_model(building_id)
-    from .recovery.site_activity import case_activity
-    model["reports"] = sorted(
-        model["reports"] + site_model.place(building_id, case_activity(request, building_id)), key=lambda row: row["at"])
+    from . import report_check
+    # Each report carries its check against the scan. Reading the site model never pays for a look: one already made is shown.
+    model["reports"] = [{**row, "check": report_check.checked(building_id, row, look=False)}
+                        for row in _resident_reports(building_id, request, model["reports"])]
     return {**model, "facts": site_model.facts(model)}
+
+
+def _resident_reports(building_id: int, request: Request, filed: list[dict]) -> list[dict]:
+    """What residents reported at a building, oldest first: the reports filed here and those sent through its case, each placed."""
+    from .recovery.site_activity import case_activity
+    return sorted(filed + site_model.place(building_id, case_activity(request, building_id)), key=lambda row: row["at"])
+
+
+def _resident_report(building_id: int, report_id: str, request: Request) -> dict:
+    _site_model(building_id)
+    found = next((row for row in _resident_reports(building_id, request, site_model.load_reports(building_id)) if row["id"] == report_id), None)
+    if found is None:
+        raise HTTPException(404, "no such report at this building")
+    return found
+
+
+@app.get("/api/buildings/{building_id}/reports/{report_id}/check")
+def building_report_check(building_id: int, report_id: str, request: Request) -> dict:
+    """Whether one report fits the scan made before the storm, and what the scan's photograph showed there then.
+
+    The verdict is worked out by code. The first read of a report also shows the photograph to the vision model, once."""
+    from . import report_check
+    return report_check.checked(building_id, _resident_report(building_id, report_id, request))
+
+
+@app.get("/api/buildings/{building_id}/reports/{report_id}/before.jpg")
+def building_report_before(building_id: int, report_id: str, request: Request) -> Response:
+    """The scan's own photograph from the report's position, facing the way the report points: the picture the look is made from."""
+    from . import report_check
+    view = report_check.check(building_id, _resident_report(building_id, report_id, request))["view"]
+    if not view or view.get("bearing_deg") is None:
+        raise HTTPException(404, "the scan has no view for this report")
+    image = report_check.photograph(building_id, view)
+    if image is None:
+        raise HTTPException(404, "the scan has no photograph in that direction")
+    return _jpeg(image)
 
 
 @app.get("/api/buildings/{building_id}/find")

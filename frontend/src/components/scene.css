@@ -104,3 +104,5 @@ button.scene-report { display: block; border: 0; border-left: 3px solid var(--em
 .scene-asks li { padding: 9px 12px 10px; border-right: 3px solid var(--ember); text-align: right; font-size: 13.5px; line-height: 1.35; background: rgba(40, 20, 10, 0.86); backdrop-filter: blur(4px); }
 .scene-asks strong { display: block; font-family: var(--cond); font-size: 17px; line-height: 1.1; color: var(--ember); }
 .scene.is-placing .scene-asks { display: none; }
+.scene-check { max-height: calc(100vh - 220px); overflow-y: auto; scrollbar-width: none; }
+.scene-check .scene-measured li { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }

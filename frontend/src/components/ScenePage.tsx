@@ -32,6 +32,8 @@ interface World {
     lines: { line: THREE.LineLoop; raw: Float32Array; fit: Float32Array; fill: THREE.Mesh; from: THREE.Vector3; to: THREE.Vector3; turn: number }[] };
 }
 const SNAP_HOLD_MS = 2200, SNAP_MS = 520;
+// What the scan's own photograph showed in that direction before the storm, in the order a claim would ask for it.
+const BEFORE: [string, string][] = [["thing", "What was there"], ["floor_covering", "Floor"], ["damage_or_staining", "Damage already there"]];
 const VERDICT = { fits: "Fits the scan", wrong_place: "Not where the scan has it", cannot_tell: "The scan cannot say" } as const;
 /** Out fast, a hair past, and back: the way something clicks into place. */
 const click = (t: number) => { const c = 1.9; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
@@ -496,9 +498,7 @@ export function ScenePage({ id, scenario, step }: Props) {
                 </figure>
               )}
               <ul className="scene-measured">
-                {Object.entries(shown.check.before ?? {}).filter(([k, v]) => typeof v === "string" && v && !/basis|position|scan|bearing/.test(k)).map(([k, v]) => (
-                  <li key={k}><strong>{k.replace(/_/g, " ")}</strong>{String(v)}</li>
-                ))}
+                {BEFORE.map(([key, label]) => { const v = shown.check!.before?.[key]; return typeof v === "string" && v ? <li key={key}><strong>{label}</strong>{v}</li> : null; })}
               </ul>
               {shown.check.before?.basis && <p className="scene-basis">{String(shown.check.before.basis)}</p>}
             </>
