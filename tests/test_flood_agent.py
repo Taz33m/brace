@@ -63,8 +63,19 @@ def test_a_run_saves_each_fix_with_whether_its_page_confirmed_it(tmp_path, monke
     run = flood_agent.research(client=client, fetch=lambda url: _text(PAGE) if url.endswith("/price") else None)
     assert run["stop"] == "end_turn" and [f["checked"] for f in run["fixes"]] == [True, False] and [f["holds_ft"] for f in run["fixes"]] == [4.0, None] and run["usage"] == {"input_tokens": 150, "output_tokens": 25}
     assert [s["kind"] for s in run["steps"]] == ["search", "found", "found"] and run["steps"][0]["text"] == "water-filled flood barrier price per foot"
-    assert client.sent[0]["tools"][0]["type"] == "web_search_20260209" and client.sent[1]["messages"][2]["content"][1]["content"].startswith("Recorded. Check of the page: the page could not be read")
+    assert [t.get("type") for t in client.sent[0]["tools"]][:2] == ["web_search_20260209", "web_fetch_20260209"] and client.sent[1]["messages"][2]["content"][1]["content"].startswith("Recorded. Check of the page: the page could not be read")
     saved = json.loads((tmp_path / "flood" / "research.json").read_text())
     assert len(saved["fixes"]) == 2
     cat = flood.catalogue()                                                                                              # and the plan takes only the confirmed one
     assert [m["id"] for m in cat["measures"]] == ["tube30", "tube48", "water-filled-barrier--4-ft"] and cat["by"] == "agent"
+
+
+def test_a_page_the_agents_own_fetch_read_is_what_the_check_runs_on(tmp_path, monkeypatch):
+    monkeypatch.setattr(flood, "RESEARCH", tmp_path / "research.json")
+    client = _Client()
+    read = NS(type="web_fetch_tool_result", content={"type": "web_fetch_result", "url": "https://www.example.org/other/", "content": {"type": "document", "source": {"type": "text", "media_type": "text/plain", "data": "The 4 ft model costs $7 per linear foot, before shipping."}}})
+    client.turns[0].content.insert(0, read)
+    client.turns[0].content[-1].input = {**client.turns[0].content[-1].input, "quote": "The 4 ft model costs $7 per linear foot, before shipping.", "height_quote": "The 4 ft model costs $7 per linear foot, before shipping."}
+    run = flood_agent.research(client=client, fetch=lambda url: None)                                                  # nothing can be fetched from here
+    assert [f["checked"] for f in run["fixes"]] == [False, True] and [s["kind"] for s in run["steps"]] == ["read", "search", "found", "found"]
+    assert flood_agent._fetched(NS(type="web_fetch_tool_result", content={"type": "web_fetch_tool_result_error", "error_code": "url_not_accessible"})) == (None, None)

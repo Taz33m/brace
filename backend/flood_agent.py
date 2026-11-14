@@ -30,6 +30,9 @@ from .config import AGENT_MODEL
 
 MAX_TURNS = 14
 MAX_SEARCHES = 12
+MAX_FETCHES = 16
+SEARCH = {"type": "web_search_20260209", "name": "web_search", "max_uses": MAX_SEARCHES}
+FETCH = {"type": "web_fetch_20260209", "name": "web_fetch", "max_uses": MAX_FETCHES}      # the page as the API's own fetcher read it; the check runs on that text
 
 SYSTEM = """You research for Brace, which plans what to do at apartment buildings in Houston in the days before flood water arrives. Find what can be put round a building to keep water out, what it costs, and how long it takes to have in place.
 
@@ -45,6 +48,7 @@ Rules
 - Record the unit the page uses. Do not work out a price, a height or a rate yourself, and do not convert one unit into another.
 - A barrier is of no use to the plan without its height. Record the barrier's height in the unit the page uses, with the sentence that states it. If the page with the price does not state the height, find it on the maker's page or another page and give that page's address in height_source_url.
 - Record how long it takes, or how fast it goes in, only when the page states it. Otherwise leave those fields null.
+- Open the page with web_fetch before you record from it, so the price can be checked against the page as it was read.
 - Prefer a maker's own page, a government or university page, or a news report that quotes a price. Prefer a web page to a PDF file: a PDF cannot be checked here. Leave out pages that only sell something without a stated price.
 - If you cannot find a stated price for a kind of fix, do not record that kind.
 - Stop when you have covered the kinds above or have searched twelve times. Finish with one line saying how many fixes you recorded."""
@@ -76,7 +80,7 @@ RECORD = {
         "additionalProperties": False,
     },
 }
-TOOLS = [{"type": "web_search_20260209", "name": "web_search", "max_uses": MAX_SEARCHES}, RECORD]
+TOOLS = [SEARCH, FETCH, RECORD]
 
 
 # ---- checking what the agent recorded against the page itself ------------------------------------
@@ -176,24 +180,25 @@ def _clean(args: dict[str, Any]) -> dict | None:
             "source": {"title": str(args.get("source_title") or "").strip()[:160], "url": str(args["source_url"]).strip(), "quote": str(args["quote"]).strip()[:500]}}
 
 
-def research(client: anthropic.Anthropic | None = None, save: bool = True, fetch=page_text) -> dict:
-    """Run the research once and save what was found, each fix marked with whether its page confirmed it."""
-    client = client or anthropic.Anthropic()
-    t0, steps, fixes, pages = time.time(), [], [], {}
+def _loop(client: anthropic.Anthropic, system: str, ask: str, tools: list[dict], handle, fetch) -> dict:
+    """One run of a research agent: it searches, it records, and each record is handed to `handle(name, input, read)`,
+    which returns the line the agent is told. Returns how the run stopped, its steps, and what it used."""
+    t0, steps, pages = time.time(), [], {}
 
-    def read(url: str) -> str | None:      # each page is fetched once in a run
-        if url not in pages:
-            pages[url] = fetch(url)
-        return pages[url]
+    def read(url: str) -> str | None:      # the page as the agent's own fetch returned it, else a fetch from here; once each in a run
+        key = _url_key(url)
+        if key not in pages:
+            pages[key] = fetch(url)
+        return pages[key]
 
     usage = {"input_tokens": 0, "output_tokens": 0}
     note = lambda kind, text, **more: steps.append({"t": round(time.time() - t0, 1), "kind": kind, "text": text, **more})
-    messages: list[dict] = [{"role": "user", "content": "Research flood fixes for apartment buildings in Houston, with prices and times, and record each one."}]
+    messages: list[dict] = [{"role": "user", "content": ask}]
     stop = "max_turns"
     try:
         for _ in range(MAX_TURNS):
             resp = client.beta.messages.create(
-                model=AGENT_MODEL, max_tokens=16000, system=SYSTEM, tools=TOOLS, messages=messages,
+                model=AGENT_MODEL, max_tokens=16000, system=system, tools=tools, messages=messages,
                 thinking={"type": "adaptive"}, output_config={"effort": "medium"},
                 betas=["server-side-fallback-2026-07-01"], fallbacks="default",
             )
@@ -202,6 +207,11 @@ def research(client: anthropic.Anthropic | None = None, save: bool = True, fetch
             for block in resp.content:
                 if block.type == "server_tool_use" and block.name == "web_search" and isinstance(block.input, dict) and block.input.get("query"):
                     note("search", str(block.input["query"]))
+                elif block.type == "web_fetch_tool_result":
+                    url, text = _fetched(block)
+                    if url and text:
+                        pages[_url_key(url)] = text
+                        note("read", url)
             if resp.stop_reason == "refusal":
                 stop = "refusal"
                 break
@@ -214,24 +224,118 @@ def research(client: anthropic.Anthropic | None = None, save: bool = True, fetch
                 break
             results = []
             for c in calls:
-                fix = _clean(dict(c.input)) if c.name == "record_fix" else None
-                if fix is None:
-                    results.append({"type": "tool_result", "tool_use_id": c.id, "content": "Not recorded: a fix needs a price above zero, a type, a page address and the sentence that states the price.", "is_error": True})
-                    continue
-                fix["checked"], fix["check_note"] = confirm(fix, read(fix["source"]["url"]))
-                if fix["height"] and not confirm_height(fix, read(fix["height"]["url"])):      # a height that its page does not bear out is dropped, not trusted
-                    fix["holds_ft"], fix["check_note"] = None, fix["check_note"] + "; the height is not"
-                fixes.append(fix)
-                note("found", f"{fix['name']}: ${fix['price']:,.2f} {fix['price_unit']}", type=fix["type"], checked=fix["checked"], source=fix["source"]["url"])
-                results.append({"type": "tool_result", "tool_use_id": c.id, "content": f"Recorded. Check of the page: {fix['check_note']}."})
+                said, error = handle(c.name, dict(c.input), read, note)
+                results.append({"type": "tool_result", "tool_use_id": c.id, "content": said, **({"is_error": True} if error else {})})
             messages.append({"role": "user", "content": results})
     except anthropic.APIStatusError as e:
         stop = f"error: {e.status_code}"
     except anthropic.APIConnectionError:
         stop = "error: no connection"
-    run = {"made_at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "model": AGENT_MODEL, "seconds": round(time.time() - t0, 1), "stop": stop,
-           "fixes": fixes, "steps": steps, "usage": usage}
-    if save and fixes and not stop.startswith("error"):
+    return {"made_at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "model": AGENT_MODEL, "seconds": round(time.time() - t0, 1), "stop": stop, "steps": steps, "usage": usage}
+
+
+def _url_key(url: str) -> str:
+    u = urlparse(url.strip())
+    return f"{(u.hostname or '').removeprefix('www.')}{u.path.rstrip('/')}?{u.query}".lower()
+
+
+def _fetched(block: Any) -> tuple[str | None, str | None]:
+    """The address and the words of a page the agent's web_fetch read, or (None, None) when the fetch failed or returned a file that is not text."""
+    got = getattr(block, "content", None)
+    got = got.model_dump() if hasattr(got, "model_dump") else got
+    if not isinstance(got, dict) or not got.get("url"):
+        return None, None
+    source = ((got.get("content") or {}).get("source") or {}) if isinstance(got.get("content"), dict) else {}
+    return got["url"], source.get("data") if source.get("type") == "text" else None
+
+
+def research(client: anthropic.Anthropic | None = None, save: bool = True, fetch=page_text) -> dict:
+    """Run the research once and save what was found, each fix marked with whether its page confirmed it."""
+    fixes: list[dict] = []
+
+    def handle(name: str, args: dict, read, note) -> tuple[str, bool]:
+        fix = _clean(args) if name == "record_fix" else None
+        if fix is None:
+            return "Not recorded: a fix needs a price above zero, a type, a page address and the sentence that states the price.", True
+        fix["checked"], fix["check_note"] = confirm(fix, read(fix["source"]["url"]))
+        if fix["height"] and not confirm_height(fix, read(fix["height"]["url"])):      # a height that its page does not bear out is dropped, not trusted
+            fix["holds_ft"], fix["check_note"] = None, fix["check_note"] + "; the height is not"
+        fixes.append(fix)
+        note("found", f"{fix['name']}: ${fix['price']:,.2f} {fix['price_unit']}", type=fix["type"], checked=fix["checked"], source=fix["source"]["url"])
+        return f"Recorded. Check of the page: {fix['check_note']}.", False
+
+    run = _loop(client or anthropic.Anthropic(), SYSTEM, "Research flood fixes for apartment buildings in Houston, with prices and times, and record each one.", TOOLS, handle, fetch)
+    run = {**run, "fixes": fixes}
+    if save and fixes and not run["stop"].startswith("error"):
         flood.RESEARCH.parent.mkdir(parents=True, exist_ok=True)
         flood.RESEARCH.write_text(json.dumps(run, indent=1))
+    return run
+
+
+# ---- what it costs to put a flooded home back: a price for each line of the insurer's file ---------
+
+PRICE_SYSTEM = """You research prices for Brace, which prepares a file for a property insurer on what it costs to put a flooded apartment in Houston back as it was. You are given a list of things to price: building work, each in a stated unit, and pieces of furniture.
+
+For each thing on the list, find a page that states what it costs in the United States and call record_price once.
+
+Rules
+- Record a price only when a page states it, in the unit asked for. Copy the sentence that states the price into quote, word for word, and give that page's address.
+- When the page gives a range, record its low end as price and its high end as price_high.
+- Do not work out a price yourself and do not convert one unit into another. If a page prices the thing in another unit, look for another page.
+- For building work, the price should cover materials and labour together. Prefer a cost guide, a government or university page, or a trade publication.
+- For furniture, the price is what a comparable new piece sells for. A retailer's or a buying guide's stated price range for that kind of piece is what is wanted.
+- Open the page with web_fetch before you record from it, so the price can be checked against the page as it was read.
+- Prefer a web page to a PDF file: a PDF cannot be checked here.
+- If you cannot find a stated price for something, leave it out.
+- Stop when the list is covered or after twelve searches. Finish with one line saying how many you recorded."""
+
+
+def _price_tool(ids: list[str]) -> dict:
+    return {
+        "name": "record_price",
+        "description": "Record the stated price of one thing on the list, with the page it came from. Call once for each thing.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "item": {"type": "string", "enum": ids, "description": "Which thing on the list this prices."},
+                "price": {"type": "number", "description": "The stated price in US dollars, in the unit the list asks for. The low end if the page gives a range."},
+                "price_high": {"type": ["number", "null"], "description": "The high end, if the page gives a range. Otherwise null."},
+                "source_title": {"type": "string"},
+                "source_url": {"type": "string"},
+                "quote": {"type": "string", "description": "The sentence on the page that states the price, word for word."},
+            },
+            "required": ["item", "price", "price_high", "source_title", "source_url", "quote"],
+            "additionalProperties": False,
+        },
+    }
+
+
+def price(items: list[dict], client: anthropic.Anthropic | None = None, save_to=None, fetch=page_text) -> dict:
+    """Find a stated price for each item ({"id", "what", "unit"}) and check each against its page. Saves to `save_to` when given."""
+    known = {i["id"]: i for i in items}
+    prices: list[dict] = []
+
+    def handle(name: str, args: dict, read, note) -> tuple[str, bool]:
+        try:
+            item, low = known[args["item"]], float(args["price"])
+        except (KeyError, TypeError, ValueError):
+            return "Not recorded: the item must be one on the list and the price a number.", True
+        if low <= 0 or not str(args.get("source_url") or "").startswith("http") or not str(args.get("quote") or "").strip():
+            return "Not recorded: a price needs to be above zero, with a page address and the sentence that states it.", True
+        high = args.get("price_high")
+        high = float(high) if isinstance(high, (int, float)) and not isinstance(high, bool) and high > low else None
+        row = {"item": item["id"], "price": low, "price_high": high, "unit": item["unit"],
+               "source": {"title": str(args.get("source_title") or "").strip()[:160], "url": str(args["source_url"]).strip(), "quote": str(args["quote"]).strip()[:500]}}
+        row["checked"], row["check_note"] = confirm(row, read(row["source"]["url"]))
+        prices.append(row)
+        note("found", f"{item['what']}: ${low:,.2f}" + (f" to ${high:,.2f}" if high else "") + f" {item['unit']}", checked=row["checked"], source=row["source"]["url"])
+        return f"Recorded. Check of the page: {row['check_note']}.", False
+
+    listed = "\n".join(f"- {i['id']}: {i['what']} ({i['unit']})" for i in items)
+    run = _loop(client or anthropic.Anthropic(), PRICE_SYSTEM, f"Price each of these and record it:\n{listed}",
+                [SEARCH, FETCH, _price_tool(list(known))], handle, fetch)
+    run = {**run, "items": items, "prices": prices}
+    if save_to is not None and prices and not run["stop"].startswith("error"):
+        save_to.parent.mkdir(parents=True, exist_ok=True)
+        save_to.write_text(json.dumps(run, indent=1))
     return run

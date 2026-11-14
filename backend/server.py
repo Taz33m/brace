@@ -540,6 +540,29 @@ def place_find(model_id: str, q: str, start: str | None = None, mover: str = "wa
     return wayfind.find(model_id, q, start, mover, chair_in)
 
 
+@app.get("/api/file/{property_id}/{scan_id}")
+def insurer_file(property_id: int, scan_id: str, water_ft: float = Query(4.0, ge=0, le=12)) -> dict:
+    """The file on one home for a property insurer: outside and inside before the water, and the schedule of what that water would cost."""
+    from . import flood, insurer_file as f
+    try:
+        return f.file(property_id, scan_id, water_ft)
+    except (f.FileError, flood.FloodError) as e:
+        raise HTTPException(404, str(e))
+
+
+@app.get("/api/file/{property_id}/{scan_id}/inside.jpg")
+def insurer_file_photo(property_id: int, scan_id: str) -> FileResponse:
+    """The room as the scan saw it, before any water."""
+    from . import insurer_file as f
+    try:
+        path = f.photo(property_id, scan_id)
+    except f.FileError as e:
+        raise HTTPException(404, str(e))
+    if path is None:
+        raise HTTPException(404, "no picture of this room has been saved")
+    return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "max-age=3600"})
+
+
 @app.get("/api/flood")
 def flood_sites(water_ft: float = Query(4.0, ge=0, le=12)) -> dict:
     """Every Houston site the flood test can run on, with what that depth of water costs each if nothing is done."""

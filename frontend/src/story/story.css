@@ -241,3 +241,43 @@ html.st-on, html.st-on body, html.st-on #root { height: auto; min-height: 100%; 
 .ft-found a { color: inherit; }
 .ft-bar button { white-space: nowrap; }
 .ft-sites a { white-space: nowrap; }
+
+/* ---- the insurer's file: before on the left, the water and the schedule on the right ---- */
+.fi { position: fixed; inset: 0; display: grid; grid-template-columns: 44fr 56fr; background: var(--obsidian); color: var(--ivory); }
+.fi-before { display: grid; grid-template-rows: 1fr 1fr; gap: 2px; min-height: 0; }
+.fi-before figure { position: relative; margin: 0; overflow: hidden; min-height: 0; background: #14171c; }
+.fi-before svg, .fi-before img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.fi-before polygon { fill: rgba(255, 194, 14, 0.08); stroke: var(--amber); stroke-width: 3; vector-effect: non-scaling-stroke; }
+.fi-before polygon.is-wet { fill: rgba(24, 104, 196, 0.38); stroke: #9be0ff; }
+.fi-before figcaption { position: absolute; left: 0; right: 0; bottom: 0; padding: 60px 28px 20px; background: linear-gradient(to top, rgba(11, 11, 12, 0.92), rgba(11, 11, 12, 0)); display: grid; grid-template-columns: auto 1fr; column-gap: 16px; align-items: baseline; }
+.fi-before figcaption strong { font: 400 1.9rem/1 var(--heading); }
+.fi-before figcaption span { font: 400 14px/1.4 var(--sans); color: rgba(243, 236, 224, 0.9); }
+.fi-before figcaption small { grid-column: 2; margin-top: 5px; font: 500 10.5px/1 var(--sans); letter-spacing: 0.2em; text-transform: uppercase; color: var(--champagne); }
+.fi-after { position: relative; display: flex; flex-direction: column; min-height: 0; padding: 7vh 4.5vw 4vh; }
+.fi-home { position: absolute; left: 4.5vw; top: 3vh; }
+.fi-after header h1 { margin: 0; font: 400 clamp(1.9rem, 3vw, 3.2rem)/1 var(--heading); letter-spacing: -0.01em; }
+.fi-after header p { margin: 8px 0 0; font: 400 15px/1.3 var(--sans); color: rgba(243, 236, 224, 0.7); }
+.fi-water { display: flex; align-items: center; gap: 16px; margin-top: 3vh; }
+.fi-water > div { display: flex; gap: 2px; padding: 3px; border-radius: 999px; background: rgba(243, 236, 224, 0.08); }
+.fi-water button { padding: 8px 15px; border: 0; border-radius: 999px; font: 500 14px/1 var(--sans); color: rgba(243, 236, 224, 0.75); background: none; cursor: pointer; white-space: nowrap; }
+.fi-water button[aria-pressed="true"] { color: #14110f; background: var(--ivory); }
+.fi-water span { font: 400 15px/1 var(--sans); color: #9be0ff; }
+.fi-total { margin-top: 3vh; }
+.fi-total span { display: block; font: 500 12px/1 var(--sans); letter-spacing: 0.24em; text-transform: uppercase; color: rgba(243, 236, 224, 0.75); }
+.fi-total strong { display: block; margin-top: 8px; font: 400 clamp(2.8rem, 5.4vw, 5.6rem)/0.95 var(--heading); letter-spacing: -0.02em; color: #ff5a3c; font-variant-numeric: lining-nums tabular-nums; }
+.fi-lines { margin-top: 2.5vh; min-height: 0; overflow: auto; flex: 1; }
+.fi-lines table { width: 100%; border-collapse: collapse; font: 400 14px/1.3 var(--sans); font-variant-numeric: tabular-nums; }
+.fi-lines th { text-align: left; font-weight: 500; padding: 7px 14px 7px 0; }
+.fi-lines td { padding: 7px 14px 7px 0; color: rgba(243, 236, 224, 0.75); white-space: nowrap; }
+.fi-lines td:last-child { text-align: right; padding-right: 0; color: var(--ivory); }
+.fi-lines td.is-none { color: rgba(243, 236, 224, 0.4); }
+.fi-lines tr { border-bottom: 1px solid rgba(243, 236, 224, 0.09); }
+.fi-lines tr.fi-gap th { padding-top: 16px; font: 500 10.5px/1 var(--sans); letter-spacing: 0.2em; text-transform: uppercase; color: var(--champagne); }
+.fi-lines a { color: inherit; text-decoration-color: rgba(215, 194, 158, 0.5); text-underline-offset: 3px; }
+.fi-lines p { margin: 10px 0 0; font: 400 13px/1.4 var(--sans); color: rgba(243, 236, 224, 0.6); }
+.fi-after footer { display: flex; justify-content: space-between; align-items: baseline; margin-top: 2vh; }
+.fi-after footer a { font: 500 11px/1 var(--sans); letter-spacing: 0.2em; text-transform: uppercase; color: var(--champagne); text-decoration: none; padding-bottom: 5px; border-bottom: 1px solid rgba(215, 194, 158, 0.4); }
+.fi .fi-how { position: static; }
+.fi .fi-panel { left: 4.5vw; right: 4.5vw; bottom: 9vh; width: auto; }
+.fi-nophoto { position: absolute; inset: 0; background: #14171c; }
+.fi-total em { display: block; margin-top: 10px; font: 400 13px/1.3 var(--sans); font-style: normal; color: rgba(243, 236, 224, 0.6); }
