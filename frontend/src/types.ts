@@ -292,3 +292,14 @@ export interface FindHit { scan_id: string; scan_name: string; room: string | nu
 
 /** What came of approving an action. `delivery` is "resident_feed" when a notice was published to the building's households. */
 export interface Approval { ok: boolean; say: string; delivery?: string | null; household_count?: number; already_published?: boolean; photon_queued?: number | null }
+
+/** The site in three dimensions: a half-metre height grid with the aerial photo to drape over it. */
+export interface SiteScene {
+  property_id: number; name: string; homes: number | null;
+  bounds: [number, number, number, number]; rows: number; cols: number; cell_m: [number, number];
+  heights_url: string; texture_url: string; decode: { unit_m: number; what: string };
+  sources: { heights: string; photo: string };
+  structures: { id: string; polygon: [number, number][] | null; roof_height_m: number | null;
+                tallest: null | { height_m: number; from_wall_m: number; above_roof_m: number; lon: number; lat: number; what: string | null } }[];
+  positions: Record<string, { lon: number; lat: number; scan_id: string; scan_name: string | null }>;
+}

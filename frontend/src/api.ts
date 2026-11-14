@@ -1,4 +1,4 @@
-import type { Approval, Board, Building, ClockChange, Facing, FindHit, Measured, Portfolio, ResidentReport, SavedStep, Scenario, ScenarioMap, SiteModel } from "./types";
+import type { Approval, Board, Building, ClockChange, Facing, FindHit, Measured, Portfolio, ResidentReport, SavedStep, Scenario, ScenarioMap, SiteModel, SiteScene } from "./types";
 
 async function get<T>(path: string): Promise<T> {
   const r = await fetch(path);
@@ -27,6 +27,7 @@ export const api = {
   clock: (id: number, scenario: string, earlier: string, later: string) => get<ClockChange>(`/api/buildings/${id}/clock${q({ scenario, earlier, later })}`),
   /** The forecast as a table: one row per building, keyed by the CoStar property id. step "all" is every forecast step. */
   forecastCsv: (scenario: string, step: string | null) => `/api/scenarios/${scenario}/forecast.csv${q({ step })}`,
+  scene: (id: number) => get<SiteScene>(`/api/buildings/${id}/scene`),
   siteModel: (id: number) => get<SiteModel>(`/api/buildings/${id}/site-model`),
   board: () => get<Board>("/api/site-model/board"),
   measured: (id: number, scenario: string, step: string | null) =>

@@ -5,7 +5,7 @@ import { conversation } from "../conversation";
 import { costRange, exposureLine, hours, money, num, standingLine, when } from "../format";
 import { BEARING, nearestScanView, structureAt } from "../geo";
 import type { Action, AgentEvent, Building, Direction, Facing, Lead, LonLat, Measured, Message, Plan, Scenario, Selection } from "../types";
-import { modelHash, prepareHash, walkHash } from "../recovery/routes";
+import { modelHash, prepareHash, sceneHash, walkHash } from "../recovery/routes";
 import { ReportsFeed } from "./ReportsFeed";
 import { ConversationPanel } from "./ConversationPanel";
 import { PlanPanel, type RunState } from "./PlanPanel";
@@ -309,6 +309,7 @@ export function BuildingPage({ id, scenario, step, sdkKey, agentReady, voiceRead
         <button className="back" onClick={onBack}>Map</button>
         <a className="recover-link" href="#/recovery">Recover</a>
         {plan && <a className="recover-link" href={walkHash(scenario.id, step, id)}>Walk-through</a>}
+        <a className="recover-link" href={sceneHash(scenario.id, step, id)}>3D site</a>
         <a className="recover-link" href={modelHash(id)}>Site model</a>
         {b.scans.length > 0 && <button className="headset" onClick={openHeadset}>{worn ? "Headset connected" : "Open in headset"}</button>}
         <div className="title">

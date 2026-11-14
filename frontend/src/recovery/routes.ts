@@ -2,6 +2,7 @@
 export type AppRoute =
   | { kind: "prepare"; scenario: string | null; step: string | null; building: number | null; vr: boolean }
   | { kind: "walk"; scenario: string; step: string | null; building: number }
+  | { kind: "scene"; scenario: string; step: string | null; building: number }
   | { kind: "model"; building: number | null }
   | { kind: "recovery"; case_id: string | null }
   | { kind: "resident"; invitation_token: string | null }
@@ -78,10 +79,11 @@ export function parseAppRoute(hash: string): AppRoute {
     }
     const vr = prefix === "vr";
     const walk = prefix === "walk";
-    const prepare = vr || walk ? parts.slice(1) : parts;
+    const scene = prefix === "scene";
+    const prepare = vr || walk || scene ? parts.slice(1) : parts;
     if (!prepare.length) return invalid();
     const scenario = prepare[0];
-    if (["resident", "recovery", "vr", "walk", "model"].includes(scenario)) return invalid();
+    if (["resident", "recovery", "vr", "walk", "model", "scene"].includes(scenario)) return invalid();
     let step: string | null = null;
     let building: number | null = null;
     let offset = 1;
@@ -96,6 +98,8 @@ export function parseAppRoute(hash: string): AppRoute {
     }
     // The walk-through is always of one building.
     if (walk) return building === null ? invalid() : { kind: "walk", scenario, step, building };
+    // So is the 3D site.
+    if (scene) return building === null ? invalid() : { kind: "scene", scenario, step, building };
     return { kind: "prepare", scenario, step, building, vr };
   } catch {
     return invalid();
@@ -113,7 +117,7 @@ export function prepareHash(scenario: string | null, step: string | null = null,
     if (step !== null || building !== null || vr) throw new Error("A scenario is required for this route.");
     return "#/";
   }
-  if (["resident", "recovery", "vr", "walk", "model"].includes(scenario)) throw new Error("Reserved Brace route identifier.");
+  if (["resident", "recovery", "vr", "walk", "model", "scene"].includes(scenario)) throw new Error("Reserved Brace route identifier.");
   if (step === "b" || step === "-") throw new Error("Reserved Brace step identifier.");
   if (building !== null && !safeBuilding(building)) throw new Error("A positive building ID is required.");
   return `#/${vr ? "vr/" : ""}${encodedPart(scenario)}/${step === null ? "-" : encodedPart(step)}${building === null ? "" : `/b/${building}`}`;
@@ -164,4 +168,8 @@ export function consumeResidentInvitation(locationLike: InvitationLocation,
 
 export function modelHash(building?: number | null): string {
   return building == null ? "#/model" : `#/model/${building}`;
+}
+
+export function sceneHash(scenario: string, step: string | null, building: number): string {
+  return prepareHash(scenario, step, building).replace(/^#\//, "#/scene/");
 }

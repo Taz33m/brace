@@ -631,3 +631,34 @@ def what_measuring_changed(model: dict, without: dict, with_measurements: dict) 
                     "Two runs differ for many reasons; a quoted measurement is the part that can be traced.",
             "without": total(without), "with": total(with_measurements),
             "actions_quoting_a_measurement": sum(1 for r in rows if r["quotes"]), "rows": rows}
+
+
+# --- the site in three dimensions ---------------------------------------------------------------------
+def scene(property_id: int) -> dict | None:
+    """What a browser needs to stand the site up in 3D: the height grid, the photo to drape over it, each
+    roof's outline and height, the tall things that were looked at, and where each scan position is.
+    None when the site has no height model. Everything here is a measurement or a sponsor's record."""
+    heights = _read(OPEN / "reconstruct" / str(property_id) / "heights.json")
+    bundle = _read(building_dir(property_id) / "building.json")
+    if not heights or not heights.get("available") or bundle is None:
+        return None
+    model = build(property_id)
+    measured = {st["id"]: st for st in model["structures"]}
+    structures = []
+    for st in bundle.get("structures") or []:
+        m = measured.get(st["id"]) or {}
+        tall = (m.get("tallest_beside_it") or {}).get("value")
+        structures.append({"id": st["id"], "polygon": st.get("polygon"), "roof_height_m": (m.get("roof_height_m") or {}).get("value"),
+                           "tallest": tall if tall and tall.get("above_roof_m", 0) >= 1 else None})
+    src = heights["source"]
+    return {
+        "property_id": property_id, "name": bundle["record"].get("name"), "homes": bundle["record"].get("units"),
+        "bounds": heights["bounds"], "rows": heights["rows"], "cols": heights["cols"], "cell_m": heights["cell_m"],
+        "heights_url": f"/api/buildings/{property_id}/heights.png", "texture_url": f"/api/buildings/{property_id}/aerial.jpg",
+        "decode": {"unit_m": heights["encoding"]["unit_m"], "what": heights["encoding"]["what"]},
+        "sources": {"heights": f"Vexcel surface model, flown {src['surface']['first_capture']} to {src['surface']['last_capture']}",
+                    "photo": f"Vexcel aerial photo, {_day((bundle.get('aerial') or {}).get('captured'))}"},
+        "structures": structures,
+        "positions": {sw["id"]: {"lon": sw["lon"], "lat": sw["lat"], "scan_id": sc["id"], "scan_name": sc.get("name")}
+                      for sc in bundle.get("scans") or [] for sw in sc.get("sweeps") or [] if sw.get("lon") is not None and sw.get("lat") is not None},
+    }

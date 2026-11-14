@@ -423,6 +423,25 @@ def forecast_download(scenario_id: str, kind: str, step: str | None = None):
                     headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
 
+@app.get("/api/buildings/{building_id}/scene")
+def building_scene(building_id: int) -> dict:
+    """The site in three dimensions: height grid, photo, roof outlines and the measured tall things."""
+    _site_model(building_id)
+    found = site_model.scene(building_id)
+    if found is None:
+        raise HTTPException(404, "this site has no height model yet")
+    return found
+
+
+@app.get("/api/buildings/{building_id}/heights.png")
+def building_heights(building_id: int) -> FileResponse:
+    """Height above ground on a half-metre grid, packed two bytes to a cell. See /scene for how to read it."""
+    path = site_model.OPEN / "reconstruct" / str(building_id) / "heights.png"
+    if not path.exists():
+        raise HTTPException(404, "this site has no height model yet")
+    return FileResponse(path, media_type="image/png", headers={"Cache-Control": "max-age=3600"})
+
+
 @app.get("/api/site-model/board")
 def site_model_board() -> dict:
     """Each of the six stages across every gathered building: how many sites it has run for, and its number."""

@@ -170,3 +170,18 @@ def test_a_resident_message_without_a_place_is_placed_from_its_words_and_says_so
     assert placed["r1"]["where"]["room"] == "Bedroom" and placed["r1"]["where"]["thing"] == "window" and placed["r1"]["where"]["placed_by"] == "description"
     assert placed["r2"]["where"] is None                                    # names nothing the scan saw: left unplaced
     assert placed["r3"]["where"] == {"scan_id": "scanA", "room": "Verified home"}   # a verified place is never overwritten
+
+
+def test_the_3d_scene_carries_the_grid_the_photo_and_only_measured_things(site, tmp_path):
+    heights = tmp_path / "cache" / "open" / "reconstruct" / "7" / "heights.json"
+    data = json.loads(heights.read_text())
+    data.update({"available": True, "bounds": [-95.001, 29.0, -95.0, 29.001], "rows": 4, "cols": 3, "capture_date": "2026-02-12",
+                 "encoding": {"unit_m": 0.01, "what": "height above ground in metres"}})
+    heights.write_text(json.dumps(data))
+    scene = sm.scene(site)
+    assert (scene["rows"], scene["cols"]) == (4, 3) and scene["heights_url"].endswith("/7/heights.png") and scene["texture_url"].endswith("/7/aerial.jpg")
+    assert scene["sources"]["heights"] == "Vexcel surface model, flown 2026-01-02 to 2026-02-12" and "2026-02-12" in scene["sources"]["photo"]
+    s1, s2 = scene["structures"]
+    assert s1["roof_height_m"] == 7.4 and s1["tallest"]["height_m"] == 15.5
+    assert s2["roof_height_m"] is None and s2["tallest"] is None          # a roof nobody measured has no height in the scene
+    assert sm.scene(999) is None
