@@ -708,39 +708,32 @@ class CaseStore:
         if launcher is None:
             raise PlatformError(503, "assessment_unavailable", "The assessment service is not running.",
                                 retryable=True)
+        # One transaction decides "join the active run" or "create a run", so a second click
+        # can never slip between the lookup and the insert and get a revision conflict.
         with self._write() as conn:
             row = self._owner_case(conn, actor, case_id)
+            ticket = {"case_id": case_id, "base_analysis_revision": row["analysis_revision"]}
             active = conn.execute("SELECT run_id FROM runs WHERE case_id = ? AND base_analysis_revision = ? "
                                   "AND status = 'running'", (case_id, row["analysis_revision"])).fetchone()
-            if active is not None:
-                # Re-hand the same ticket to the launcher: AssessmentService dedupes in-flight runs
-                # and retries a failed commit with the saved envelope, so nothing is left "running".
-                existing = self._result(conn, case_id, active["run_id"])
-                ticket = {"run_id": active["run_id"], "case_id": case_id,
-                          "base_analysis_revision": row["analysis_revision"]}
+            created = active is None
+            if created:
+                self._check_revision(row, command.expected_revision)
+                run_id = new_id("run")
+                conn.execute("INSERT INTO runs VALUES (?,?,?,?,NULL,?,NULL)",
+                             (run_id, case_id, row["analysis_revision"], "running", self.now()))
+                self._bump(conn, case_id)
+                self._event(conn, case_id, "assessment.started", entity_id=run_id)
             else:
-                existing = None
-        if existing is not None:
-            try:
-                launcher(dict(ticket))
-            except Exception:
-                raise PlatformError(503, "assessment_unavailable",
-                                    "The assessment service is busy. Try again shortly.", retryable=True) from None
-            return existing
-        with self._write() as conn:
-            row = self._owner_case(conn, actor, case_id)
-            self._check_revision(row, command.expected_revision)
-            run_id = new_id("run")
-            conn.execute("INSERT INTO runs VALUES (?,?,?,?,NULL,?,NULL)",
-                         (run_id, case_id, row["analysis_revision"], "running", self.now()))
-            self._bump(conn, case_id)
-            self._event(conn, case_id, "assessment.started", entity_id=run_id)
+                run_id = active["run_id"]
             result = self._result(conn, case_id, run_id)
-            ticket = {"run_id": run_id, "case_id": case_id, "base_analysis_revision": row["analysis_revision"]}
+            ticket["run_id"] = run_id
         try:
-            launcher(dict(ticket))  # must return promptly; domain work runs in the lead's worker
+            # Must return promptly. For an active run this re-hands the same ticket:
+            # AssessmentService dedupes in-flight runs and retries a failed commit.
+            launcher(dict(ticket))
         except Exception:
-            self._fail_run(run_id, "The assessment service could not start this run; retry later.")
+            if created:
+                self._fail_run(run_id, "The assessment service could not start this run; retry later.")
             raise PlatformError(503, "assessment_unavailable",
                                 "The assessment service could not start. Try again shortly.", retryable=True) from None
         return result
