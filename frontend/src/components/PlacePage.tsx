@@ -7,10 +7,15 @@ import type { Voice } from "../voice";
 
 /**
  * Standing inside a scanned building and asking the way. You look around, ask where something is, and the
- * way is drawn on the floor in front of you: follow the marks, look at the next ring to walk to it. The
- * small plan at the lower left shows the whole route and where you are on it.
+ * way is drawn on the floor in front of you: follow the marks, look at the next ring or tap to walk to it. A way
+ * worked out for a wheelchair walks itself. The small plan at the lower left shows the whole route and where you
+ * are on it.
  */
 const FACE_M = 50, EYE_M = 1.4, DWELL_S = 1.0, REACH_M = 16;
+// Walking by itself: time to read the way first, then a position every STEP_S, a little longer before a lift or
+// stairs so the sign over it is read before it is taken. Each step waits for its pictures, which fade in over
+// FADE_S and then hold for the rest of SETTLE_S. A pointer that moves less than TAP_PX is a tap, not a drag.
+const FIRST_S = 2.5, STEP_S = 1.8, LEVEL_S = 1.0, FADE_S = 0.8, SETTLE_S = 1.1, TAP_PX = 6;
 const BLUE = 0x00b0e6, WHITE = 0xffffff;
 const rad = (deg: number) => (deg * Math.PI) / 180;
 const toward = (bearing: number, flat: number, y: number) => new THREE.Vector3(Math.sin(rad(bearing)) * flat, y, -Math.cos(rad(bearing)) * flat);
@@ -94,8 +99,21 @@ export function PlacePage({ model, watch = false }: { model: string; watch?: boo
     const camera = new THREE.PerspectiveCamera(88, 1, 0.05, 400);
     camera.rotation.order = "YXZ";
     scene.add(camera);
-    const faces = new THREE.Group(), marks = new THREE.Group();
-    scene.add(faces, marks);
+    const marks = new THREE.Group();
+    scene.add(marks);
+    // The pictures around you. On a step the old ones stay up until the new ones have come, then fade into them, so
+    // a step reads as a glide rather than a flash of black; the marks for the new place wait with them.
+    let faces = new THREE.Group(), leaving: THREE.Group | null = null, shown = "", ready = true, readyBy = 0, fadeAt = -1e9;
+    scene.add(faces);
+    const drop = (g: THREE.Group | null) => {
+      if (!g) return;
+      scene.remove(g);
+      g.traverse((o) => { if (o instanceof THREE.Mesh) { const m = o.material as THREE.MeshBasicMaterial; m.map?.dispose(); m.dispose(); o.geometry.dispose(); } });
+    };
+    const reveal = () => {
+      if (ready) return;
+      ready = true; faces.visible = marks.visible = true; fadeAt = performance.now();
+    };
     const loader = new THREE.TextureLoader();
     const reticle = new THREE.Mesh(new THREE.CircleGeometry(0.012, 24), new THREE.MeshBasicMaterial({ color: WHITE, depthTest: false, transparent: true, opacity: 0.95 }));
     reticle.position.z = -1; reticle.renderOrder = 9;
@@ -111,6 +129,8 @@ export function PlacePage({ model, watch = false }: { model: string; watch?: boo
     let moving: "walking" | "wheelchair" = "walking", chair = 27, asked = "";
     let targets: { object: THREE.Object3D; go: string }[] = [];
     let caption: THREE.Sprite | null = null, captionUntil = 0, plan: THREE.Sprite | null = null;
+    // Walking by itself along the way: when the next step is due, and whether a tap has paused it.
+    let walk: { at: number; paused: boolean } | null = null;
 
     const say = (text: string, seconds = 9) => {
       if (caption) camera.remove(caption);
@@ -178,13 +198,22 @@ export function PlacePage({ model, watch = false }: { model: string; watch?: boo
       return toward(b, Math.min(flat, REACH_M), -EYE_M + (to.z - here.z) * Math.min(1, REACH_M / Math.max(flat, 0.01)));
     };
 
-    const draw = () => {
-      faces.clear(); marks.clear(); targets = [];
+    /** The six pictures of where you stand, built only when you have moved: redrawing the way keeps the ones up. */
+    const picture = () => {
+      shown = here.id;
+      // Pictures that never came in time are dropped, and the ones on screen stay up until the next ones do.
+      if (ready) { drop(leaving); leaving = faces; leaving.traverse((o) => { o.renderOrder = 1; }); } else drop(faces);
+      faces = new THREE.Group(); faces.visible = marks.visible = false; ready = false; readyBy = performance.now() + 3000;
+      scene.add(faces);
+      const these = faces;
+      let waiting = 6;
+      const came = () => { if (these === faces && --waiting === 0) reveal(); };
       const heading = here.heading ?? 0, size = FACE_M * 2.002;
       const face = (n: number) => {
-        const tex = loader.load(api.placePano(model, here.id, n));
+        const tex = loader.load(api.placePano(model, here.id, n), came, undefined, came);
         tex.colorSpace = THREE.SRGBColorSpace;
-        const mesh = new THREE.Mesh(new THREE.PlaneGeometry(size, size), new THREE.MeshBasicMaterial({ map: tex, depthTest: false }));
+        // Transparent from the start, so fading out later needs no new shader halfway through a step.
+        const mesh = new THREE.Mesh(new THREE.PlaneGeometry(size, size), new THREE.MeshBasicMaterial({ map: tex, depthTest: false, transparent: true }));
         mesh.renderOrder = 0;
         return mesh;
       };
@@ -196,6 +225,11 @@ export function PlacePage({ model, watch = false }: { model: string; watch?: boo
       const caps = new THREE.Group(), up = face(0), down = face(5);
       up.position.y = FACE_M; up.rotation.x = Math.PI / 2; down.position.y = -FACE_M; down.rotation.x = -Math.PI / 2;
       caps.add(up, down); caps.rotation.y = -rad(heading); faces.add(caps);
+    };
+
+    const draw = () => {
+      marks.clear(); targets = [];
+      if (here.id !== shown) picture();
 
       const i = way.indexOf(here.id), next = i >= 0 && i < way.length - 1 ? at.get(way[i + 1])! : null;
       // The way: marks on the floor to the next position, and a ring there to look at.
@@ -243,21 +277,52 @@ export function PlacePage({ model, watch = false }: { model: string; watch?: boo
       const to = at.get(id);
       if (!to) return;
       here = to;
+      if (captionUntil === Infinity) captionUntil = 0;   // a caption left up goes once you move on
       draw();
       tell();
       const i = way.indexOf(id);
-      if (answer?.room && i === way.length - 1 && way.length > 1) say(`You are at ${answer.place ?? answer.room.type}.`, 7);
+      // Arriving on a walk that walked itself, the caption stays up for whoever is watching.
+      if (answer?.room && i === way.length - 1 && way.length > 1) say(`You are at ${answer.place ?? answer.room.type}.`, walk ? Infinity : 7);
     };
+    /** The next position along the way from where you stand, if you are on it and not there yet. */
+    const ahead = () => { const i = way.indexOf(here.id); return i >= 0 && i < way.length - 1 ? way[i + 1] : null; };
+    /** Which way the next mark lies, by compass: a lift's doors, or the next position. */
+    const onward = (): number | null => {
+      const id = ahead(), next = id ? at.get(id) : null;
+      if (!next) return null;
+      const leg = answer?.route?.legs.find((g) => g.from === here.id && g.to === next.id);
+      return leg?.kind === "lift" && leg.bearing != null ? leg.bearing : bearing(here, next);
+    };
+    // The second screen only follows: it never sets off on a walk of its own.
+    const walkOn = (afterS: number) => { if (!watch && ahead()) walk = { at: performance.now() + afterS * 1000, paused: false }; };
+    /** A tap, a click or a clicker's button. While the way walks itself it pauses or carries on; otherwise it is one
+     *  step, along the way when there is one, else to the ring that was picked out. */
+    const tap = (picked: string | null) => {
+      if (watch) return;
+      if (walk) {
+        walk.paused = !walk.paused;
+        if (walk.paused) say("Paused.", Infinity);
+        else { walk.at = performance.now(); captionUntil = 0; }
+        return;
+      }
+      const next = ahead() ?? picked;
+      if (next) go(next);
+    };
+    /** Stops a walk that walks itself, and takes down its "Paused." if it was paused. */
+    const halt = () => { if (walk?.paused) captionUntil = 0; walk = null; };
 
     const tell = () => { void api.placeTell(model, { position: here.id, yaw: lookBearing(), pitch: lookPitch(), mover: moving, chair_in: chair, answer }); };
     const take = (got: PlaceAnswer) => {
       answer = got.found ? got : null;
       way = got.route?.positions ?? [];
       before = got.changed?.walking_positions ?? [];
+      halt();
       setLast(got); setMover(moving);
       say(brief(got), 12);
       draw();
       tell();
+      // A way worked out for a wheelchair walks itself, once there has been time to read what it is.
+      if (moving === "wheelchair") walkOn(FIRST_S);
       return got;
     };
     const lookBearing = () => { const f = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion); return ((THREE.MathUtils.radToDeg(Math.atan2(f.x, -f.z)) % 360) + 360) % 360; };
@@ -266,10 +331,13 @@ export function PlacePage({ model, watch = false }: { model: string; watch?: boo
       ask: async (query: string) => {
         // "I'm in a wheelchair" is not a place to find: it changes how the way to the last place is worked out.
         if (USES_A_CHAIR.test(query)) return control.current!.moveBy("wheelchair");
+        // A new question stops any walk under way, so the way is asked from where you stand.
+        halt();
         asked = query;
         return take(await api.placeFind(model, query, here.id, moving, chair));
       },
       moveBy: async (how, chairIn) => {
+        halt();
         moving = how;
         if (chairIn && chairIn >= 18 && chairIn <= 40) chair = chairIn;
         setMover(how);
@@ -291,28 +359,51 @@ export function PlacePage({ model, watch = false }: { model: string; watch?: boo
     };
     const down = (e: PointerEvent) => { drag = { x: e.clientX, y: e.clientY }; moved = 0; };
     const move = (e: PointerEvent) => {
-      if (!drag || sensor) return;
+      if (!drag) return;
       moved += Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y);
-      yaw += (e.clientX - drag.x) * 0.25; pitch = Math.max(-85, Math.min(85, pitch + (e.clientY - drag.y) * 0.25));
+      // With the phone's own sense of direction a drag turns nothing, but it still is not a tap.
+      if (!sensor) {
+        yaw += (e.clientX - drag.x) * 0.25; pitch = Math.max(-85, Math.min(85, pitch + (e.clientY - drag.y) * 0.25));
+        camera.rotation.set(rad(pitch), rad(yaw), 0);
+      }
       drag = { x: e.clientX, y: e.clientY };
-      camera.rotation.set(rad(pitch), rad(yaw), 0);
     };
+    let gazed: THREE.Object3D | null = null, held = 0;
+    /** The ring at the middle of the view, the one being looked at. */
+    const looked = () => targets.find((t) => t.object === gazed)?.go ?? null;
     const ray = new THREE.Raycaster();
     const up = (e: PointerEvent) => {
-      // A tap, not a drag, on a ring walks there: the same as looking at it in the headset.
-      if (drag && moved < 6 && !live.current.stereo) {
-        const box = renderer.domElement.getBoundingClientRect();
-        ray.setFromCamera(new THREE.Vector2(((e.clientX - box.left) / box.width) * 2 - 1, -((e.clientY - box.top) / box.height) * 2 + 1), camera);
-        const hit = ray.intersectObjects(targets.map((t) => t.object), false)[0]?.object;
-        const t = hit && targets.find((x) => x.object === hit);
-        if (t) go(t.go);
+      // A tap or click, not a drag, anywhere on the picture. Flat on a screen it can pick out a ring; in the split
+      // headset view where it lands means nothing, so it is the ring being looked at.
+      if (drag && moved < TAP_PX && e.button === 0) {
+        let picked: string | null = null;
+        if (live.current.stereo) picked = looked();
+        else if (ready) {
+          const box = renderer.domElement.getBoundingClientRect();
+          ray.setFromCamera(new THREE.Vector2(((e.clientX - box.left) / box.width) * 2 - 1, -((e.clientY - box.top) / box.height) * 2 + 1), camera);
+          const hit = ray.intersectObjects(targets.map((t) => t.object), false)[0]?.object;
+          picked = (hit && targets.find((x) => x.object === hit)?.go) || null;
+        }
+        tap(picked);
       }
       drag = null;
+    };
+    const lift = () => { drag = null; };
+    // Space, Enter and the up arrow are a tap too: cheap clickers and some headsets' buttons send them.
+    const key = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      // Not keys typed into the question box, nor ones meant for a button that has the focus; and a held key is one tap.
+      if (e.repeat || e.metaKey || e.ctrlKey || e.altKey || (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT|BUTTON)$/.test(t.tagName)))) return;
+      if (e.key === " " || e.key === "Enter" || e.key === "ArrowUp") { e.preventDefault(); tap(looked()); }
+      // G plays any way through by itself, or carries on with one that was paused.
+      else if (e.key === "g" || e.key === "G") { if (!walk) walkOn(0); else if (walk.paused) tap(null); }
     };
     window.addEventListener("deviceorientation", onOrient);
     renderer.domElement.addEventListener("pointerdown", down);
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", lift);
+    if (!watch) window.addEventListener("keydown", key);
     const resize = () => renderer.setSize(el.clientWidth, el.clientHeight);
     window.addEventListener("resize", resize);
 
@@ -334,14 +425,43 @@ export function PlacePage({ model, watch = false }: { model: string; watch?: boo
       }).catch(() => {});
     }, 250) : 0;
     const clock = new THREE.Clock();
-    let gazed: THREE.Object3D | null = null, held = 0, raf = 0;
+    let raf = 0;
     const frame = () => {
       raf = requestAnimationFrame(frame);
       const dt = clock.getDelta(), now = performance.now();
+      // The new pictures fade in over the old; if they are slow to come, show what has come after a while.
+      if (!ready && now > readyBy) reveal();
+      if (leaving && ready) {
+        const k = (now - fadeAt) / (FADE_S * 1000);
+        if (k >= 1) { drop(leaving); leaving = null; }
+        else { const o = 1 - k * k * (3 - 2 * k); leaving.traverse((m) => { if (m instanceof THREE.Mesh) (m.material as THREE.MeshBasicMaterial).opacity = o; }); }
+      }
+      // Walking by itself: the next step once it is due and the last one's pictures have come and settled.
+      if (walk) {
+        const next = ahead();
+        if (!next) walk = null;   // arrived, or stepped off the way
+        else if (!walk.paused && ready && now >= walk.at && now - fadeAt >= SETTLE_S * 1000) {
+          go(next);
+          const then = ahead(), leg = then ? answer?.route?.legs.find((g) => g.from === here.id && g.to === then) : null;
+          walk.at = now + (STEP_S + (leg && (leg.kind === "lift" || leg.kind === "stairs" || leg.level_change) ? LEVEL_S : 0)) * 1000;
+        }
+      }
+      // With no sense of direction to follow (a desktop), a walk walking itself turns the view the way it is going.
+      if (walk && !walk.paused && !sensor && !drag) {
+        const b = onward();
+        if (b != null) {
+          const k = 1 - Math.exp(-2 * dt);
+          yaw += (((((-b - yaw) % 360) + 540) % 360) - 180) * k;
+          pitch += (-8 - pitch) * k;
+          camera.rotation.set(rad(pitch), rad(yaw), 0);
+        }
+      }
       scene.updateMatrixWorld();
       ray.setFromCamera(new THREE.Vector2(0, 0), camera);
-      const hit = ray.intersectObjects(targets.map((t) => t.object), false)[0]?.object ?? null;
-      if (hit !== gazed) { gazed = hit; held = 0; }
+      const hit = ready ? ray.intersectObjects(targets.map((t) => t.object), false)[0]?.object ?? null : null;
+      // The second screen only follows, and a walk walking itself needs no looking at; a paused one does.
+      const dwell = !watch && !(walk && !walk.paused);
+      if (hit !== gazed || !dwell) { gazed = hit; held = 0; }
       else if (hit) {
         held += dt;
         if (held >= DWELL_S) { held = -1e6; const t = targets.find((x) => x.object === hit); if (t) go(t.go); }
@@ -368,9 +488,14 @@ export function PlacePage({ model, watch = false }: { model: string; watch?: boo
       cancelAnimationFrame(raf);
       if (follow) window.clearInterval(follow);
       window.removeEventListener("deviceorientation", onOrient);
+      renderer.domElement.removeEventListener("pointerdown", down);
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", lift);
+      window.removeEventListener("keydown", key);
       window.removeEventListener("resize", resize);
+      walk = null;
+      drop(leaving); drop(faces);
       control.current = null;
       renderer.dispose();
       el.removeChild(renderer.domElement);
@@ -405,7 +530,7 @@ export function PlacePage({ model, watch = false }: { model: string; watch?: boo
       {place && !started && (
         <div className="vr-gate">
           <h1>{place.name}</h1>
-          <p>Turn the phone sideways, press Start, then put it in the headset. Ask where something is. The way is drawn on the floor: look at the blue ring to walk to it.</p>
+          <p>Turn the phone sideways, press Start, then put it in the headset. Ask where something is. The way is drawn on the floor: look at the blue ring, or tap, to walk to it.</p>
           <button className="primary" onClick={start}>Start</button>
           <label><input type="checkbox" checked={stereo} onChange={(e) => setStereo(e.target.checked)} /> Split the screen for a headset</label>
         </div>
@@ -413,9 +538,10 @@ export function PlacePage({ model, watch = false }: { model: string; watch?: boo
       {place && started && !stereo && !watch && (
         <form className="vr-bar" onSubmit={(e) => { e.preventDefault(); if (typed.trim()) { void control.current?.ask(typed.trim()); setTyped(""); } }}>
           <input value={typed} onChange={(e) => setTyped(e.target.value)} placeholder="Where is the git push-up challenge?" aria-label="Ask where something is" />
-          <button>Ask</button>
+          {/* A button clicked with the mouse lets go of the focus, so a clicker's Space or Enter then steps rather than pressing it again. */}
+          <button onClick={(e) => { if (e.detail) e.currentTarget.blur(); }}>Ask</button>
           <span>{last ? (last.found && last.route ? `${last.route.metres} m` : "") : voiceReady ? "Or just ask aloud" : ""}</span>
-          <button type="button" aria-pressed={mover === "wheelchair"} onClick={() => void control.current?.moveBy(mover === "wheelchair" ? "walking" : "wheelchair")}>
+          <button type="button" aria-pressed={mover === "wheelchair"} onClick={(e) => { if (e.detail) e.currentTarget.blur(); void control.current?.moveBy(mover === "wheelchair" ? "walking" : "wheelchair"); }}>
             {mover === "wheelchair" ? "In a wheelchair" : "Walking"}
           </button>
           <button type="button" onClick={() => setStereo(true)}>Headset view</button>

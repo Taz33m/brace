@@ -13,12 +13,13 @@ import "./show.css";
  *   Left arrow, Page Up             the shot before
  *   Enter                           the one thing a shot asks a person to decide (approving a notice)
  *   R                               play this shot again        F   fill the screen
+ *   V                               the filmed version of a moment done by hand, for when a phone or the Wi-Fi lets us down
  */
 type Cue =
   | { at: number; key: string }                    // a key the page already answers to
   | { at: number; hash: string }                   // another address in the same page
   | { at: number; click: string; text?: RegExp };  // press something on the page (the first match whose words fit)
-interface Beat { caption?: string; cues?: Cue[]; decide?: boolean; needs?: "furniture" }
+interface Beat { caption?: string; cues?: Cue[]; decide?: boolean; needs?: "furniture"; instead?: string }   // instead: the filmed version of a moment done by hand
 interface Shot {
   id: string;
   scenario: string;
@@ -46,17 +47,19 @@ const SHOTS: Shot[] = [
     { caption: "One of them: The Parker at Ellington." },
     { caption: "The scan's own GPS puts this home off its roof. Brace moves it back.", cues: [{ at: 0, key: "2" }] },
     { caption: "One pine, 17.9 metres tall, 1.5 metres from a wall.", cues: [{ at: 0, key: "1" }, { at: 1700, click: ".scene-jobs button", text: /evergreen|pine/i }] },
-    { caption: "The plan asks residents to clear their balconies.", cues: [{ at: 0, click: ".scene-jobs button", text: /resident/i }] },
-    { decide: true, cues: [{ at: 0, click: ".scene-approve" }] },
     { caption: "Twelve hours out, the same building gets a different plan.", cues: [{ at: 0, hash: "#/scene/beryl-2024/adv37/b/4303509" }, { at: 900, key: "1" }] },
+    { caption: "Brace writes the notice. The owner sends it.", instead: "07_notice_phone", cues: [{ at: 0, click: ".scene-jobs button", text: /resident/i }] },
+    { decide: true, cues: [{ at: 0, click: ".scene-approve" }] },
+    { caption: "A resident answers. It lands in the right room.", instead: "08_reply_phone", cues: [{ at: 0, key: "1" }] },
   ] },
   { id: "room", scenario: "After the storm", page: "#/furnish/4303509/39JTmBzqWxr", beats: [
     {},
     { cues: [{ at: 0, key: "2" }] },
     { needs: "furniture", cues: [{ at: 0, key: "3" }] },
   ] },
-  { id: "inside", scenario: "Inside any building", page: "#/place/P3S6VUTP3qB/watch", hands: true },
+  { id: "inside", scenario: "Inside any building", page: "#/place/P3S6VUTP3qB/watch", hands: true, beats: [{ instead: "10_wheelchair_lift" }] },
   { id: "end", scenario: "Brace", card: "end" },
+  { id: "call", scenario: "On the line", page: `#/scene/${PARKER}`, beats: [{ instead: "11_call" }] },
 ];
 
 const FADE_MS = 700;
@@ -67,6 +70,7 @@ export function ShowPage({ start = 0 }: { start?: number }) {
   const [beat, setBeat] = useState(0);
   const [leaving, setLeaving] = useState<number | null>(null);
   const [again, setAgain] = useState(0);
+  const [instead, setInstead] = useState<string | null>(null);
   const [loaded, setLoaded] = useState<Record<string, boolean>>({});
   const frames = useRef(new Map<string, HTMLIFrameElement>());
   const films = useRef(new Map<string, HTMLVideoElement>());
@@ -89,7 +93,7 @@ export function ShowPage({ start = 0 }: { start?: number }) {
   const go = useCallback((to: number) => {
     setAt((now) => {
       const next = Math.max(0, Math.min(shots.length - 1, to));
-      if (next !== now) { setLeaving(now); setBeat(0); window.setTimeout(() => setLeaving((l) => (l === now ? null : l)), FADE_MS + 50); }
+      if (next !== now) { setLeaving(now); setBeat(0); setInstead(null); window.setTimeout(() => setLeaving((l) => (l === now ? null : l)), FADE_MS + 50); }
       return next;
     });
   }, [shots.length]);
@@ -133,8 +137,13 @@ export function ShowPage({ start = 0 }: { start?: number }) {
     // A decision is skipped by the arrow: only Enter takes it.
     let b = beat + 1;
     while (b < beats.length && beats[b].decide) b += 1;
+    setInstead(null);
     if (b < beats.length) setBeat(b); else go(at + 1);
   }, [beat, beats, at, go]);
+
+  // The filmed version of this moment, if it has been filmed: the nearest one at or before this beat.
+  const filmed = [...beats.slice(0, beat + 1)].reverse().find((b) => b.instead)?.instead;
+  const standIn = useCallback(() => setInstead((now) => (now ? null : filmed && clips?.has(filmed) ? filmed : null)), [filmed, clips]);
 
   const decide = useCallback(() => {
     const i = beats.findIndex((b, n) => n > beat - 1 && b.decide);
@@ -149,6 +158,7 @@ export function ShowPage({ start = 0 }: { start?: number }) {
       else if (e.key === "ArrowLeft" || e.key === "PageUp") { e.preventDefault(); go(at - 1); }
       else if (e.key === "Enter") { e.preventDefault(); decide(); }
       else if (e.key === "r" || e.key === "R") { setBeat(0); setAgain((n) => n + 1); }
+      else if (e.key === "v" || e.key === "V") standIn();
       else if (e.key === "f" || e.key === "F") { void document.documentElement.requestFullscreen?.().catch(() => {}); }
       else if (e.key === "Home") go(0);
     };
@@ -157,7 +167,7 @@ export function ShowPage({ start = 0 }: { start?: number }) {
     for (const f of frames.current.values()) { try { if (f.contentWindow) windows.push(f.contentWindow); } catch { /* not ours */ } }
     windows.forEach((w) => w.addEventListener("keydown", key));
     return () => windows.forEach((w) => { try { w.removeEventListener("keydown", key); } catch { /* gone */ } });
-  }, [next, go, decide, at, loaded]);
+  }, [next, go, decide, standIn, at, loaded]);
 
   // The address remembers the shot, so a reload comes back to it.
   useEffect(() => { window.history.replaceState(window.history.state, "", `#/show/${at + 1}`); }, [at]);
@@ -180,7 +190,8 @@ export function ShowPage({ start = 0 }: { start?: number }) {
                                          allow="fullscreen" onLoad={() => setLoaded((l) => ({ ...l, [s.id]: true }))} />}
         </div>
       ))}
-      {caption && <p className="reel-caption" key={`${shot.id}:${caption}`}>{caption}</p>}
+      {instead && <video className="reel-instead" key={instead} src={`/api/film/${instead}.mp4`} muted playsInline autoPlay />}
+      {caption && !instead && <p className="reel-caption" key={`${shot.id}:${caption}`}>{caption}</p>}
       <ol className="reel-rail" aria-label="Scenarios">
         {shots.map((s, i) => <li key={s.id} className={`${i === at ? "is-on" : i < at ? "is-done" : ""}${first[i] ? " is-first" : ""}`} />)}
       </ol>

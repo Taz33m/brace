@@ -24,3 +24,5 @@
 .reel-rail li.is-done { background: rgba(255, 255, 255, 0.42); }
 .reel-rail li.is-on { background: #fff; }
 @media (prefers-reduced-motion: reduce) { .reel-shot { transition: none; } .reel-caption { animation: none; } }
+/* The filmed version of a moment done by hand, laid over the live page when it is called for. */
+.reel-instead { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #07090c; animation: show-in 400ms ease both; }
