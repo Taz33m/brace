@@ -19,7 +19,7 @@ from sse_starlette.sse import EventSourceResponse
 from . import clock, hazards, matterport, openings, portfolio as portfolio_data, rain, screen, site_model, vexcel, voice
 from .agent import VIEW_TO_OBLIQUE, Planner
 from .building import BuildingError, Site, building_dir
-from .config import MATTERPORT_SDK_KEY
+from .config import DATA_DIR, MATTERPORT_SDK_KEY
 
 app = FastAPI(title="Brace")
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5174", "http://127.0.0.1:5174"],
@@ -542,6 +542,24 @@ def place_find(model_id: str, q: str, start: str | None = None, mover: str = "wa
     if mover not in ("walking", "wheelchair"):
         raise HTTPException(400, "mover is walking or wheelchair")
     return wayfind.find(model_id, q, start, mover, chair_in)
+
+
+# The rendered shots the show plays between the live pages. They sit under data/, which is never committed:
+# some of them carry sponsor imagery.
+FILM_DIR = DATA_DIR / "film"
+
+
+@app.get("/api/film")
+def film_clips() -> dict:
+    """Which shots have been rendered, so the show plays a clip where there is one and the live page where there is not."""
+    return {"clips": sorted(p.stem for p in FILM_DIR.glob("*.mp4"))} if FILM_DIR.is_dir() else {"clips": []}
+
+
+@app.get("/api/film/{name}.mp4")
+def film_clip(name: str) -> FileResponse:
+    if not re.fullmatch(r"[a-z0-9_]{1,40}", name) or not (FILM_DIR / f"{name}.mp4").is_file():
+        raise HTTPException(404, "no such shot")
+    return FileResponse(FILM_DIR / f"{name}.mp4", media_type="video/mp4")
 
 
 # What the person in the headset is seeing, for a second screen to show alongside. One per building; newest wins.

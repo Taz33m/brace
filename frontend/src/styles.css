@@ -336,3 +336,11 @@ form.vr-bar span { margin-right: 0; font-size: 13.5px; }
 .place-watch dd { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
 .place-watch-note { margin-top: 12px; font-size: 12.5px; color: rgba(255, 255, 255, 0.6); }
 form.vr-bar button[aria-pressed="true"] { color: #fff; background: #0054a6; border-color: #0054a6; }
+
+/* A page playing inside the show is a shot: its own navigation goes and the picture fills the frame. */
+html[data-show] .mast, html[data-show] .briefing, html[data-show] .ranked, html[data-show] .leaflet-control-zoom { display: none; }
+html[data-show] .map-page { grid-template-rows: minmax(0, 1fr); }
+html[data-show] .map-body { grid-template-columns: minmax(0, 1fr); }
+html[data-show] .scene-beats, html[data-show] .scene-source, html[data-show] .scene-steps, html[data-show] .scene-place a, html[data-show] .furnish-states { display: none; }
+/* A label a shot must carry (cleared, or an illustration) sits where the show's captions sit, in the same type. */
+html[data-show] .furnish-label { left: 6vw; bottom: 12.5vh; max-width: 62vw; font: 300 clamp(20px, 3.2vh, 38px)/1.2 "Helvetica Neue", Helvetica, Arial, sans-serif; text-shadow: 0 2px 24px rgba(0, 0, 0, 0.85); }
