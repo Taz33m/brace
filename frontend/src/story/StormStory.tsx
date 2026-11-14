@@ -491,7 +491,7 @@ function Ground({ chapter: c }: { chapter: Chapter }) {
         </div>
         <div data-g="place" className="st-place">
           <h2>{homes?.name}</h2>
-          <p>{[homes?.units ? `${homes.units} homes` : null, homes?.built ? `built ${homes.built}` : null].filter(Boolean).join(", ")}</p>
+          <p>{[homes?.units ? `${homes.units.toLocaleString("en-US")} homes` : null, homes?.built ? `built ${homes.built}` : null].filter(Boolean).join(", ")}</p>
           {homes?.sold && <p className="st-place-rent">{homes.sold}<small>{homes.soldHow}</small></p>}
           {homes?.rent && <p className="st-place-rent">{homes.rent}<small>CoStar apartment listing</small></p>}
           {!!homes?.why.length && <ul className="st-why">{homes.why.map((w) => <li key={w}>{w}</li>)}</ul>}
