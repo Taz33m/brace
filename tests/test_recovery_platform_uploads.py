@@ -150,3 +150,16 @@ def test_cannot_attach_other_households_upload_or_reuse_one(phones):
 def test_owner_cannot_upload_as_resident(phones):
     owner, _, _ = phones
     assert upload(owner, png_bytes()).status_code == 401
+
+
+@pytest.mark.parametrize("error", [EOFError, IndexError, __import__("struct").error])
+def test_decoder_crashes_become_422_not_500(monkeypatch, error):
+    from backend.recovery.platform.errors import PlatformError
+
+    def boom(*a, **k):
+        raise error("hostile file")
+
+    monkeypatch.setattr(uploads.Image, "open", boom)
+    with pytest.raises(PlatformError) as e:
+        uploads.decode_image(b"\x89PNG not really")
+    assert e.value.status == 422

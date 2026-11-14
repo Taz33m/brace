@@ -75,7 +75,8 @@ def test_start_creates_ticket_and_repeat_returns_same_run(store, world):
                                                   "base_analysis_revision": analysis}]
     assert first.analysis_revision == analysis  # starting a run does not change inputs
     again = start(store, launcher)
-    assert again.run_id == first.run_id and len(launcher.tickets) == 1
+    # Same run; the launcher may see the same ticket again (it dedupes by run_id).
+    assert again.run_id == first.run_id and all(t == launcher.tickets[0] for t in launcher.tickets)
 
 
 def test_launcher_failure_marks_run_failed_and_is_503(store, world):
@@ -208,3 +209,36 @@ def test_real_assessment_service_handshake(store, world):
     view = store.owner_snapshot(OWNER, "case_test")
     assert view.assessments[0].status == "draft" and view.current_assessment_id
     assert [t.status for t in view.tasks] == ["proposed"]
+
+
+def test_failed_commit_does_not_leave_run_stuck(store, world, monkeypatch):
+    """A worker whose commit fails must be retryable from start_assessment (no permanent running)."""
+    from backend.recovery.domain.service import AssessmentService
+
+    class ScriptedAgent:
+        def __init__(self, snapshot, inputs, inspect_image=None):
+            self.snapshot = snapshot
+
+        def run(self):
+            return envelope(self.snapshot["run_id"], self.snapshot["case"]["analysis_revision"])
+
+    real_complete, calls = store.complete_assessment, []
+
+    def flaky(run_id, base, result):
+        calls.append(run_id)
+        if len(calls) == 1:
+            raise RuntimeError("database is locked")
+        return real_complete(run_id, base, result)
+
+    monkeypatch.setattr(store, "complete_assessment", flaky)
+    service = AssessmentService(store, lambda snap: ({}, None), agent_factory=ScriptedAgent, max_workers=1)
+    try:
+        first = start(store, service.launch)
+        with pytest.raises(RuntimeError):
+            service.futures[first.run_id].result(timeout=10)
+        again = start(store, service.launch)
+        assert again.run_id == first.run_id
+        service.futures[first.run_id].result(timeout=10)
+    finally:
+        service.close()
+    assert store.owner_snapshot(OWNER, "case_test").assessments[0].status == "draft"

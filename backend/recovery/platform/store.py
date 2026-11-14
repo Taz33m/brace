@@ -583,7 +583,22 @@ class CaseStore:
             active = conn.execute("SELECT run_id FROM runs WHERE case_id = ? AND base_analysis_revision = ? "
                                   "AND status = 'running'", (case_id, row["analysis_revision"])).fetchone()
             if active is not None:
-                return self._result(conn, case_id, active["run_id"])
+                # Re-hand the same ticket to the launcher: AssessmentService dedupes in-flight runs
+                # and retries a failed commit with the saved envelope, so nothing is left "running".
+                existing = self._result(conn, case_id, active["run_id"])
+                ticket = {"run_id": active["run_id"], "case_id": case_id,
+                          "base_analysis_revision": row["analysis_revision"]}
+            else:
+                existing = None
+        if existing is not None:
+            try:
+                launcher(dict(ticket))
+            except Exception:
+                raise PlatformError(503, "assessment_unavailable",
+                                    "The assessment service is busy. Try again shortly.", retryable=True) from None
+            return existing
+        with self._write() as conn:
+            row = self._owner_case(conn, actor, case_id)
             self._check_revision(row, command.expected_revision)
             run_id = new_id("run")
             conn.execute("INSERT INTO runs VALUES (?,?,?,?,NULL,?,NULL)",
