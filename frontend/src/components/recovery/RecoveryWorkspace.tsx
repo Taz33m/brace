@@ -35,6 +35,8 @@ export type RecoveryWorkspaceProps = {
   selected_evidence_id: string | null;
   map_slot: ReactNode;
   interior_slot: ReactNode;
+  aerial_slot?: ReactNode;
+  value_slot?: ReactNode;
   on_open_case: (case_id: string) => void;
   on_back_to_prepare: () => void;
   on_focus: (location: LocationRef) => void;
@@ -170,13 +172,14 @@ export function RecoveryWorkspace(props: RecoveryWorkspaceProps) {
             on_select_evidence={selectEvidence}
             map_slot={props.map_slot}
             interior_slot={props.interior_slot}
+            aerial_slot={props.aerial_slot}
           />
           {view && <EvidenceInspector selected_evidence_id={selected_evidence_id} evidence={selectedEvidence} on_focus={on_focus} on_select_evidence={selectEvidence} />}
         </div>
 
         {view ? (
           <div className="rw-col rw-col--right">
-            <RightPanels view={view} tab={tab} onTab={setTab} busy={busy} runner={runner} selected_evidence_id={selected_evidence_id} on_focus={on_focus} on_select_evidence={selectEvidence} />
+            <RightPanels view={view} tab={tab} onTab={setTab} busy={busy} runner={runner} selected_evidence_id={selected_evidence_id} on_focus={on_focus} on_select_evidence={selectEvidence} value_slot={props.value_slot} />
           </div>
         ) : state === "loading" ? (
           <div className="rw-col rw-col--right">
@@ -197,13 +200,14 @@ type RightPanelsProps = {
   selected_evidence_id: string | null;
   on_focus: (location: LocationRef) => void;
   on_select_evidence: (evidence_id: string) => void;
+  value_slot?: ReactNode;
 };
 
 /**
  * Condition / Value / Recovery. All three panels stay rendered and the inactive ones are `hidden`, so drafts,
  * open forms and their errors survive a tab switch. Their contents are keyed by case_id: a new case starts clean.
  */
-function RightPanels({ view, tab, onTab, busy, runner, selected_evidence_id, on_focus, on_select_evidence }: RightPanelsProps) {
+function RightPanels({ view, tab, onTab, busy, runner, selected_evidence_id, on_focus, on_select_evidence, value_slot }: RightPanelsProps) {
   const caseKey = view.case.case_id;
   const tabs = [
     { value: "condition" as const, label: "Condition", count: view.observations.length },
@@ -226,7 +230,7 @@ function RightPanels({ view, tab, onTab, busy, runner, selected_evidence_id, on_
           />
         </TabPanel>
         <TabPanel idBase={TAB_ID} value="value" hidden={tab !== "value"} className="rw-tabpanel">
-          <ValueTab key={caseKey} view={view} busy={busy} runner={runner} on_select_evidence={on_select_evidence} />
+          <ValueTab key={caseKey} view={view} busy={busy} runner={runner} on_select_evidence={on_select_evidence} value_slot={value_slot} />
         </TabPanel>
         <TabPanel idBase={TAB_ID} value="recovery" hidden={tab !== "recovery"} className="rw-tabpanel">
           <RecoveryTab key={caseKey} view={view} busy={busy} runner={runner} on_focus={on_focus} on_select_evidence={on_select_evidence} />

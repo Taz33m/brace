@@ -61,7 +61,7 @@ test("commands/store: a second run of a pending key is ignored (no double send)"
   assertEqual(await first, true);
 });
 
-test("commands/store: a failure stays visible; retry re-sends the same body with the latest revision", async () => {
+test("commands/store: an uncertain failure retries the exact original revision after an SSE update", async () => {
   const srv = fakeServer();
   const store = createCommandStore({ on_command: srv.on_command, case_revision: 7, scope: "case-a" });
   const key = "task:fx-task-membrane:accepted";
@@ -83,13 +83,39 @@ test("commands/store: a failure stays visible; retry re-sends the same body with
   const again = store.retry(key);
   assertEqual(store.status(key), { pending: true, error: null }, "retry clears the error while pending");
   assertEqual(srv.sent.length, 2);
-  // Same body (the task revision stays as captured), latest case revision.
-  assertEqual(srv.sent[1].command, { ...body, expected_revision: 9 } as OwnerCommand);
+  // Same body and original case revision keep the parent's idempotency signature intact.
+  assertEqual(srv.sent[1].command, { ...body, expected_revision: 7 } as OwnerCommand);
   srv.sent[1].answer.resolve();
   assertEqual(await again, true);
   assertEqual(store.status(key), IDLE);
   assertEqual(await store.retry("never-run"), false, "retry without a stored body sends nothing");
   assertEqual(srv.sent.length, 2);
+});
+
+test("commands/store: notice resubmission after a lost response preserves the original request", async () => {
+  const srv = fakeServer();
+  const store = createCommandStore({ on_command: srv.on_command, case_revision: 2, scope: "case-a" });
+  const first = store.run("notice:publish", NOTICE_A);
+  srv.sent[0].answer.reject(new Error("Response lost after commit"));
+  await first;
+  store.setRevision(3);
+  const repeated = store.run("notice:publish", { ...NOTICE_A });
+  assertEqual(srv.sent[1].command, srv.sent[0].command, "NoticeComposer calls run again; it must also preserve revision");
+  srv.sent[1].answer.resolve();
+  assertEqual(await repeated, true);
+});
+
+test("commands/store: a definite rejection permits a later attempt with the fresh revision", async () => {
+  const srv = fakeServer();
+  const store = createCommandStore({ on_command: srv.on_command, case_revision: 2, scope: "case-a" });
+  const first = store.run("notice:publish", NOTICE_A);
+  srv.sent[0].answer.reject({ status: 409, error: { code: "revision_conflict", message: "The case changed." } });
+  await first;
+  store.setRevision(3);
+  const repeated = store.retry("notice:publish");
+  assertEqual(srv.sent[1].command, { ...NOTICE_A, expected_revision: 3 });
+  srv.sent[1].answer.resolve();
+  assertEqual(await repeated, true);
 });
 
 test("commands/store: changing the scope clears every pending flag, error and stored body", async () => {

@@ -14,6 +14,8 @@ import { DraftNotices } from "./DraftNotices";
 import { SupportInbox } from "./SupportInbox";
 import { SpatialViewer } from "./SpatialViewer";
 import { HouseholdOnboarding } from "./HouseholdOnboarding";
+import { CaptureComparison } from "./CaptureComparison";
+import { ValueImpactScenario } from "./ValueImpactScenario";
 
 type Client = ReturnType<typeof createRecoveryClient>;
 const client = createRecoveryClient();
@@ -27,6 +29,8 @@ interface WorkspaceProps {
   selected_evidence_id: string | null;
   map_slot: ReactNode;
   interior_slot: ReactNode;
+  aerial_slot?: ReactNode;
+  value_slot?: ReactNode;
   on_open_case: (case_id: string) => void;
   on_back_to_prepare: () => void;
   on_focus: (location: LocationRef) => void;
@@ -234,6 +238,9 @@ export function RecoveryEntry({ case_id }: { case_id: string | null }) {
   const props: WorkspaceProps = {
     cases, snapshot, state: listError ? "error" : listing ? "loading" : !openId ? "ready" : currentView.state,
     error: listError ?? currentView.error, busy: currentView.busy, selected_evidence_id: snapshot ? selected : null,
+    aerial_slot: spatial && snapshot ? <CaptureComparison spatial={spatial} snapshot={snapshot} /> : <p>Loading dated aerial evidence…</p>,
+    value_slot: snapshot ? <ValueImpactScenario key={`${openId}:${analysisRevision}`} case_id={snapshot.case.case_id}
+      analysis_revision={snapshot.case.analysis_revision} on_session_expired={() => setNeedsSignIn(true)} /> : null,
     map_slot: <><EvidenceSlot key={`${openId}:${analysisRevision}:aerial`} title="Aerial evidence" evidence={aerial} image_url={imageUrl(aerial)} location={snapshot ? focused : null} />
       <SpatialViewer spatial={spatial} snapshot={snapshot} selected_location={snapshot ? focused : null} on_focus={focus} mode="site" />
       <SpatialContext spatial={spatial} evidence={aerial} /></>,

@@ -15,11 +15,24 @@ import { compareSourceDatesChronological, compareSourceDatesCoarse, formatSource
 import { LOAD_ERROR_FALLBACK, RecoveryWorkspace, REFRESH_ERROR_FALLBACK } from "../RecoveryWorkspace";
 import type { RecoveryWorkspaceProps } from "../RecoveryWorkspace";
 import { RecoveryPreview } from "../RecoveryPreview";
+import { CenterStage } from "../CenterStage";
 import { assert, assertEqual, assertIncludes, assertNotIncludes, render, test } from "./harness";
 import { noop, textOf } from "./test-utils";
 
 const MAP = "MAP-SLOT-CONTENT";
 const INTERIOR = "INTERIOR-SLOT-CONTENT";
+
+test("workspace/live slots: registered aerial content replaces fixture media and value content reaches its tab", () => {
+  const view = fixtureSnapshot("full");
+  view.evidence = view.evidence.map(evidence => ({ ...evidence, media: null }));
+  const html = render(<CenterStage view={view} center="aerial" on_center={noop} captures={aerialCaptures(view.evidence)}
+    aerial_choice={NO_AERIAL_CHOICE} on_aerial_choice={noop} selected_evidence_id={null} on_select_evidence={noop}
+    map_slot={<div>{MAP}</div>} interior_slot={<div>{INTERIOR}</div>}
+    aerial_slot={<img src="/api/recovery/cases/case-a/evidence/before/image" alt="Registered capture" />} />);
+  assertIncludes(html, 'src="/api/recovery/cases/case-a/evidence/before/image"');
+  assertNotIncludes(html, IMAGE_UNAVAILABLE, "the provided comparison does not depend on Evidence.media");
+  assertIncludes(workspace({ value_slot: <div>OWNER-VALUE-SCENARIO</div> }), "OWNER-VALUE-SCENARIO");
+});
 
 function workspace(over: Partial<RecoveryWorkspaceProps> = {}): string {
   const props: RecoveryWorkspaceProps = {

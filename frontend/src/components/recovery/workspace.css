@@ -219,14 +219,16 @@
   /* Keeps a slot's own z-indexes (map panes and controls) inside the slot, under the stage's status layer. */
   isolation: isolate;
   display: flex;
+  flex-direction: column;
   flex: 1;
   min-width: 0;
   min-height: 0;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   border-radius: var(--r-radius-sm);
   background: var(--r-sunk);
 }
-.brace-recovery .rw-slot > * { flex: 1 1 auto; min-width: 0; min-height: 0; }
+.brace-recovery .rw-slot > * { flex: 0 0 auto; min-width: 0; }
 .brace-recovery .rw-scans { flex: none; max-height: 40%; overflow-y: auto; }
 .brace-recovery .rw-scans-title {
   margin: 0 0 6px;

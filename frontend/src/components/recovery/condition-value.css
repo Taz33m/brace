@@ -500,3 +500,6 @@
 .brace-recovery .rv-past-title { margin: 0; font-size: 13.5px; font-weight: 600; color: var(--r-ink); opacity: 0.85; }
 .brace-recovery .rv-past-meta { margin: 0; font-size: 12px; line-height: 1.35; }
 .brace-recovery .rv-past .r-status { color: var(--r-ink-muted); }
+.brace-recovery .rv-draft-review { margin: 12px 0; border-top: 1px solid var(--r-border); padding-top: 10px; }
+.brace-recovery .rv-draft-review > summary { cursor: pointer; color: var(--r-ink); font-weight: 600; font-size: 12px; line-height: 1.5; }
+.brace-recovery .rv-draft-review > summary:focus-visible { outline: 2px solid var(--r-info); outline-offset: 4px; }

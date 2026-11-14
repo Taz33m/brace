@@ -14,6 +14,7 @@ import type {
   UploadedMedia,
 } from "../../../docs/recovery-handoffs/shared-contract";
 import type { RecoverySpatial } from "./spatial";
+import type { ImpactInputs, ImpactRequest, ImpactResult } from "./impact";
 
 export interface HouseholdInput { expected_revision: number; unit_label: string | null }
 export interface HouseholdReceipt {
@@ -292,6 +293,11 @@ export function createRecoveryClient(options: RecoveryClientOptions = {}) {
     get_cases: () => request<{ cases: RecoveryCaseSummary[] }>("/api/recovery/cases"),
     get_case: (case_id: string) => request<OwnerCaseView>(`/api/recovery/cases/${encodeURIComponent(case_id)}`),
     get_spatial: (case_id: string, signal?: AbortSignal) => request<RecoverySpatial>(`/api/recovery/cases/${encodeURIComponent(case_id)}/spatial`, { signal }),
+    get_value_impact: (case_id: string, signal?: AbortSignal) => request<ImpactInputs>(`/api/recovery/cases/${encodeURIComponent(case_id)}/value-impact`, { signal }),
+    preview_value_impact: (case_id: string, input: ImpactRequest, signal?: AbortSignal) =>
+      request<ImpactResult>(`/api/recovery/cases/${encodeURIComponent(case_id)}/value-impact`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input), signal,
+      }),
     create_household: (case_id: string, input: HouseholdInput, idempotency_key: string) =>
       post<HouseholdReceipt>(`/api/recovery/cases/${encodeURIComponent(case_id)}/households`, input, idempotency_key),
     get_household_access: (case_id: string, signal?: AbortSignal) =>

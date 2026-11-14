@@ -27,6 +27,7 @@ def install_recovery(app: FastAPI, *, store: Any, registry: Any,
     signature. No default credentials, anonymous mode, or production stand-in.
     """
     from .evidence_router import build_evidence_router
+    from .impact_router import build_impact_router
 
     if getattr(app.state, "brace_recovery_service", None) is not None:
         raise RuntimeError("Recovery is already installed on this application")
@@ -40,10 +41,12 @@ def install_recovery(app: FastAPI, *, store: Any, registry: Any,
     try:
         platform_router = platform_router_factory(store, service.launch)
         evidence_router = build_evidence_router(resolve_owner_case, registry.load_inventory)
+        impact_router = build_impact_router(resolve_owner_case, registry.load_inventory)
         # Install the guard first, so even a later mounting failure fails closed.
         install_legacy_owner_gate(app, resolve_owner)
         # Explicit owner viewer routes precede any broad platform route pattern.
         app.include_router(evidence_router)
+        app.include_router(impact_router)
         app.include_router(platform_router)
         app.router.add_event_handler("shutdown", service.close)
         app.state.brace_recovery_service = service

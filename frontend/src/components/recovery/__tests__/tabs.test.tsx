@@ -221,6 +221,21 @@ test("Condition: a failed review stays visible; Retry only while the move still 
 
 /* ------------------------------------------------------------------ value */
 
+test("Value: a fresh draft remains reviewable while the published assessment stays current", () => {
+  const view = fixtureSnapshot("full");
+  const published = find(view.assessments, a => a.assessment_id === view.current_assessment_id, "current published assessment");
+  const draft = { ...published, assessment_id: "draft-review-test", status: "draft" as const, published_at: null,
+    base_analysis_revision: view.case.analysis_revision, headline: "New reviewed input draft", summary: "Draft details for owner review." };
+  view.assessments.push(draft);
+  const runner = fakeRunner();
+  const html = value(view, runner);
+  assertIncludes(textOf(html), "Review draft valuation before publishing");
+  assertIncludes(textOf(html), "This draft is separate from the published assessment");
+  assertIncludes(textOf(html), "Draft details for owner review.");
+  assertEqual(view.current_assessment_id, published.assessment_id, "review does not replace the assessment of record");
+  assertEqual(runner.calls.length, 0, "opening the Value tab never publishes a draft");
+});
+
 test("Value: the insufficient variant reads 'Not enough evidence' with no $ amount in its market-value rows", () => {
   const html = value(fixtureSnapshot("insufficient"));
   const marketAt = html.indexOf('aria-label="Market value"');

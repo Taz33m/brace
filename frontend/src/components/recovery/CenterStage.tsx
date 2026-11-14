@@ -35,6 +35,8 @@ export type CenterStageProps = {
   on_select_evidence: (evidence_id: string) => void;
   map_slot: ReactNode;
   interior_slot: ReactNode;
+  /** Registered case/revision-aware comparison; fixtures can use the built-in comparison. */
+  aerial_slot?: ReactNode;
 };
 
 const layerClass = (base: string, visible: boolean) => (visible ? base : `${base} is-hidden`);
@@ -52,6 +54,7 @@ export function CenterStage({
   on_select_evidence,
   map_slot,
   interior_slot,
+  aerial_slot,
 }: CenterStageProps) {
   const showOverview = view != null && center === "overview";
   const showInterior = view != null && center === "interior";
@@ -71,14 +74,14 @@ export function CenterStage({
 
         {view && center === "aerial" && (
           <div className="rw-layer rw-layer--scroll" aria-label="Aerial comparison">
-            <AerialCompare
+            {aerial_slot !== undefined ? aerial_slot : <AerialCompare
               captures={captures}
               incident_at={view.case.incident_at}
               choice={aerial_choice}
               onChoice={on_aerial_choice}
               selected_evidence_id={selected_evidence_id}
               on_select_evidence={on_select_evidence}
-            />
+            />}
           </div>
         )}
 

@@ -1,5 +1,6 @@
 import "./condition-value.css";
-import { useId } from "react";
+import { useId, useState } from "react";
+import type { ReactNode } from "react";
 import { Button, ChangedBanner, EmptyState, InlineError, RangeList, RangeRow, StatusMark, rangeDomain } from "../recovery-ui";
 import type { ToneMark } from "../recovery-ui";
 import type { Assessment, Assumption, MoneyRange, OwnerCaseView, RepairLine, ValueBasis } from "../../recovery/contracts";
@@ -36,6 +37,7 @@ export type ValueTabProps = {
   busy: boolean;
   runner: CommandRunner;
   on_select_evidence: (evidence_id: string) => void;
+  value_slot?: ReactNode;
 };
 
 const BASIS_TONE: Record<ValueBasis, ToneMark> = {
@@ -102,7 +104,7 @@ function revisionNote(view: OwnerCaseView, a: Assessment): string {
 
 const newestFirst = (a: Assessment, b: Assessment) => (Date.parse(b.created_at) || 0) - (Date.parse(a.created_at) || 0);
 
-export function ValueTab({ view, busy, runner, on_select_evidence }: ValueTabProps) {
+export function ValueTab({ view, busy, runner, on_select_evidence, value_slot }: ValueTabProps) {
   const current = currentAssessment(view);
   const staleness = current ? assessmentStaleness(view, current) : null;
   const stale = staleness != null;
@@ -121,6 +123,7 @@ export function ValueTab({ view, busy, runner, on_select_evidence }: ValueTabPro
 
   return (
     <div className="rv-tab">
+      {value_slot}
       {current && staleness && (
         <ChangedBanner tone="stale" title={STALE_TITLE[staleness]}>
           {revisionNote(view, current)}{" "}
@@ -205,7 +208,7 @@ export function ValueTab({ view, busy, runner, on_select_evidence }: ValueTabPro
           </h3>
           <ol className="rv-history-list">
             {history.map((a) => (
-              <HistoryItem key={a.assessment_id} view={view} a={a} locked={locked} runner={runner} />
+              <HistoryItem key={a.assessment_id} view={view} a={a} locked={locked} runner={runner} on_select_evidence={on_select_evidence} />
             ))}
           </ol>
         </section>
@@ -512,7 +515,10 @@ function historyStaleNote(view: OwnerCaseView, a: Assessment): string | null {
   }
 }
 
-function HistoryItem({ view, a, locked, runner }: { view: OwnerCaseView; a: Assessment; locked: boolean; runner: CommandRunner }) {
+function HistoryItem({ view, a, locked, runner, on_select_evidence }: {
+  view: OwnerCaseView; a: Assessment; locked: boolean; runner: CommandRunner; on_select_evidence: (id: string) => void;
+}) {
+  const [reviewOpen, setReviewOpen] = useState(false);
   const superseded = isSupersededAssessment(view, a);
   const mark: ToneMark = superseded ? { tone: "muted", shape: "hatched" } : assessmentStatusTone(a.status);
   const outdated = superseded || a.status === "stale" || (a.status === "draft" && !isUpToDate(view, a));
@@ -531,6 +537,15 @@ function HistoryItem({ view, a, locked, runner }: { view: OwnerCaseView; a: Asse
       </p>
       {a.status === "failed" && <p className="rv-past-meta">Failed: {a.failure_reason ?? "No reason was given."}</p>}
       {staleNote && <p className="rv-past-meta">{staleNote}</p>}
+      {a.valuation && <details className="rv-draft-review" onToggle={event => setReviewOpen(event.currentTarget.open)}>
+        <summary>{a.status === "draft" ? "Review draft valuation before publishing" : "Review assessment valuation"}</summary>
+        {a.status === "draft" && <p className="rv-past-meta">This draft is separate from the published assessment. Reviewing it does not publish it.</p>}
+        {a.summary.trim() !== "" && <p className="rv-summary">{a.summary}</p>}
+        {reviewOpen && <Valuation view={view} a={a} on_select_evidence={on_select_evidence} />}
+        {a.unresolved_questions.length > 0 && <><h4>Unresolved questions</h4><ul className="rv-list">
+          {a.unresolved_questions.map((question, index) => <li key={index}>{question}</li>)}
+        </ul></>}
+      </details>}
       {canPublish(view, a) && <PublishControl view={view} a={a} locked={locked} runner={runner} />}
     </li>
   );

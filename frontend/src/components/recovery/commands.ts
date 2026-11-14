@@ -19,7 +19,7 @@ export type CommandRunner = {
    * already pending, or if the scope (case) changed before the server answered.
    */
   run(key: string, body: CommandBody): Promise<boolean>;
-  /** Re-sends the last body for `key` with the latest case_revision (the body itself, incl. any task revision, is kept). */
+  /** Re-sends the original request after an uncertain result; definite rejections use the latest revision. */
   retry(key: string): Promise<boolean>;
   /** Clears a failed command's error. Ignored while pending. */
   dismiss(key: string): void;
@@ -63,7 +63,7 @@ export type CommandStore = {
    * promises still in flight from the old scope settle silently (they resolve false and write nothing).
    */
   setScope(scope: string | null): void;
-  /** The case_revision injected into the next run or retry. */
+  /** The case_revision used for a new request; uncertain retries keep their original revision. */
   setRevision(case_revision: number): void;
   setHandler(on_command: (command: OwnerCommand) => Promise<void>): void;
   run(key: string, body: CommandBody): Promise<boolean>;
@@ -88,6 +88,7 @@ export function createCommandStore(init: CommandStoreInit): CommandStore {
   // Synchronous bookkeeping so a double click in one frame cannot send twice.
   const pending = new Set<string>();
   const bodies = new Map<string, CommandBody>();
+  const attempts = new Map<string, { signature: string; command: OwnerCommand }>();
   const listeners = new Set<() => void>();
 
   const commit = (statuses: Record<string, CommandStatus>) => {
@@ -105,14 +106,20 @@ export function createCommandStore(init: CommandStoreInit): CommandStore {
     const startedIn = epoch;
     pending.add(key);
     bodies.set(key, body);
+    const signature = JSON.stringify(body);
+    const prior = attempts.get(key);
+    const command = prior?.signature === signature ? prior.command : { ...body, expected_revision: revision } as OwnerCommand;
+    attempts.set(key, { signature, command });
     commit({ ...state.statuses, [key]: { pending: true, error: null } });
 
     let error: string | null = null;
+    let definiteRejection = false;
     try {
-      const command = { ...body, expected_revision: revision } as OwnerCommand;
       await handler(command);
     } catch (e) {
       error = commandErrorMessage(e);
+      const status = typeof e === "object" && e !== null && "status" in e ? (e as { status: unknown }).status : null;
+      definiteRejection = typeof status === "number" && [400, 401, 403, 404, 409, 422].includes(status);
     }
 
     // The scope changed while this was in flight: its outcome belongs to the previous case. Write nothing,
@@ -121,9 +128,11 @@ export function createCommandStore(init: CommandStoreInit): CommandStore {
     pending.delete(key);
     if (error == null) {
       bodies.delete(key);
+      attempts.delete(key);
       commit(without(key));
       return true;
     }
+    if (definiteRejection) attempts.delete(key);
     commit({ ...state.statuses, [key]: { pending: false, error } });
     return false;
   }
@@ -141,6 +150,7 @@ export function createCommandStore(init: CommandStoreInit): CommandStore {
       epoch += 1;
       pending.clear();
       bodies.clear();
+      attempts.clear();
       state = { scope, statuses: {}, anyPending: false };
       for (const listener of [...listeners]) listener();
     },
@@ -159,6 +169,7 @@ export function createCommandStore(init: CommandStoreInit): CommandStore {
     dismiss(key) {
       if (pending.has(key)) return;
       bodies.delete(key);
+      attempts.delete(key);
       if (key in state.statuses) commit(without(key));
     },
     status: (key) => state.statuses[key] ?? IDLE,

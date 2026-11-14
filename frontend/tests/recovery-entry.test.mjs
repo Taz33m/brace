@@ -43,6 +43,7 @@ const draftNoticesUrl = await compile("../src/recovery/DraftNotices.tsx", { "./c
 const supportClientUrl = await compile("../src/recovery/support-client.ts", { "./client": clientUrl });
 const supportInboxUrl = await compile("../src/recovery/SupportInbox.tsx", { "./client": clientUrl, "./support-client": supportClientUrl });
 const householdOnboardingUrl = await compile("../src/recovery/HouseholdOnboarding.tsx", { "./client": clientUrl });
+const valueImpactUrl = await compile("../src/recovery/ValueImpactScenario.tsx", { "./client": clientUrl });
 const geometryUrl = await compile("../src/recovery/spatial-geometry.ts");
 const captureDataUrl = await compile("../src/recovery/capture-comparison.ts");
 const captureComparisonUrl = await compile("../src/recovery/CaptureComparison.tsx", {
@@ -57,6 +58,8 @@ const entryUrl = await compile("../src/recovery/RecoveryEntry.tsx", {
   "./SupportInbox": supportInboxUrl,
   "./HouseholdOnboarding": householdOnboardingUrl,
   "./SpatialViewer": spatialViewerUrl,
+  "./CaptureComparison": captureComparisonUrl,
+  "./ValueImpactScenario": valueImpactUrl,
 });
 const { ResidentBootstrap, EvidenceSlot, commandForCurrentCase } = await import(entryUrl);
 const { CaptureComparison } = await import(captureComparisonUrl);
