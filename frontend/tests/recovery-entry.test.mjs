@@ -39,9 +39,12 @@ const routesUrl = await compile("../src/recovery/routes.ts");
 const spatialUrl = await compile("../src/recovery/spatial.ts");
 const noticeClientUrl = await compile("../src/recovery/notice-client.ts", { "./client": clientUrl });
 const draftNoticesUrl = await compile("../src/recovery/DraftNotices.tsx", { "./client": clientUrl, "./notice-client": noticeClientUrl });
+const geometryUrl = await compile("../src/recovery/spatial-geometry.ts");
+const spatialViewerUrl = await compile("../src/recovery/SpatialViewer.tsx", { "./spatial-geometry": geometryUrl });
 const entryUrl = await compile("../src/recovery/RecoveryEntry.tsx", {
   "./client": clientUrl, "./owner-controller": controllerUrl, "./routes": routesUrl, "./spatial": spatialUrl,
   "./DraftNotices": draftNoticesUrl,
+  "./SpatialViewer": spatialViewerUrl,
 });
 const { ResidentBootstrap, EvidenceSlot, commandForCurrentCase } = await import(entryUrl);
 

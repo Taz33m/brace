@@ -11,6 +11,7 @@ import { SpatialCaseController, currentSpatial, emptySpatial, evidenceImageUrl, 
 import type { RecoverySpatial, SpatialState } from "./spatial";
 import "./entry.css";
 import { DraftNotices } from "./DraftNotices";
+import { SpatialViewer } from "./SpatialViewer";
 
 type Client = ReturnType<typeof createRecoveryClient>;
 const client = createRecoveryClient();
@@ -209,20 +210,23 @@ export function RecoveryEntry({ case_id }: { case_id: string | null }) {
   const interior = preferredEvidence(snapshot?.evidence ?? [], selected, ["matterport_view", "resident_photo"], imageUrl);
   const spatialLoading = snapshot && !spatial && spatialState.state !== "error";
   const spatialError = spatialState.case_id === openId && spatialState.analysis_revision === analysisRevision ? spatialState.error : null;
+  function focus(location: LocationRef) {
+    setFocused(location);
+    const match = snapshot?.evidence.find(evidence => evidence.location?.location_id === location.location_id);
+    if (match) setSelected(match.evidence_id);
+  }
   const props: WorkspaceProps = {
     cases, snapshot, state: listError ? "error" : listing ? "loading" : !openId ? "ready" : currentView.state,
     error: listError ?? currentView.error, busy: currentView.busy, selected_evidence_id: snapshot ? selected : null,
     map_slot: <><EvidenceSlot key={`${openId}:${analysisRevision}:aerial`} title="Aerial evidence" evidence={aerial} image_url={imageUrl(aerial)} location={snapshot ? focused : null} />
+      <SpatialViewer spatial={spatial} selected_location={snapshot ? focused : null} on_focus={focus} mode="site" />
       <SpatialContext spatial={spatial} evidence={aerial} /></>,
     interior_slot: <><EvidenceSlot key={`${openId}:${analysisRevision}:interior`} title="Interior evidence" evidence={interior} image_url={imageUrl(interior)} location={snapshot ? focused : null} />
+      <SpatialViewer spatial={spatial} selected_location={snapshot ? focused : null} on_focus={focus} mode="interior" />
       <SpatialContext spatial={spatial} evidence={interior} /></>,
     on_open_case: id => { window.location.hash = recoveryHash(id); },
     on_back_to_prepare: () => { window.location.hash = "#/"; },
-    on_focus: location => {
-      setFocused(location);
-      const match = snapshot?.evidence.find(evidence => evidence.location?.location_id === location.location_id);
-      if (match) setSelected(match.evidence_id);
-    },
+    on_focus: focus,
     on_select_evidence: id => { setSelected(id); setFocused(snapshot?.evidence.find(e => e.evidence_id === id)?.location ?? null); },
     on_command: command,
   };

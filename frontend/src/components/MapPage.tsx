@@ -51,6 +51,7 @@ export function MapPage({ scenarios, scenario, step, onScenario, onStep, onOpen 
             </button>
           ))}
         </nav>
+        <a className="recover-link" href="#/recovery">Recover</a>
       </header>
 
       <section className="briefing">

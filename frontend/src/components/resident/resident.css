@@ -303,6 +303,7 @@
 
 /* ---------- report + receipt ---------- */
 .brace-resident .rr-sec { scroll-margin-top: 96px; }
+.brace-resident .rr-id { overflow-wrap: anywhere; max-width: 100%; }
 .brace-resident .rr-sec + .rr-sec { margin-top: 10px; }
 .brace-resident .rr-optional { font-family: var(--r-body); font-weight: 500; font-size: 15px; color: var(--r-ink-3); margin-left: 6px; }
 .brace-resident .rr-err { display: flex; gap: 6px; align-items: flex-start; }

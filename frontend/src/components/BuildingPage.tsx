@@ -137,6 +137,7 @@ export function BuildingPage({ id, scenario, step, sdkKey, agentReady, onBack }:
     <div className="building-page">
       <header className="topbar">
         <button className="back" onClick={onBack}>Map</button>
+        <a className="recover-link" href="#/recovery">Recover</a>
         {b.scans.length > 0 && <button className="headset" onClick={openHeadset}>{worn ? "Headset connected" : "Open in headset"}</button>}
         <div className="title">
           <h1>{r.name}</h1>

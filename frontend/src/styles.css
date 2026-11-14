@@ -44,6 +44,10 @@ code { font-family: ui-monospace, Menlo, monospace; font-size: 0.9em; background
 .scenarios button small { display: block; font-weight: 400; font-size: 12.5px; color: #8493a6; }
 .scenarios button:hover { color: #fff; }
 .scenarios button.on { color: #fff; border-bottom-color: var(--signal); }
+.map-page .mast > .recover-link, .building-page .topbar > .recover-link { flex: none; align-self: center; border: 1px solid var(--line); border-radius: 2px; padding: 7px 12px; color: inherit; font-weight: 600; text-decoration: none; white-space: nowrap; }
+.map-page .mast > .recover-link { margin-left: auto; border-color: var(--ink-2); }
+.map-page .mast > .recover-link:hover, .map-page .mast > .recover-link:focus-visible { border-color: #fff; outline-color: #fff; }
+.building-page .topbar > .recover-link:hover { border-color: var(--ink-2); }
 .briefing { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 440px); gap: 32px; align-items: end; padding: 16px 20px 14px; background: var(--surface); border-bottom: 1px solid var(--line); }
 .briefing h1 { font-family: var(--cond); font-weight: 700; font-size: 38px; line-height: 1; }
 .briefing p { color: var(--ink-2); max-width: 78ch; margin-top: 6px; }
@@ -220,5 +224,9 @@ code { font-family: ui-monospace, Menlo, monospace; font-size: 0.9em; background
   .topbar { flex-wrap: wrap; }
   .title { max-width: none; }
   .facts { margin-left: 0; }
+}
+@media (max-width: 640px) {
+  .map-page .mast { flex-wrap: wrap; gap: 0 16px; }
+  .map-page .mast > .scenarios { order: 1; flex-basis: 100%; }
 }
 @media (prefers-reduced-motion: reduce) { .pulse, .lead.is-open .lead-mark { animation: none; } }
