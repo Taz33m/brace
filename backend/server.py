@@ -409,7 +409,7 @@ def building_site_model(building_id: int, request: Request) -> dict:
     model = _site_model(building_id)
     from .recovery.site_activity import case_activity
     model["reports"] = sorted(
-        model["reports"] + case_activity(request, building_id), key=lambda row: row["at"])
+        model["reports"] + site_model.place(building_id, case_activity(request, building_id)), key=lambda row: row["at"])
     return {**model, "facts": site_model.facts(model)}
 
 

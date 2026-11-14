@@ -275,7 +275,7 @@ export interface Measured { label: string; text: string; src: string[]; sources:
 export type StageKey = "join" | "classify" | "inventory" | "expose" | "surface" | "search";
 export interface Stage { key: StageKey; problem: string; job: string; state: "ready" | "partial" | "not_run"; number: number; unit: string; headline: string; limits?: string }
 export interface SiteFact extends Measured { stage: StageKey; scan_id?: string; structure?: string; report?: boolean }
-export interface ReportPlace { scan_id: string; scan_name: string; room: string | null; thing: string | null; position_id: string; bearing_deg: number | null; matched_on: string[] }
+export interface ReportPlace { scan_id: string; scan_name: string; room: string | null; thing: string | null; position_id: string; bearing_deg: number | null; matched_on: string[]; placed_by?: string }
 export interface ResidentReport { id: string; at: string; text: string; scan_id: string | null; where: ReportPlace | null; status: string }
 export interface SiteModel {
   property_id: number; name: string; address: string; assembled_at: string;
@@ -289,3 +289,6 @@ export interface Board {
   rows: { property_id: number; name: string; address: string; scans: number; structures: number; stages: Record<StageKey, { state: Stage["state"]; number: number; headline: string }> }[];
 }
 export interface FindHit { scan_id: string; scan_name: string; room: string | null; thing: string | null; where: string; direction: string | null; phrase: string }
+
+/** What came of approving an action. `delivery` is "resident_feed" when a notice was published to the building's households. */
+export interface Approval { ok: boolean; say: string; delivery?: string | null; household_count?: number; already_published?: boolean; photon_queued?: number | null }

@@ -1,4 +1,4 @@
-import type { Board, Building, ClockChange, Facing, FindHit, Measured, Portfolio, ResidentReport, SavedStep, Scenario, ScenarioMap, SiteModel } from "./types";
+import type { Approval, Board, Building, ClockChange, Facing, FindHit, Measured, Portfolio, ResidentReport, SavedStep, Scenario, ScenarioMap, SiteModel } from "./types";
 
 async function get<T>(path: string): Promise<T> {
   const r = await fetch(path);
@@ -34,6 +34,18 @@ export const api = {
     fetch(`/api/buildings/${id}/reports`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, scan_id }) })
       .then(async (r) => { if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail ?? "could not file the report"); return r.json() as Promise<ResidentReport>; }),
   clearReports: (id: number) => fetch(`/api/buildings/${id}/reports`, { method: "DELETE" }).then(() => undefined),
+  /** Approve one action of the saved plan. Always answers with something to say: a refusal from the server
+      (no resident case bound, not signed in, delivery switched off) is reported as not approved, never passed over. */
+  approve: (id: number, scenario: string, step: string | null, actionId: string): Promise<Approval> =>
+    fetch("/api/vr/approve", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ building: id, scenario, step, action_id: actionId }) })
+      .then(async (r) => {
+        const body = await r.json().catch(() => ({}));
+        if (r.ok && typeof body.say === "string") return body as Approval;
+        const why = typeof body.detail === "string" ? body.detail : body.detail?.message ?? body.error?.message ?? "The server refused it.";
+        return { ok: false, say: `Not approved, and nothing was published. ${why}` };
+      })
+      .catch(() => ({ ok: false, say: "Not approved. The approval could not reach the laptop." })),
   startPlan: (id: number, scenario: string, step: string | null) =>
     fetch(`/api/buildings/${id}/plan${q({ scenario, step })}`, { method: "POST" }).then((r) => { if (!r.ok) throw new Error("start failed"); return r.json(); }),
   streamUrl: (id: number, scenario: string, step: string | null, replay: boolean, speed = 5) =>

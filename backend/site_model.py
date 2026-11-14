@@ -451,7 +451,7 @@ def locate(property_id: int, text: str, scan_id: str | None = None) -> dict | No
     if not index:
         return None
     from .openproblems import search
-    said = search.tokens(text)
+    said = search.tokens(re.sub(r"^Support request \([^)]*\):\s*", "", text or ""))
     best, best_score = None, 0.0
     for position in index.get("positions") or []:
         if scan_id and position["scan_id"] != scan_id:
@@ -474,6 +474,22 @@ def locate(property_id: int, text: str, scan_id: str | None = None) -> dict | No
                     "bearing_deg": search.bearing(position.get("heading"), thing.get("quarter")) if thing and thing_score >= 0.5 else None,
                     "matched_on": sorted(said & (room_words | (search.tokens(thing["name"]) if thing else set())))}
     return best
+
+
+def place(property_id: int, rows: list[dict]) -> list[dict]:
+    """Give each resident message that came without a place the room and fixture its own words name.
+
+    A message already tied to a verified home keeps that. One placed here is marked as placed from its
+    description, so nobody reads a guess as a confirmed location. One that names nothing stays unplaced.
+    """
+    out = []
+    for row in rows:
+        if not row.get("where"):
+            found = locate(property_id, row.get("text") or "", row.get("scan_id"))
+            if found:
+                row = {**row, "where": {**found, "placed_by": "description"}, "scan_id": row.get("scan_id") or found["scan_id"]}
+        out.append(row)
+    return out
 
 
 def add_report(property_id: int, text: str, scan_id: str | None = None, at: str | None = None) -> dict:

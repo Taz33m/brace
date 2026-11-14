@@ -270,10 +270,7 @@ export function VrPage({ id, scenario, step }: Props) {
     };
 
     const approve = async (a: Action, aloud: boolean): Promise<{ ok: boolean; say: string }> => {
-      const result = await fetch("/api/vr/approve", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ building: id, scenario: scenario.id, step, action_id: a.id }) })
-        .then((r) => r.json() as Promise<{ ok: boolean; say: string }>)
-        .catch(() => ({ ok: false, say: "The approval could not be saved. The laptop is not reachable." }));
+      const result = await api.approve(id, scenario.id, step, a.id);
       if (result.ok) { approved.add(a.id); repaint(a.id); if (selectedAction === a.id) open(a); }
       if (aloud) voice.current?.cue("say", result.say);
       return result;

@@ -85,9 +85,7 @@ export function WalkPage({ id, scenario, step, voiceReady }: Props) {
   const go = useCallback((to: number) => setAt(Math.max(0, Math.min(moments.length - 1, to))), [moments.length]);
 
   const approve = useCallback(async (actionId: string): Promise<{ ok: boolean; say: string }> => {
-    const result = await fetch("/api/vr/approve", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ building: id, scenario: scenario.id, step, action_id: actionId }) })
-      .then((r) => r.json() as Promise<{ ok: boolean; say: string }>).catch(() => ({ ok: false, say: "The approval could not be saved." }));
+    const result = await api.approve(id, scenario.id, step, actionId);
     if (result.ok) setApproved((list) => (list.includes(actionId) ? list : [...list, actionId]));
     return result;
   }, [id, scenario.id, step]);

@@ -34,7 +34,7 @@ export function ReportsFeed({ id }: { id: number }) {
           <li key={r.id} className={r.id === fresh ? "is-fresh" : ""}>
             <strong>{r.where ? `${r.where.room ?? "A room"}${r.where.thing ? `, at the ${r.where.thing}` : ""}` : "Not matched to a scanned room"}</strong>
             <p>“{r.text}”</p>
-            <small>{r.where ? `${r.where.scan_name}. ` : ""}Reported, not yet reviewed.</small>
+            <small>{r.where ? `${r.where.scan_name}${r.where.placed_by ? ", placed from the resident's words" : ""}. ` : ""}{r.status ? `${r.status.replace(/\.$/, "")}.` : "Reported, not yet reviewed."}</small>
           </li>
         ))}
       </ul>

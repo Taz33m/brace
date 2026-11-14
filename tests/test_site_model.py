@@ -160,3 +160,13 @@ def test_comparing_a_measured_plan_reports_new_jobs_and_quotes_without_claiming_
     assert by["Move cars from under the leaning pine"]["change"] == "only in the measured plan"
     assert by["Clear the drain grates"]["change"] == "only in the earlier plan"
     assert got["actions_quoting_a_measurement"] == 1 and "differ for many reasons" in got["note"]
+
+
+def test_a_resident_message_without_a_place_is_placed_from_its_words_and_says_so(site):
+    rows = [{"id": "r1", "at": "2026-11-14T10:00:00+00:00", "text": "Support request (other): the bedroom window is letting water in", "scan_id": None, "where": None},
+            {"id": "r2", "at": "2026-11-14T10:01:00+00:00", "text": "I need help getting down", "scan_id": None, "where": None},
+            {"id": "r3", "at": "2026-11-14T10:02:00+00:00", "text": "kitchen", "scan_id": "scanA", "where": {"scan_id": "scanA", "room": "Verified home"}}]
+    placed = {r["id"]: r for r in sm.place(site, rows)}
+    assert placed["r1"]["where"]["room"] == "Bedroom" and placed["r1"]["where"]["thing"] == "window" and placed["r1"]["where"]["placed_by"] == "description"
+    assert placed["r2"]["where"] is None                                    # names nothing the scan saw: left unplaced
+    assert placed["r3"]["where"] == {"scan_id": "scanA", "room": "Verified home"}   # a verified place is never overwritten

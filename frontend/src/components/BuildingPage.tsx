@@ -180,9 +180,7 @@ export function BuildingPage({ id, scenario, step, sdkKey, agentReady, voiceRead
     if (name === "approve_action") {
       if (!wanted) return unknown;
       if (now.pending?.actionId === wanted.id) setPending(null);
-      return fetch("/api/vr/approve", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ building: id, scenario: scenario.id, step, action_id: wanted.id }) })
-        .then((r) => r.json()).catch(() => ({ ok: false, say: "The approval could not be saved." }));
+      return api.approve(id, scenario.id, step, wanted.id);
     }
     if (name === "where_am_i") return { on_screen_action: now.active, scanned_space_shown: now.scanName, forecast_step: scenario.steps.find((s) => s.id === step)?.label ?? null };
     if (name === "hold_approval") {
@@ -210,9 +208,7 @@ export function BuildingPage({ id, scenario, step, sdkKey, agentReady, voiceRead
     if (!waiting) return;
     setPending(null);
     if (how === "hold") { conversation.cue("say", "Set aside. The resident notice is not approved."); return; }
-    fetch("/api/vr/approve", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ building: id, scenario: scenario.id, step, action_id: waiting.actionId }) })
-      .then((r) => r.json()).then((result: { say?: string }) => { if (result.say) conversation.cue("say", result.say); }).catch(() => {});
+    api.approve(id, scenario.id, step, waiting.actionId).then((result) => conversation.cue("say", result.say));
   }, [id, scenario.id, step]);
 
   // If nobody has answered after a few seconds Brace asks once, aloud. The clock never approves anything.
