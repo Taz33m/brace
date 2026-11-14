@@ -44,7 +44,7 @@ Each action needs: timing, hours of work, who does it, a rough cost range in dol
 
 Mark each action's basis honestly: "seen" if you looked at the thing in a photo or scan and can point to it; "record" if it follows from the building record or the forecast alone.
 
-Before you finish, write the messages. A notice to the people in the building (tenants for commercial, residents for apartments): plain, calm, specific to this building and this threat, what to do and by when. A work order for each outside trade your actions need: scope, location on site, deadline. Use only names and facts from the record; never invent a phone number, a person or a policy.
+Before you finish, write the messages. A notice to the people in the building (tenants for commercial, residents for apartments): plain, calm, specific to this building and this threat, what to do and by when. A work order for each outside trade your actions need: scope, location on site, deadline. Use only names and facts from the record; never invent a phone number, a person or a policy. Structure ids and grid cells are this tool's own labels: people in the building do not know them, so in a notice describe places in plain words (the courtyard beside the leasing office, the covered parking along the east drive). In a work order you may give the id and cell as well, since the marked site photo goes with it.
 
 Site grid: the overhead photo carries a lettered grid (columns A, B, C... west to east; rows 1, 2, 3... north to south). Refer to places by structure id and cell, such as S2 at D14.
 

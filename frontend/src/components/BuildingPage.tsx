@@ -35,11 +35,11 @@ export function BuildingPage({ id, scenario, step, sdkKey, agentReady, onBack }:
     return () => stream.current?.close();
   }, [id, scenario.id, step]);
 
-  const point = useCallback((lon: number, lat: number, label: string, scanId: string | null, sweepId: string | null, direction: Direction) => {
+  const point = useCallback((lon: number, lat: number, label: string, scanId: string | null, sweepId: string | null, direction: Direction, tag?: string) => {
     if (!b) return;
     const st = structureAt(b, [lon, lat]);
     setSelection({ lon, lat, label, structure: st?.id ?? null, scanId, sweepId, direction });
-    if (scanId) tour.current?.lookFrom(scanId, sweepId, direction);
+    if (scanId) tour.current?.lookFrom(scanId, sweepId, direction, tag);
   }, [b]);
 
   const pick = useCallback((p: LonLat) => {
@@ -54,8 +54,9 @@ export function BuildingPage({ id, scenario, step, sdkKey, agentReady, onBack }:
   const show = useCallback((a: Action) => {
     setActive(a.id);
     const lon = a.site?.lon ?? a.interior?.lon, lat = a.site?.lat ?? a.interior?.lat;
-    if (lon == null || lat == null) { if (a.interior) tour.current?.lookFrom(a.interior.scan_id, a.interior.sweep_id, a.interior.direction); return; }
-    point(lon, lat, a.title, a.interior?.scan_id ?? null, a.interior?.sweep_id ?? null, a.interior?.direction ?? "north");
+    const tag = a.interior ? `${a.id.replace("A", "")}. ${a.title}` : undefined;
+    if (lon == null || lat == null) { if (a.interior) tour.current?.lookFrom(a.interior.scan_id, a.interior.sweep_id, a.interior.direction, tag); return; }
+    point(lon, lat, a.title, a.interior?.scan_id ?? null, a.interior?.sweep_id ?? null, a.interior?.direction ?? "north", tag);
   }, [point]);
 
   const follow = useRef({ point, show });
@@ -133,7 +134,7 @@ export function BuildingPage({ id, scenario, step, sdkKey, agentReady, onBack }:
                   onMark={(aid) => { const a = actions.find((x) => x.id === aid); if (a) show(a); }}
                   tour={sweep?.lon != null && sweep.lat != null ? { lon: sweep.lon, lat: sweep.lat, bearing } : null} />
         <TourPane ref={tour} scans={b.scans} sdkKey={sdkKey} onMove={(scanId, sweepId) => setAt({ scanId, sweepId })} onTurn={setBearing} />
-        {b.reasons.length > 0 && <p className="why">On the list because: {b.reasons.join("; ")}.</p>}
+        {b.reasons.length > 0 && <p className="why">Flagged by the aerial analysis and the record, before anyone has looked: {b.reasons.join("; ")}.</p>}
       </main>
 
       <PlanPanel id={id} run={run} agentReady={agentReady} hasSaved={!!b.plan || (run === "done" && !!plan)}

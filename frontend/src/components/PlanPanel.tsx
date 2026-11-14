@@ -60,7 +60,6 @@ export function PlanPanel(p: Props) {
         {!busy && p.plan && (
           <>
             <h2 className="headline">{p.plan.headline ?? "The plan stopped before it was finished"}</h2>
-            {p.plan.summary && <p>{p.plan.summary}</p>}
             {!p.plan.complete && <p className="warn">This run ended early ({p.plan.stop.replace("_", " ")}). What it had so far is below.</p>}
           </>
         )}
@@ -81,6 +80,7 @@ export function PlanPanel(p: Props) {
 
       {tab === "plan" && (
         <div className="panel-scroll">
+          {p.plan?.summary && <p className="summary">{p.plan.summary}</p>}
           {p.actions.length === 0 && <p className="empty">{p.plan ? "Nothing needs doing for this threat. See what was checked below." : "No actions yet."}</p>}
           {ORDER.map((t) => {
             const s = sum(t);

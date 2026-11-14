@@ -201,7 +201,7 @@ def point_exposure(s: Samples, lat: float, lon: float) -> dict:
     wind, d = series["wind"], series["dist_nm"]
     k = int(np.argmax(wind))
     peak = float(wind[k])
-    peak_kt = int(np.floor(peak + 1e-9))
+    peak_kt = int(np.floor(round(peak, 3)))  # whole knots, rounded down so the number never overstates the band
 
     inside = series["basis"] > 0
     first = int(np.argmax(inside)) if inside.any() else -1

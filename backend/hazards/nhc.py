@@ -138,6 +138,26 @@ def parse_forecast_advisory(text: str) -> dict:
     }
 
 
+def _cone_polygon(shp) -> dict | None:
+    """GeoJSON for the cone. NHC writes the ring counter-clockwise, which shapefile
+    readers take for a hole, so the rings are rebuilt here instead of trusted."""
+    from shapely.geometry import Polygon, mapping
+    from shapely.geometry.polygon import orient
+    from shapely.ops import unary_union
+
+    pts = list(shp.points)
+    bounds = list(shp.parts) + [len(pts)]
+    rings = [pts[a:b] for a, b in zip(bounds, bounds[1:]) if b - a >= 4]
+    polys = [p if p.is_valid else p.buffer(0) for p in (Polygon(r) for r in rings)]
+    polys = [p for p in polys if not p.is_empty]
+    if not polys:
+        return None
+    merged = polys[0] if len(polys) == 1 else unary_union(polys)
+    if merged.geom_type == "Polygon":
+        merged = orient(merged)
+    return round_geometry(mapping(merged), 3)
+
+
 def read_cone_zip(data: bytes) -> dict:
     """Forecast cone polygon and coastal watch/warning lines from an NHC 5-day GIS zip.
 
@@ -162,7 +182,7 @@ def read_cone_zip(data: bytes) -> dict:
             if name.endswith("_5day_pgn.shp"):
                 shapes = reader(name[:-4]).shapes()
                 if shapes:
-                    out["cone"] = round_geometry(shapes[0].__geo_interface__, 3)
+                    out["cone"] = _cone_polygon(shapes[0])
             elif name.endswith("_wwlin.shp"):
                 rd = reader(name[:-4])
                 fields = [f[0] for f in rd.fields[1:]]

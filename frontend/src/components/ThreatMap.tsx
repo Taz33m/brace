@@ -32,10 +32,10 @@ export function ThreatMap({ map, points, highlight, onOpen }: Props) {
   useEffect(() => {
     if (!el.current || lmap.current) return;
     const m = L.map(el.current, { zoomControl: true, preferCanvas: true, attributionControl: true }).setView([29.76, -95.37], 9);
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
-      maxZoom: 18, subdomains: "abcd",
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-    }).addTo(m);
+    // A quiet grey base so the forecast and the buildings carry the colour.
+    const esri = "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas";
+    L.tileLayer(`${esri}/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}`, { maxZoom: 16, attribution: "Tiles &copy; Esri" }).addTo(m);
+    L.tileLayer(`${esri}/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}`, { maxZoom: 16 }).addTo(m);
     threat.current = L.layerGroup().addTo(m);
     dots.current = L.layerGroup().addTo(m);
     lmap.current = m;
@@ -85,7 +85,7 @@ export function ThreatMap({ map, points, highlight, onOpen }: Props) {
     const key = `${map?.name}:${points.length > 0}`;
     if (points.length && fitted.current !== key) {
       fitted.current = key;
-      m.fitBounds(L.latLngBounds(points.map((p) => [p[1], p[2]] as [number, number])).pad(0.15));
+      m.fitBounds(L.latLngBounds(points.map((p) => [p[1], p[2]] as [number, number])).pad(0.45));
     }
   }, [points, map?.name]);
 

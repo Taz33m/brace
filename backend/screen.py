@@ -28,7 +28,8 @@ def _site_facts(attrs: dict) -> dict:
         return int(sum(s.get(key) or 0 for s in ss))
 
     def peak(key: str) -> float:
-        return max([s.get(key) or 0 for s in ss], default=0)
+        # Vexcel occasionally reports cover above 100% where canopies overlap; cap it.
+        return min(100.0, max([s.get(key) or 0 for s in ss], default=0))
 
     return {
         "structures": len(ss),

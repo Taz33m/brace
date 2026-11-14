@@ -7,8 +7,8 @@ declare global {
 }
 
 export interface TourHandle {
-  /** Open a scan if needed, fly to a position in it and face a direction. */
-  lookFrom: (scanId: string, sweepId: string | null, direction: Direction) => void;
+  /** Open a scan if needed, fly to a position in it and face a direction. With `tag`, pin a labelled marker in that view. */
+  lookFrom: (scanId: string, sweepId: string | null, direction: Direction, tag?: string) => void;
 }
 
 interface Props {
@@ -27,12 +27,14 @@ export const TourPane = forwardRef<TourHandle, Props>(function TourPane({ scans,
   const sdk = useRef<any>(null);
   const yaw = useRef(0);
   const ids = useRef<Set<string>>(new Set());
-  const pending = useRef<{ sweepId: string | null; direction: Direction } | null>(null);
+  const where = useRef<Record<string, { x: number; y: number; z: number }>>({});
+  const tagged = useRef<Set<string>>(new Set());
+  const pending = useRef<{ sweepId: string | null; direction: Direction; tag?: string } | null>(null);
   const cb = useRef({ onMove, onTurn });
   cb.current = { onMove, onTurn };
   const scan = scans.find((s) => s.id === scanId) ?? null;
 
-  const move = (sweepId: string | null, direction: Direction) => {
+  const move = (sweepId: string | null, direction: Direction, tag?: string) => {
     const mp = sdk.current;
     if (!mp || !scan) return;
     const offset = scan.sdk_yaw_offset;
@@ -41,6 +43,20 @@ export const TourPane = forwardRef<TourHandle, Props>(function TourPane({ scans,
     const target = sweepId && ids.current.has(sweepId) ? sweepId : null;
     if (target) mp.Sweep.moveTo(target, { rotation, transition: mp.Sweep.Transition.FLY, transitionTime: 1300 }).catch(() => {});
     else mp.Camera.setRotation(rotation, { speed: 60 }).catch(() => {});
+    // Pin the action in the scene: a marker about two metres along the view from where the camera stands.
+    const pos = target ? where.current[target] : null;
+    const key = `${target}:${tag}`;
+    if (tag && pos && mp.Tag?.add && !tagged.current.has(key)) {
+      tagged.current.add(key);
+      const yawRad = (rotation.y * Math.PI) / 180;
+      const dy = direction === "up" ? 0.9 : direction === "down" ? -1.2 : -0.2;
+      const reach = direction === "up" || direction === "down" ? 0.4 : 2;
+      mp.Tag.add({
+        label: tag, description: "", color: { r: 0.81, g: 0.29, b: 0.1 },
+        anchorPosition: { x: pos.x - Math.sin(yawRad) * reach, y: pos.y + dy, z: pos.z - Math.cos(yawRad) * reach },
+        stemVector: { x: 0, y: 0.25, z: 0 },
+      }).catch(() => {});
+    }
   };
 
   useEffect(() => {
@@ -51,6 +67,7 @@ export const TourPane = forwardRef<TourHandle, Props>(function TourPane({ scans,
     let last = 0;
     sdk.current = null;
     ids.current = new Set();
+    tagged.current = new Set();
     setState("loading");
     const connect = async () => {
       if (!window.MP_SDK) { setState("failed"); return; }
@@ -59,9 +76,10 @@ export const TourPane = forwardRef<TourHandle, Props>(function TourPane({ scans,
         if (cancelled) return;
         sdk.current = mp;
         subs.push(mp.Sweep.data.subscribe({
-          onCollectionUpdated(all: Record<string, { enabled?: boolean }>) {
+          onCollectionUpdated(all: Record<string, { enabled?: boolean; position?: { x: number; y: number; z: number } }>) {
             ids.current = new Set(Object.keys(all).filter((k) => all[k].enabled !== false));
-            if (pending.current && ids.current.size) { const p = pending.current; pending.current = null; setTimeout(() => move(p.sweepId, p.direction), 600); }
+            where.current = Object.fromEntries(Object.entries(all).filter(([, v]) => v.position).map(([k, v]) => [k, v.position!]));
+            if (pending.current && ids.current.size) { const p = pending.current; pending.current = null; setTimeout(() => move(p.sweepId, p.direction, p.tag), 600); }
           },
         }));
         subs.push(mp.Sweep.current.subscribe((s: { id?: string; sid?: string }) => { const id = s.id || s.sid; if (id) cb.current.onMove(scan.id, id); }));
@@ -83,10 +101,10 @@ export const TourPane = forwardRef<TourHandle, Props>(function TourPane({ scans,
   }, [scanId, sdkKey]);
 
   useImperativeHandle(ref, () => ({
-    lookFrom(id, sweepId, direction) {
-      if (id !== scanId) { pending.current = { sweepId, direction }; setScanId(id); }
-      else if (sdk.current && ids.current.size) move(sweepId, direction);
-      else pending.current = { sweepId, direction };
+    lookFrom(id, sweepId, direction, tag) {
+      if (id !== scanId) { pending.current = { sweepId, direction, tag }; setScanId(id); }
+      else if (sdk.current && ids.current.size) move(sweepId, direction, tag);
+      else pending.current = { sweepId, direction, tag };
     },
   }));
 

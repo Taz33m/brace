@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { exposureLine, hours, num, when } from "../format";
 import type { Portfolio, Scenario, ScenarioMap } from "../types";
@@ -20,8 +20,10 @@ export function MapPage({ scenarios, scenario, step, onScenario, onStep, onOpen 
   const [kind, setKind] = useState("");
   const [hover, setHover] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const list = useRef<HTMLElement>(null);
 
   useEffect(() => { setManager(""); setKind(""); }, [scenario.id]);
+  useEffect(() => { if (list.current) list.current.scrollTop = 0; }, [scenario.id, step, manager, kind]);
   useEffect(() => {
     let live = true;
     setError(null);
@@ -68,7 +70,7 @@ export function MapPage({ scenarios, scenario, step, onScenario, onStep, onOpen 
 
       <main className="map-body">
         <ThreatMap map={map} points={data?.points ?? []} highlight={hover} onOpen={onOpen} />
-        <aside className="ranked" aria-label="Buildings to act on first">
+        <aside className="ranked" ref={list} aria-label="Buildings to act on first">
           {error && <p className="notice bad">{error}</p>}
           {!data && !error && <p className="notice">Working out which buildings this forecast touches…</p>}
           {data && (
