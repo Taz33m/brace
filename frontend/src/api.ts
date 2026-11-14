@@ -25,6 +25,8 @@ export const api = {
   facing: (id: number, scenario: string, step: string | null) => get<Facing>(`/api/buildings/${id}/facing${q({ scenario, step })}`),
   savedSteps: (id: number, scenario: string) => get<{ plans: SavedStep[] }>(`/api/buildings/${id}/plans${q({ scenario })}`).then((r) => r.plans),
   clock: (id: number, scenario: string, earlier: string, later: string) => get<ClockChange>(`/api/buildings/${id}/clock${q({ scenario, earlier, later })}`),
+  /** The forecast as a table: one row per building, keyed by the CoStar property id. step "all" is every forecast step. */
+  forecastCsv: (scenario: string, step: string | null) => `/api/scenarios/${scenario}/forecast.csv${q({ step })}`,
   siteModel: (id: number) => get<SiteModel>(`/api/buildings/${id}/site-model`),
   board: () => get<Board>("/api/site-model/board"),
   measured: (id: number, scenario: string, step: string | null) =>
