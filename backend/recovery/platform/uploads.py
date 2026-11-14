@@ -10,7 +10,7 @@ from email.parser import BytesParser
 from email.policy import HTTP
 from io import BytesIO
 
-from PIL import Image, ImageOps, UnidentifiedImageError
+from PIL import Image, ImageOps
 
 from .errors import PlatformError
 
@@ -78,6 +78,6 @@ def decode_image(data: bytes) -> tuple[str, bytes]:
             image.save(out, "JPEG", quality=85)  # no exif= argument: metadata is dropped
     except PlatformError:
         raise
-    except (UnidentifiedImageError, OSError, ValueError, SyntaxError, Image.DecompressionBombError):
+    except Exception:  # Pillow plugins raise many types (EOFError, struct.error, ...) on hostile files
         raise unsupported() from None
     return ACCEPTED_FORMATS[fmt], out.getvalue()
