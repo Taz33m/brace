@@ -544,3 +544,74 @@ def facts(model: dict) -> list[dict]:
                     "src": r["src"], "sources": [{"id": "resident:report", "provider": "Resident", "what": "report", "captured": r["at"][:10]}],
                     "limits": r["status"], "report": True})
     return out
+
+
+# --- what measuring changed -----------------------------------------------------------------------------
+_METRES = re.compile(r"(\d+(?:\.\d+)?)\s*(?:m\b|metres?\b|meters?\b)", re.I)
+
+
+def _model_metres(model: dict, first: list[str] | None = None) -> dict[str, str]:
+    """Every height and distance in the model, as it would be written, with what it is.
+
+    Two roofs can share a number. The roofs an action names are read first, so a number is credited to them."""
+    out: dict[str, str] = {}
+    for st in sorted(model["structures"], key=lambda st: st["id"] not in (first or [])):
+        roof = (st.get("roof_height_m") or {}).get("value")
+        if roof is not None:
+            out.setdefault(_m(roof), f"roof {st['id']} height")
+        t = (st.get("tallest_beside_it") or {}).get("value")
+        if t:
+            out.setdefault(_m(t["height_m"]), f"height of {t.get('what') or 'the tallest thing'} beside {st['id']}")
+            out.setdefault(_m(t["from_wall_m"]), f"its distance from {st['id']}'s wall")
+            out.setdefault(_m(t["above_roof_m"]), f"how far it stands above {st['id']}'s roof")
+    return out
+
+
+def cited(model: dict, action: dict) -> list[dict]:
+    """The model's measurements that an action's own words quote, matched on the number as written."""
+    said = " ".join(str(action.get(k) or "") for k in ("title", "why"))
+    known = _model_metres(model, [st["id"] for st in model["structures"] if st["id"] == action.get("structure") or re.search(rf"\b{st['id']}\b", said)])
+    found, seen = [], set()
+    for number in _METRES.findall(said):
+        key = f"{float(number):.1f}"
+        if key in known and key not in seen:
+            seen.add(key)
+            found.append({"metres": key, "is": known[key]})
+    return found
+
+
+def what_measuring_changed(model: dict, without: dict, with_measurements: dict) -> dict:
+    """Two plans for the same building and forecast step: one written before the site was measured, one after.
+
+    Two runs of the planner differ for many reasons, so a difference is not proof of cause. What can be
+    shown is narrower and is all this reports: which jobs appear in only one plan, and which jobs in the
+    measured plan quote a measurement from the model.
+    """
+    from .clock import _alike, _brief
+    was, now = list(without.get("actions") or []), list(with_measurements.get("actions") or [])
+    scored = sorted(((_alike(a, b), i, j) for i, a in enumerate(was) for j, b in enumerate(now)), reverse=True)
+    pair: dict[int, int] = {}
+    taken: set[int] = set()
+    for score, i, j in scored:
+        if score < 0.6:
+            break
+        if i not in pair and j not in taken:
+            pair[i] = j
+            taken.add(j)
+    rows = []
+    for j, b in enumerate(now):
+        i = next((i for i, jj in pair.items() if jj == j), None)
+        rows.append({"change": "in both" if i is not None else "only in the measured plan", "before": _brief(was[i]) if i is not None else None,
+                     "after": _brief(b), "structure": b.get("structure"), "quotes": cited(model, b)})
+    for i, a in enumerate(was):
+        if i not in pair:
+            rows.append({"change": "only in the earlier plan", "before": _brief(a), "after": None, "structure": a.get("structure"), "quotes": []})
+
+    def total(plan: dict) -> dict:
+        t = ((plan.get("totals") or {}).get("before_arrival")) or {}
+        return {"actions": len(plan.get("actions") or []), "before_arrival": t.get("count", 0), "cost_low": t.get("cost_low", 0), "cost_high": t.get("cost_high", 0)}
+
+    return {"note": "Both plans were written by the planner for the same forecast step. Only the second could read the site's measurements. "
+                    "Two runs differ for many reasons; a quoted measurement is the part that can be traced.",
+            "without": total(without), "with": total(with_measurements),
+            "actions_quoting_a_measurement": sum(1 for r in rows if r["quotes"]), "rows": rows}

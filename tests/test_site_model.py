@@ -139,3 +139,24 @@ def test_a_look_at_the_photo_names_the_tall_thing_and_says_how_it_was_identified
     assert "vexcel:aerial" in tall["src"]                                           # the photo it was identified on is a source
     said = sm.measured_for(model, {"structure": "S1", "title": "Cut back the limbs over S1", "why": ""})[1]["text"]
     assert said.startswith("a tree 15.5 m tall")
+
+
+def test_an_action_is_credited_only_with_measurements_its_own_words_quote(site):
+    model = sm.build(site)
+    quoting = {"id": "A1", "title": "Remove the tree standing 3.3 m from the S1 wall", "why": "It is 15.5 metres tall, well above the 7.4 m roof.", "crew": "tree crew"}
+    assert [c["metres"] for c in sm.cited(model, quoting)] == ["3.3", "15.5", "7.4"]
+    assert sm.cited(model, {"title": "Strap units within 2 m of the edge", "why": "About 40 m of gutter"}) == []   # numbers not in the model
+
+
+def test_comparing_a_measured_plan_reports_new_jobs_and_quotes_without_claiming_cause(site):
+    model = sm.build(site)
+    old = {"actions": [{"id": "A1", "title": "Cut back limbs over the S1 roof", "crew": "tree crew"},
+                       {"id": "A2", "title": "Clear the drain grates", "crew": "on-site staff"}], "totals": {}}
+    new = {"actions": [{"id": "A1", "title": "Cut back the limbs over the S1 roof", "why": "A tree 15.5 m tall stands 3.3 m from the wall.", "crew": "tree crew"},
+                       {"id": "A2", "title": "Move cars from under the leaning pine", "crew": "on-site staff", "why": ""}], "totals": {}}
+    got = sm.what_measuring_changed(model, old, new)
+    by = {r["after"]["title"] if r["after"] else r["before"]["title"]: r for r in got["rows"]}
+    assert by["Cut back the limbs over the S1 roof"]["change"] == "in both" and len(by["Cut back the limbs over the S1 roof"]["quotes"]) == 2
+    assert by["Move cars from under the leaning pine"]["change"] == "only in the measured plan"
+    assert by["Clear the drain grates"]["change"] == "only in the earlier plan"
+    assert got["actions_quoting_a_measurement"] == 1 and "differ for many reasons" in got["note"]
