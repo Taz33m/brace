@@ -394,6 +394,8 @@ export function ScenePage({ id, scenario, step }: Props) {
   const chosen = actions.find((a) => a.id === picked) ?? null;
   const notice = (!after && b?.plan?.messages.find((m) => m.kind === "notice" && chosen && m.action_ids.includes(chosen.id))) || null;
   const shown = placed.find((r) => r.id === seen) ?? null;
+  // People first: what a resident has asked the property team for, whether or not it names a room.
+  const asks = reports.filter((r) => /^Support request \(/.test(r.text)).map((r) => ({ id: r.id, kind: /^Support request \(([^)]*)\)/.exec(r.text)?.[1] ?? "", text: r.text.replace(/^Support request \([^)]*\):\s*/, "") }));
   const due = after ? earlier?.plan?.totals.after_event ?? null : null;
   const left = b?.threat.hours_left ?? null;
   const steps = saved.filter((s) => s.step);
@@ -449,6 +451,11 @@ export function ScenePage({ id, scenario, step }: Props) {
             <strong>{hoursText(left)}</strong>
             <span>{left == null ? "" : left <= 0 ? "conditions are here" : "until the wind arrives"}{left != null && left > 0 ? `. ${hoursText(Math.max(0, left - 6))} of safe working time` : ""}</span>
           </>
+        )}
+        {asks.length > 0 && (
+          <ul className="scene-asks" aria-label="Residents asking for help">
+            {asks.map((a) => <li key={a.id}><strong>A resident asks for help{a.kind === "access" ? " getting out" : ""}</strong>“{a.text}”</li>)}
+          </ul>
         )}
         {steps.length > 1 && (
           <div className="scene-steps" role="group" aria-label="Forecast step">

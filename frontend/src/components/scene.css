@@ -98,3 +98,9 @@ button.scene-report { display: block; border: 0; border-left: 3px solid var(--em
 .scene-before { margin: 12px 0 0; }
 .scene-before img { display: block; width: 100%; aspect-ratio: 3 / 2; object-fit: cover; border-radius: 8px; background: #05070a; }
 .scene-before figcaption, .scene-basis { margin-top: 6px; font-size: 11.5px; line-height: 1.35; color: rgba(244, 241, 234, 0.6); }
+
+/* People first: a resident's own request for help sits under the clock at every moment. */
+.scene-asks { margin: 14px 0 0 auto; padding: 0; max-width: 320px; list-style: none; display: flex; flex-direction: column; gap: 8px; text-shadow: none; }
+.scene-asks li { padding: 9px 12px 10px; border-right: 3px solid var(--ember); text-align: right; font-size: 13.5px; line-height: 1.35; background: rgba(40, 20, 10, 0.86); backdrop-filter: blur(4px); }
+.scene-asks strong { display: block; font-family: var(--cond); font-size: 17px; line-height: 1.1; color: var(--ember); }
+.scene.is-placing .scene-asks { display: none; }
