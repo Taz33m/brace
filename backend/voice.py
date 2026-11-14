@@ -15,9 +15,8 @@ VOICE = os.environ.get("BRACE_VOICE") or "marin"
 SECRETS_URL = "https://api.openai.com/v1/realtime/client_secrets"
 
 # What an approval does, in fixed words. The voice is told to say these as written, so it can never
-# promise that a crew is coming or that anything has left the building.
-APPROVED_SAY = ("Approved, and marked on the plan. Nothing has been sent yet: "
-                "the resident notice and the work order are drafted and waiting for you.")
+# promise a contractor booking. Publication means the private resident feed, not SMS.
+APPROVED_SAY = "Approved. The notice is now published in the residents' private Brace updates."
 UNKNOWN_SAY = "That is not an action in this plan."
 
 
@@ -152,7 +151,7 @@ def instructions(record: dict, threat: dict, plan: dict | None, scans: list[dict
                   for l in closed]
     drafted = plan.get("messages") or []
     if drafted:
-        lines += ["", "MESSAGES DRAFTED (nothing has been sent)"]
+        lines += ["", "MESSAGES PREPARED (publication status comes only from the approval tool result)"]
         lines += [f"- {'Resident notice' if m.get('kind') == 'notice' else 'Work order'} to {m.get('to')}: {m.get('subject')}" for m in drafted]
     return "\n".join(lines)
 

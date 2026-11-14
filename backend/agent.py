@@ -18,6 +18,7 @@ from shapely.geometry import Polygon
 from . import matterport, vexcel, vision
 from .building import Site
 from .config import AGENT_EFFORT, AGENT_MODEL, MAX_AGENT_TURNS
+from .preparation_notices import NOTICE_RULES, correct_notice
 
 Emit = Callable[[dict], None]
 CREW_STANDDOWN_HOURS = 6  # outdoor crews stop this long before damaging conditions arrive
@@ -58,6 +59,8 @@ VIEW_TO_OBLIQUE = {"from-south": "oblique-north", "from-west": "oblique-east",
 TIMINGS = ["before_arrival", "after_event", "capital"]
 
 EMPTY = {"type": "object", "properties": {}, "additionalProperties": False}
+SYSTEM += "\n" + NOTICE_RULES
+
 TOOLS: list[dict[str, Any]] = [
     {"name": "get_building", "description": "The building record: type, age, construction, size, manager and owner if known, and the tenants recorded as occupying it now.", "input_schema": EMPTY},
     {"name": "get_threat", "description": "The threat at this site: what is forecast here, how many hours are left, and the site's standing flood and fire zoning.", "input_schema": EMPTY},
@@ -390,6 +393,7 @@ class Planner:
         if bad:
             raise ToolError(f"unknown action ids {bad}; actions so far: {sorted(known)}")
         msg = {"id": f"M{len(self.messages) + 1}", "kind": kind, "to": to, "subject": subject, "body": body, "action_ids": action_ids or []}
+        msg = correct_notice(msg, self.threat)
         self.messages.append(msg)
         self.emit("message", message=msg)
         return f"Message {msg['id']} drafted.", f"Drafted {'a notice' if kind == 'notice' else 'a work order'} for {to}", None

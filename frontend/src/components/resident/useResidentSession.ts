@@ -102,6 +102,16 @@ export function useResidentSession(api: ResidentApi, on_session_expired: () => v
     void refresh();
   }, [refresh]);
 
+  // A phone/proxy can leave an SSE request open without delivering frames.
+  // Keep the resident's approved notices current even in that silent failure.
+  // refresh() coalesces requests and enforces snapshot ordering/session expiry.
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (navigator.onLine !== false) void refresh();
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [refresh]);
+
   // Live subscription, started once the first snapshot gives us a cursor.
   const ready = home !== null;
   useEffect(() => {

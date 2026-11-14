@@ -8,7 +8,7 @@ import os
 import threading
 from collections import Counter
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from PIL import Image
@@ -73,7 +73,8 @@ def _plan_key(scenario_id: str, step_id: str | None) -> str:
 
 def _plan(property_id: int, key: str) -> dict | None:
     p = building_dir(property_id) / "plans" / f"{key}.json"
-    return json.loads(p.read_text()) if p.exists() else None
+    from .preparation_notices import correct_plan_notices
+    return correct_plan_notices(json.loads(p.read_text())) if p.exists() else None
 
 
 @app.get("/api/config")
@@ -339,16 +340,24 @@ def vr_approvals(building: int) -> dict:
 
 
 @app.post("/api/vr/approve")
-def vr_approve(body: dict) -> dict:
-    """Record an approval made in the headset. Only an action that is in a saved plan can be approved."""
+def vr_approve(body: dict, request: Request) -> dict:
+    """Approve a saved action; a linked resident notice is published before success."""
     import time
     building, action_id = body.get("building"), body.get("action_id")
     sc = _scenario(str(body.get("scenario")))
     plan = _plan(building, _plan_key(sc["id"], _step(sc, body.get("step")))) if isinstance(building, int) else None
     if not plan or not any(a["id"] == action_id for a in plan["actions"]):
         return {"ok": False, "say": voice.UNKNOWN_SAY}
+    if any(m.get("kind") == "notice" and action_id in m.get("action_ids", [])
+           for m in plan.get("messages", [])):
+        from .recovery.preparation_approval import approve_notice
+        result = approve_notice(request, building=building, scenario=sc["id"],
+                                step=_step(sc, body.get("step")), action_id=action_id, plan=plan)
+    else:
+        result = {"ok": True, "delivery": None,
+                  "say": "Action marked approved. No resident notice is linked to this action; work orders remain drafts."}
     VR["approved"].setdefault((building, action_id), time.time())
-    return {"ok": True, "say": voice.APPROVED_SAY}
+    return result
 
 
 @app.post("/api/vr/reset")

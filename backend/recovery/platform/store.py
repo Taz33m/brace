@@ -862,6 +862,49 @@ class CaseStore:
 
     # notices
 
+    def publish_preparation_notice(self, actor: Actor, case_id: str, *, approval_key: str,
+                                   title: str, body: str, source_ids: list[str]) -> dict:
+        """Publish explicitly approved content once, independently of later case revisions.
+
+        The caller binds the approval to this case and exact content. Owner membership,
+        publication, event and durable approval receipt share one write transaction.
+        """
+        with self._write() as conn:
+            self._owner_case(conn, actor, case_id)
+            key = self._check_key(approval_key)
+            if (not isinstance(title, str) or not isinstance(body, str) or not title.strip()
+                    or not body.strip() or len(title) > 200 or len(body) > 4000):
+                raise invalid("A notice needs a title (up to 200 characters) and a body (up to 4000).")
+            if (not isinstance(source_ids, list) or len(source_ids) > 50
+                    or any(not isinstance(source, str) or not source.strip() for source in source_ids)):
+                raise invalid("Notice sources must be a list of up to 50 nonempty source IDs.")
+            operation = f"preparation-notice:{case_id}"
+            content_hash = hash_token(dumps({"title": title, "body": body, "source_ids": source_ids}))
+            previous = self._replay(conn, actor, operation, key, content_hash)
+            if previous is not None:
+                return {**previous, "already_published": True}
+            published = self._insert_published_notice(conn, actor, case_id, title, body, source_ids, None)
+            revision = self._result(conn, case_id)
+            receipt = {"notice_id": published.notice_id, "case_revision": revision.case_revision,
+                       "analysis_revision": revision.analysis_revision, "published_at": published.published_at,
+                       "already_published": False}
+            self._remember(conn, actor, operation, key, content_hash, receipt)
+            return receipt
+
+    def _insert_published_notice(self, conn, actor: Actor, case_id: str, title: str, body: str,
+                                 source_ids: list[str], households: Optional[list[str]]) -> m.PublishedNotice:
+        """Insert already-authorized notice content inside the caller's transaction."""
+        now = self.now()
+        published = m.PublishedNotice(notice_id=new_id("ntc"), title=title, body=body, published_at=now,
+                                      published_by=actor.actor_id, source_ids=source_ids)
+        conn.execute("INSERT INTO notices VALUES (?,?,?,?,?,?)",
+                     (published.notice_id, case_id, "published",
+                      json.dumps(households) if households is not None else None, dumps(published), now))
+        self._bump(conn, case_id)
+        self._event(conn, case_id, "notice.published", audience="case" if households is None else "households",
+                    households=households, entity_id=published.notice_id, public_summary="New notice")
+        return published
+
     def _cmd_publish_notice(self, actor, case_id, command: m.PublishNotice, idem=None, **_) -> m.CommandResult:
         title, body = command.title.strip(), command.body.strip()
         if not title or not body or len(title) > 200 or len(body) > 4000:
@@ -876,16 +919,8 @@ class CaseStore:
                     if conn.execute("SELECT 1 FROM households WHERE household_id = ? AND case_id = ?",
                                     (hh, case_id)).fetchone() is None:
                         raise invalid("A household is not on this case.", "household_unavailable")
-            now = self.now()
-            published = m.PublishedNotice(notice_id=new_id("ntc"), title=title, body=body, published_at=now,
-                                          published_by=actor.actor_id, source_ids=command.source_ids)
             households = list(dict.fromkeys(command.household_ids)) if command.household_ids is not None else None
-            conn.execute("INSERT INTO notices VALUES (?,?,?,?,?,?)",
-                         (published.notice_id, case_id, "published",
-                          json.dumps(households) if households is not None else None, dumps(published), now))
-            self._bump(conn, case_id)
-            self._event(conn, case_id, "notice.published", audience="case" if households is None else "households",
-                        households=households, entity_id=published.notice_id, public_summary="New notice")
+            self._insert_published_notice(conn, actor, case_id, title, body, command.source_ids, households)
             return self._result(conn, case_id, idem=idem)
 
     # ------------------------------------------------------------------ idempotency
