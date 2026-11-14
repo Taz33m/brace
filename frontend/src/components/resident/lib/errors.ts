@@ -1,9 +1,12 @@
 /**
  * Normalises whatever the injected ResidentApi throws into one shape the screens can render.
  *
- * Expected from the lead's adapter (see README "API mismatches"): an Error-like object carrying
- * `status` (HTTP status) and/or `body` / `error` matching the contract's ApiErrorBody envelope.
- * A fetch network failure (TypeError, AbortError) is treated as retryable "network".
+ * Accepted shapes, in order:
+ * 1. The lead's `RecoveryApiError` (frontend/src/recovery/client.ts): flat `status`, `code`,
+ *    `retryable`, `message`. `status: 0` / `code: "network_error"` is a network failure;
+ *    `code: "session_expired"` (401 or 403 without a body) ends the session.
+ * 2. An object carrying the contract's ApiErrorBody envelope under `error` or `body.error`.
+ * 3. A raw fetch failure (TypeError, AbortError, offline) — retryable "network".
  */
 import type { ApiErrorBody } from "../contract";
 
@@ -18,6 +21,10 @@ export interface ResidentError {
 function envelope(e: unknown): ApiErrorBody["error"] | null {
   if (!e || typeof e !== "object") return null;
   const o = e as Record<string, unknown>;
+  // Flat RecoveryApiError: code/retryable/message live on the error itself.
+  if (typeof o.code === "string" && typeof o.retryable === "boolean" && typeof o.message === "string") {
+    return { code: o.code, message: o.message, retryable: o.retryable };
+  }
   const direct = o.error;
   if (direct && typeof direct === "object" && "code" in direct) return direct as ApiErrorBody["error"];
   const body = o.body;
@@ -60,19 +67,24 @@ function kindFromStatus(status: number | null): ResidentError["kind"] {
 }
 
 export function toResidentError(e: unknown): ResidentError {
-  const status = statusOf(e);
+  const rawStatus = statusOf(e);
   const env = envelope(e);
   const isNetwork =
-    status == null && !env &&
-    (e instanceof TypeError || (e instanceof DOMException && (e.name === "AbortError" || e.name === "TimeoutError")) ||
-      (typeof navigator !== "undefined" && navigator.onLine === false));
-  const kind: ResidentError["kind"] = isNetwork ? "network" : kindFromStatus(status);
+    rawStatus === 0 || env?.code === "network_error" ||
+    (rawStatus == null && !env &&
+      (e instanceof TypeError ||
+        (typeof DOMException !== "undefined" && e instanceof DOMException && (e.name === "AbortError" || e.name === "TimeoutError")) ||
+        (typeof navigator !== "undefined" && navigator.onLine === false)));
+  const status = rawStatus === 0 ? null : rawStatus;
+  const kind: ResidentError["kind"] =
+    isNetwork ? "network" : env?.code === "session_expired" ? "expired" : kindFromStatus(status);
   const fb = FALLBACK[kind];
   return {
     kind,
-    // Server messages are written for people (contract error envelope); prefer them when present.
-    message: env?.message || fb.message,
-    retryable: env ? env.retryable : fb.retryable,
+    // Network and expiry use our resident wording (it tells them their answers are kept / what to do);
+    // otherwise server messages are written for people, so prefer them.
+    message: kind === "network" || kind === "expired" ? fb.message : env?.message || fb.message,
+    retryable: kind === "network" ? true : kind === "expired" ? false : env ? env.retryable : fb.retryable,
     status,
     code: env?.code ?? null,
   };

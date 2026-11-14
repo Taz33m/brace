@@ -52,5 +52,5 @@ server (port 5175) or the integrated mount.
 
 ```bash
 cd frontend && npx tsc --noEmit
-npx --yes tsx --test src/components/resident/__tests__/*.test.mjs   # logic tests, no new dependencies
+node --test src/components/resident/__tests__/*.test.mjs   # logic tests (same pattern as tests/recovery-*.test.mjs; no new dependencies)
 ```
