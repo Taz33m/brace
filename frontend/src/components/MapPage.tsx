@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
+import { conversation } from "../conversation";
 import { exposureLine, hours, money, num, when } from "../format";
 import type { Portfolio, Scenario, ScenarioMap } from "../types";
 import { ThreatMap } from "./ThreatMap";
@@ -22,6 +23,8 @@ export function MapPage({ scenarios, scenario, step, onScenario, onStep, onOpen 
   const [error, setError] = useState<string | null>(null);
   const list = useRef<HTMLElement>(null);
 
+  // The conversation belongs to a building; leaving for the map ends it.
+  useEffect(() => { conversation.stop(); }, []);
   useEffect(() => { setManager(""); setKind(""); }, [scenario.id]);
   useEffect(() => { if (list.current) list.current.scrollTop = 0; }, [scenario.id, step, manager, kind]);
   useEffect(() => {

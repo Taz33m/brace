@@ -148,6 +148,7 @@ code { font-family: ui-monospace, Menlo, monospace; font-size: 0.9em; background
 .action-head { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 9px; align-items: start; }
 .num { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--signal); color: #fff; font-family: var(--cond); font-weight: 700; font-size: 15px; }
 .action h4 { font-size: 15.5px; font-weight: 600; line-height: 1.3; }
+.action h4 .approved { display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 10px; background: #1f9d61; color: #fff; font-size: 12px; font-weight: 600; vertical-align: middle; white-space: nowrap; }
 .action p { font-size: 14px; color: var(--ink-2); }
 .evidence { display: grid; grid-template-columns: repeat(auto-fit, minmax(105px, 1fr)); gap: 6px; }
 .evidence:empty { display: none; }
@@ -230,3 +231,48 @@ code { font-family: ui-monospace, Menlo, monospace; font-size: 0.9em; background
   .map-page .mast > .scenarios { order: 1; flex-basis: 100%; }
 }
 @media (prefers-reduced-motion: reduce) { .pulse, .lead.is-open .lead-mark { animation: none; } }
+
+/* A scanned unit drawn from its wall measurements, with what faces an outside action picked out. Units are metres. */
+.facing { margin: 10px 0 4px; padding: 10px 12px 10px; border: 1px solid var(--line, #d9dee5); border-radius: 6px; background: #fbfcfd; }
+.facing figcaption { margin-top: 6px; font-size: 13px; line-height: 1.4; }
+.facing figcaption small { color: #6b7785; font-size: 11.5px; }
+.facing-diagram { display: block; width: 100%; max-height: 250px; }
+.facing-diagram .fd-wall { stroke: #9aa7b5; stroke-width: 0.07; stroke-linecap: round; }
+.facing-diagram .fd-outdoor { fill: #eef3f7; stroke: none; }
+.facing-diagram .fd-room { font: 500 0.36px Barlow, Arial, sans-serif; fill: #6b7785; text-anchor: middle; dominant-baseline: middle; }
+.facing-diagram .fd-open { stroke: #0b1522; stroke-width: 0.2; stroke-linecap: butt; }
+.facing-diagram .fd-open.fd-faces { stroke: #cf4a1a; stroke-width: 0.3; }
+.facing-diagram .fd-arrow { stroke: #cf4a1a; stroke-width: 0.1; stroke-dasharray: 0.28 0.2; }
+.facing-diagram .fd-head { fill: #cf4a1a; }
+.facing-diagram .fd-far { font: 700 0.42px Barlow, Arial, sans-serif; fill: #cf4a1a; }
+.facing-diagram .fd-north line, .facing-diagram .fd-scale line { stroke: #6b7785; stroke-width: 0.05; }
+.facing-diagram .fd-north polygon { fill: #6b7785; }
+.facing-diagram .fd-north text, .facing-diagram .fd-scale text { font: 600 0.34px Barlow, Arial, sans-serif; fill: #6b7785; text-anchor: middle; }
+
+/* The agent's to-do list while it works, and the tally once it has finished. */
+.todo { margin-top: 8px; }
+.todo-count { font-size: 13.5px; color: #44505e; }
+.todo-now { display: flex; align-items: center; gap: 8px; margin: 6px 0 8px; font-size: 14px; font-weight: 600; }
+.todo ol { list-style: none; margin: 0; padding: 0; max-height: 34vh; overflow-y: auto; display: flex; flex-direction: column; gap: 5px; }
+.todo-item { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 9px; align-items: start; padding: 6px 8px; border-radius: 5px; background: #f4f6f8; }
+.todo-item.is-open { background: #fff6ef; box-shadow: inset 0 0 0 1px #f3c9b2; }
+.todo-box { display: grid; place-items: center; width: 18px; height: 18px; margin-top: 1px; border: 1.5px solid #9aa7b5; border-radius: 4px; font-size: 12px; font-weight: 700; line-height: 1; color: #fff; }
+.todo-item.is-open .todo-box { border-color: #cf4a1a; animation: todo-wait 1.1s ease-in-out infinite; }
+.todo-item.is-actions .todo-box { background: #1f9d61; border-color: #1f9d61; }
+.todo-item.is-looked { padding-top: 4px; padding-bottom: 4px; background: transparent; }
+.todo-item.is-looked .todo-box { background: #44505e; border-color: #44505e; }
+.todo-item.is-looked strong { font-weight: 500; color: #44505e; }
+.todo-item.is-not_a_concern .todo-box { background: #7c8896; border-color: #7c8896; }
+.todo-item.is-cannot_check .todo-box { background: #b88a1a; border-color: #b88a1a; }
+.todo-what strong { display: block; font-size: 13.5px; font-weight: 600; line-height: 1.3; }
+.todo-what small { display: block; font-size: 12px; line-height: 1.35; color: #5d6876; }
+.todo-tally { margin-top: 6px; font-size: 13px; color: #5d6876; }
+@keyframes todo-wait { 0%, 100% { background: transparent; } 50% { background: #f9d9c8; } }
+
+/* An approval that goes through by itself unless someone stops it. */
+.countdown { position: relative; display: flex; align-items: center; gap: 10px; margin-top: 10px; padding: 10px 12px 13px; border: 1px solid #f3c9b2; border-radius: 6px; background: #fff6ef; overflow: hidden; }
+.countdown-words { margin-right: auto; min-width: 0; }
+.countdown-words strong { display: block; font-size: 14.5px; }
+.countdown-words small { display: block; font-size: 12px; line-height: 1.35; color: #5d6876; }
+.countdown-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: #cf4a1a; transform-origin: left; transition: transform 100ms linear; }
+@media (prefers-reduced-motion: reduce) { .todo-item.is-open .todo-box { animation: none; } .countdown-bar { transition: none; } }

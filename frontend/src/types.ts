@@ -228,3 +228,42 @@ export interface Selection {
   sweepId: string | null;
   direction: Direction;
 }
+
+/** A window or door of a scanned space, placed in metres east and north of the scan's first viewpoint. */
+export interface PlacedOpening {
+  id: string; kind: "window" | "door"; room: string | null; width_m: number; height_m: number | null; sill_m: number | null;
+  at: [number, number]; ends: [[number, number], [number, number]]; faces_deg: number;
+  /** True when the opening is in an outer wall, or is a door onto a patio or balcony. */
+  outside: boolean;
+}
+
+/** A scanned space as a plan drawn from its own wall measurements. */
+export interface ScanPlan {
+  scan_id: string; scan_name: string | null; placement_error_m: number;
+  rooms: { id: string; name: string | null; walls: [[number, number], [number, number]][]; outdoor: boolean }[];
+  openings: PlacedOpening[];
+}
+
+/** What in the nearest scanned space faces one outside action of the plan. */
+export interface FacingHit {
+  scan_id: string; metres: number; bearing_deg: number; line: string; target: { east: number; north: number };
+  facing: { id: string; kind: string; room: string | null; width_m: number; height_m: number | null; metres: number; off_deg: number }[];
+}
+
+export interface Facing { plans: Record<string, ScanPlan>; actions: Record<string, FacingHit> }
+
+/** One job in a saved plan, in the few fields needed to compare plans. */
+export interface JobBrief { id: string; title: string; timing: Timing; crew: string; hours_of_work: number; cost_low: number; cost_high: number }
+
+/** What became of each job between the plans saved for two forecast steps. A comparison of saved plans, not a new run. */
+export interface ClockChange {
+  replay: true;
+  note: string;
+  from: { step: string | null; label: string | null; hours_left: number | null; before_arrival: { count: number; cost_low: number; cost_high: number } };
+  to: { step: string | null; label: string | null; hours_left: number | null; safe_working_hours: number | null; before_arrival: { count: number; cost_low: number; cost_high: number } };
+  rows: { change: "deferred" | "still_fits" | "new" | "dropped" | "brought_forward"; before: JobBrief | null; after: JobBrief | null; reason: string | null }[];
+  notice: { subject: string; action_ids: string[] } | null;
+}
+
+/** A forecast step that has a saved plan for a building. */
+export interface SavedStep { step: string; label: string; hours_left: number | null; headline: string | null }

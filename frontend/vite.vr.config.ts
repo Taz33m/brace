@@ -9,8 +9,8 @@ export default defineConfig({
   plugins: [react(), basicSsl()],
   server: {
     host: true,
-    port: 5175,
+    port: Number(process.env.BRACE_VR_PORT ?? 5175),
     strictPort: true,
-    proxy: { "/api": { target: "http://127.0.0.1:8001", changeOrigin: false, xfwd: true } },
+    proxy: { "/api": { target: `http://127.0.0.1:${process.env.BRACE_API_PORT ?? 8001}`, changeOrigin: false, xfwd: true } },
   },
 });

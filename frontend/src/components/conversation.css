@@ -1,0 +1,111 @@
+/* The conversation with Brace: a quiet sheet of frosted glass in the top right corner. */
+.talk {
+  --talk-ink: #1d1d1f;
+  --talk-soft: rgba(60, 60, 67, 0.62);
+  --talk-agent: #cf4a1a;
+  --talk-you: #0a6cff;
+  position: fixed; top: 14px; right: 14px; z-index: 900;
+  width: min(372px, calc(100vw - 28px));
+  display: flex; flex-direction: column;
+  max-height: min(64vh, 620px);
+  color: var(--talk-ink);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", "Segoe UI", sans-serif;
+  background: rgba(250, 250, 252, 0.74);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  backdrop-filter: blur(28px) saturate(180%);
+  border: 0.5px solid rgba(255, 255, 255, 0.7);
+  border-radius: 22px;
+  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.1), 0 18px 48px rgba(10, 20, 40, 0.22), 0 2px 8px rgba(10, 20, 40, 0.08);
+  overflow: hidden;
+}
+
+.talk-closed { width: auto; background: none; border: 0; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; overflow: visible; }
+.talk-start {
+  display: inline-flex; align-items: center; gap: 10px;
+  padding: 9px 16px 9px 12px; border-radius: 999px;
+  font: 600 14px/1 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif; letter-spacing: -0.01em;
+  color: #1d1d1f; background: rgba(250, 250, 252, 0.8);
+  -webkit-backdrop-filter: blur(28px) saturate(180%); backdrop-filter: blur(28px) saturate(180%);
+  border: 0.5px solid rgba(255, 255, 255, 0.7);
+  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.12), 0 8px 24px rgba(10, 20, 40, 0.18);
+  cursor: pointer; transition: transform 160ms ease, box-shadow 160ms ease;
+}
+.talk-start:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.14), 0 12px 30px rgba(10, 20, 40, 0.24); }
+.talk-start:disabled { color: rgba(60, 60, 67, 0.5); cursor: default; }
+
+/* The name and the buttons share the top row; the status has the row below to itself, so a longer line fits. */
+.talk header {
+  display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; align-items: center; column-gap: 10px; row-gap: 1px;
+  padding: 10px 12px 9px 14px; border-bottom: 0.5px solid rgba(60, 60, 67, 0.14);
+}
+.talk header .talk-orb { grid-row: 1 / span 2; }
+.talk-name-of { font-size: 14px; font-weight: 600; letter-spacing: -0.01em; }
+.talk-acts { display: flex; align-items: center; gap: 6px; }
+.talk-status { grid-column: 2 / -1; font-size: 12px; line-height: 1.25; color: var(--talk-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.talk-quiet {
+  padding: 5px 11px; border: 0; border-radius: 999px;
+  font: 500 12px/1 inherit; font-family: inherit; color: var(--talk-ink);
+  background: rgba(120, 120, 128, 0.14); cursor: pointer;
+}
+.talk-quiet:hover { background: rgba(120, 120, 128, 0.22); }
+.talk-quiet[aria-pressed="true"] { color: #fff; background: var(--talk-agent); }
+/* Watching is the ordinary state, not an alarm: a small dot shows it, and the pill stays quiet. */
+.talk-camera { display: inline-flex; align-items: center; gap: 5px; color: var(--talk-soft); }
+.talk-camera::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: rgba(120, 120, 128, 0.5); }
+.talk-camera[aria-pressed="true"] { color: var(--talk-ink); background: rgba(120, 120, 128, 0.14); }
+.talk-camera[aria-pressed="true"]:hover { background: rgba(120, 120, 128, 0.22); }
+.talk-camera[aria-pressed="true"]::before { background: #34c759; }
+
+/* Four bars that sit still, breathe while listening, and move while someone is speaking. */
+.talk-orb { display: inline-flex; align-items: center; justify-content: center; gap: 3px; width: 30px; height: 30px; flex: none; border-radius: 50%; background: rgba(120, 120, 128, 0.14); }
+.talk-orb i { display: block; width: 3px; height: 6px; border-radius: 2px; background: var(--talk-soft); transform-origin: center; }
+.talk[data-presence="speaking"] .talk-orb { background: rgba(207, 74, 26, 0.14); }
+.talk[data-presence="speaking"] .talk-orb i { background: var(--talk-agent); animation: talk-wave 620ms ease-in-out infinite; }
+.talk[data-presence="hearing"] .talk-orb { background: rgba(10, 108, 255, 0.14); }
+.talk[data-presence="hearing"] .talk-orb i { background: var(--talk-you); animation: talk-wave 520ms ease-in-out infinite; }
+.talk[data-presence="thinking"] .talk-orb i, .talk[data-presence="connecting"] .talk-orb i { animation: talk-think 1100ms ease-in-out infinite; }
+.talk[data-presence="listening"] .talk-orb i { animation: talk-breathe 2400ms ease-in-out infinite; }
+.talk-orb i:nth-child(2) { animation-delay: 110ms !important; }
+.talk-orb i:nth-child(3) { animation-delay: 220ms !important; }
+.talk-orb i:nth-child(4) { animation-delay: 330ms !important; }
+@keyframes talk-wave { 0%, 100% { transform: scaleY(0.7); } 50% { transform: scaleY(2.6); } }
+@keyframes talk-think { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
+@keyframes talk-breathe { 0%, 100% { transform: scaleY(1); } 50% { transform: scaleY(1.35); } }
+
+.talk-lines {
+  list-style: none; margin: 0; padding: 12px 16px 6px; overflow-y: auto; flex: 1 1 auto; min-height: 96px;
+  display: flex; flex-direction: column; gap: 4px;
+  /* Older lines fade out at the top, so the eye stays on what was just said. */
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 26px);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 26px);
+  scrollbar-width: none;
+}
+.talk-lines::-webkit-scrollbar { display: none; }
+.talk-line p { margin: 0; font-size: 15px; line-height: 1.38; letter-spacing: -0.012em; }
+.talk-line.you p { color: rgba(29, 29, 31, 0.72); }
+/* A nod or a shake was not said aloud, so it reads a little apart from the spoken lines. */
+.talk-line.gesture p { font-style: italic; color: rgba(29, 29, 31, 0.5); }
+.talk-line.live p { color: rgba(29, 29, 31, 0.55); }
+.talk-line.agent.live p { color: var(--talk-ink); }
+.talk-name { display: flex; align-items: center; gap: 6px; margin-top: 10px; font-size: 11px; font-weight: 600; letter-spacing: 0.02em; color: var(--talk-soft); }
+.talk-line:first-child .talk-name { margin-top: 0; }
+.talk-name::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--talk-agent); }
+.talk-line.you .talk-name::before { background: var(--talk-you); }
+.talk-hint { font-size: 14px; line-height: 1.4; color: var(--talk-soft); }
+
+.talk-foot { margin: 0; padding: 6px 16px 12px; font-size: 11.5px; color: rgba(60, 60, 67, 0.5); }
+.talk-type { padding: 6px 12px 12px; }
+.talk-type input {
+  width: 100%; padding: 9px 13px; border: 0; border-radius: 999px; outline: none;
+  font: 400 14px/1.2 inherit; font-family: inherit; color: var(--talk-ink);
+  background: rgba(120, 120, 128, 0.14);
+}
+.talk-type input:focus { background: rgba(120, 120, 128, 0.2); box-shadow: 0 0 0 3px rgba(10, 108, 255, 0.28); }
+
+@media (prefers-reduced-motion: reduce) { .talk-orb i { animation: none !important; } .talk-start { transition: none; } }
+
+/* Compact: who is speaking and the sentence being said, nothing more. The history is one press away. */
+.talk-compact .talk-lines { min-height: 0; padding-top: 10px; -webkit-mask-image: none; mask-image: none; }
+.talk-compact .talk-hint { font-size: 13px; }
+.talk-link { padding: 0; border: 0; background: none; font: inherit; color: var(--talk-you); cursor: pointer; }
+.talk-link:hover { text-decoration: underline; }

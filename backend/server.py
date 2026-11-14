@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse, Response
 from PIL import Image
 from sse_starlette.sse import EventSourceResponse
 
-from . import hazards, matterport, portfolio as portfolio_data, rain, screen, vexcel
+from . import clock, hazards, matterport, openings, portfolio as portfolio_data, rain, screen, vexcel, voice
 from .agent import VIEW_TO_OBLIQUE, Planner
 from .building import BuildingError, Site, building_dir
 from .config import MATTERPORT_SDK_KEY
@@ -79,7 +79,7 @@ def _plan(property_id: int, key: str) -> dict | None:
 @app.get("/api/config")
 def config() -> dict:
     has_key = bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"))
-    return {"sdk_key": MATTERPORT_SDK_KEY, "agent_ready": has_key}
+    return {"sdk_key": MATTERPORT_SDK_KEY, "agent_ready": has_key, "voice_ready": voice.ready()}
 
 
 @app.get("/api/scenarios")
@@ -149,6 +149,87 @@ def building(property_id: int, scenario: str, step: str | None = None) -> dict:
             "plan": _plan(property_id, _plan_key(scenario, step_id))}
 
 
+@app.get("/api/buildings/{property_id}/plans")
+def saved_plans(property_id: int, scenario: str) -> dict:
+    """Every forecast step of a scenario that has a saved plan for this building, earliest forecast first.
+
+    This is what lets the clock be moved in a demo: each entry is the plan the agent made for that step.
+    """
+    sc = _scenario(scenario)
+    out = []
+    for st in sc["steps"]:
+        plan = _plan(property_id, _plan_key(scenario, st["id"]))
+        if plan:
+            out.append({"step": st["id"], "label": st["label"], "hours_left": (plan.get("threat") or {}).get("hours_left"),
+                        "headline": plan.get("headline"), "totals": plan.get("totals"),
+                        "actions": [{k: a.get(k) for k in ("id", "title", "timing", "hours_of_work", "cost_low", "cost_high")}
+                                    for a in plan.get("actions") or []]})
+    return {"plans": out}
+
+
+# The opening of the pitch descends from the whole city to one roof. Each step is a real aerial photo of a
+# square this many metres from its middle to its edge, all centred on the building's own aerial.
+DESCENT_BUFFERS_M = (10_000, 2_560, 640, 160)
+
+
+def _descent_centre(site: Site) -> tuple[float, float]:
+    west, south, east, north = site.d["aerial"]["bounds"]
+    return (west + east) / 2, (south + north) / 2
+
+
+def _descent_image(site: Site, level: int):
+    lon, lat = _descent_centre(site)
+    try:
+        return vexcel.ortho(f"POINT({lon} {lat})", buffer_m=DESCENT_BUFFERS_M[level], max_px=(1600, 1600))
+    except vexcel.VexcelError as e:
+        raise HTTPException(502, str(e))
+
+
+@app.get("/api/buildings/{property_id}/descent")
+def descent(property_id: int) -> dict:
+    """The aerial photos for the descent onto a building, widest first, each with the ground it covers and its dates."""
+    s = _site(property_id)
+    lon, lat = _descent_centre(s)
+    levels = []
+    for level in range(len(DESCENT_BUFFERS_M)):
+        _, info = _descent_image(s, level)
+        levels.append({"level": level, "bounds": info.get("bounds"), "first_capture": info.get("first_capture"),
+                       "last_capture": info.get("last_capture"), "url": f"/api/buildings/{property_id}/descent/{level}.jpg"})
+    return {"focus": {"lon": lon, "lat": lat}, "levels": levels,
+            "site": {"bounds": s.d["aerial"]["bounds"], "captured": s.d["aerial"].get("captured"), "url": f"/api/buildings/{property_id}/aerial.jpg"}}
+
+
+@app.get("/api/buildings/{property_id}/descent/{level}.jpg")
+def descent_image(property_id: int, level: int) -> FileResponse:
+    if level not in range(len(DESCENT_BUFFERS_M)):
+        raise HTTPException(404, "no such step in the descent")
+    path, _ = _descent_image(_site(property_id), level)
+    return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "max-age=3600"})
+
+
+@app.get("/api/buildings/{property_id}/clock")
+def clock_change(property_id: int, scenario: str, earlier: str, later: str) -> dict:
+    """What became of each job between the plans saved for two forecast steps. A comparison, not a new run."""
+    sc = _scenario(scenario)
+    plans = [_plan(property_id, _plan_key(scenario, _step(sc, step))) for step in (earlier, later)]
+    if not all(plans):
+        raise HTTPException(404, "no saved plan for one of these forecast steps")
+    return clock.changes(plans[0], plans[1])
+
+
+@app.get("/api/buildings/{property_id}/facing")
+def facing_openings(property_id: int, scenario: str, step: str | None = None) -> dict:
+    """For each outside action in the saved plan: which measured windows and outside doors of the nearest scanned space face it."""
+    sc = _scenario(scenario)
+    plan = _plan(property_id, _plan_key(scenario, _step(sc, step)))
+    if not plan:
+        return {"plans": {}, "actions": {}}
+    try:
+        return openings.for_plan(_site(property_id).d, plan)
+    except matterport.MatterportError as e:
+        raise HTTPException(502, str(e))
+
+
 def _jpeg(im: Image.Image, quality: int = 85) -> Response:
     buf = io.BytesIO()
     im.convert("RGB").save(buf, "JPEG", quality=quality)
@@ -203,9 +284,12 @@ def pano_face(property_id: int, scan_id: str, sweep_id: str, face: int, size: in
 
 
 # --- headset link ----------------------------------------------------------------
-# One phone-in-a-headset follows the laptop. The laptop posts where to look; the phone
-# posts back where it is standing and looking. Held in memory: this is a two-device demo link.
-VR: dict[str, dict] = {"target": {"rev": 0}, "pose": {"at": 0.0}}
+# One phone-in-a-headset follows the laptop. The laptop posts where the agent is looking; the phone
+# posts back where it is standing and looking, and what its wearer approved. Held in memory: this is
+# a two-device demo link.
+TARGET_KEYS = ("building", "scan_id", "sweep_id", "bearing", "action_id", "lon", "lat", "label", "image", "kind")
+POSE_KEYS = ("building", "scan_id", "sweep_id", "bearing", "action_id")
+VR: dict[str, dict] = {"target": {"rev": 0}, "pose": {"at": 0.0}, "approved": {}}
 
 
 @app.get("/api/lan")
@@ -215,9 +299,11 @@ def lan() -> dict:
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
             sock.connect(("10.255.255.255", 1))  # no packet is sent; this only picks the outbound interface
-            return {"ip": sock.getsockname()[0]}
+            ip = sock.getsockname()[0]
     except OSError:
-        return {"ip": None}
+        ip = None
+    # The phone needs a secure page for its motion sensors and microphone; this is the port that serves one.
+    return {"ip": ip, "vr_port": int(os.environ.get("BRACE_VR_PORT") or 5175)}
 
 
 @app.get("/api/vr/target")
@@ -227,8 +313,8 @@ def vr_target() -> dict:
 
 @app.post("/api/vr/target")
 def set_vr_target(body: dict) -> dict:
-    keep = {k: body.get(k) for k in ("building", "scan_id", "sweep_id", "bearing", "action_id")}
-    VR["target"] = {**keep, "rev": VR["target"]["rev"] + 1}
+    """Where the agent is looking: a scan position, a point outside (lon, lat), or only a line to say."""
+    VR["target"] = {**{k: body.get(k) for k in TARGET_KEYS}, "rev": VR["target"]["rev"] + 1}
     return VR["target"]
 
 
@@ -241,8 +327,66 @@ def vr_pose() -> dict:
 @app.post("/api/vr/pose")
 def set_vr_pose(body: dict) -> dict:
     import time
-    VR["pose"] = {**{k: body.get(k) for k in ("building", "scan_id", "sweep_id", "bearing", "action_id")}, "at": time.time()}
+    VR["pose"] = {**{k: body.get(k) for k in POSE_KEYS}, "at": time.time()}
     return {"ok": True}
+
+
+@app.get("/api/vr/approvals")
+def vr_approvals(building: int) -> dict:
+    """Actions the headset's wearer approved for one building, oldest first."""
+    mine = sorted((at, aid) for (b, aid), at in VR["approved"].items() if b == building)
+    return {"action_ids": [aid for _, aid in mine]}
+
+
+@app.post("/api/vr/approve")
+def vr_approve(body: dict) -> dict:
+    """Record an approval made in the headset. Only an action that is in a saved plan can be approved."""
+    import time
+    building, action_id = body.get("building"), body.get("action_id")
+    sc = _scenario(str(body.get("scenario")))
+    plan = _plan(building, _plan_key(sc["id"], _step(sc, body.get("step")))) if isinstance(building, int) else None
+    if not plan or not any(a["id"] == action_id for a in plan["actions"]):
+        return {"ok": False, "say": voice.UNKNOWN_SAY}
+    VR["approved"].setdefault((building, action_id), time.time())
+    return {"ok": True, "say": voice.APPROVED_SAY}
+
+
+@app.post("/api/vr/reset")
+def vr_reset() -> dict:
+    """Clear the link for the next person: where the headset was sent, where it was, and what was approved."""
+    VR["target"] = {"rev": VR["target"]["rev"] + 1}
+    VR["pose"] = {"at": 0.0}
+    VR["approved"] = {}
+    return {"ok": True}
+
+
+def _voice_brief(building: int, scenario: str, step: str | None) -> tuple[dict, dict, dict | None, list[dict]]:
+    """What the voice is told about one building at one forecast step: the record, the threat, the saved plan, the scans."""
+    sc = _scenario(scenario)
+    step_id = _step(sc, step)
+    s = _site(building)
+    try:
+        threat = screen.threat_for(scenario, step_id, s.d["record"])
+    except hazards.HazardError as e:
+        raise HTTPException(502, str(e))
+    return s.d["record"], threat, _plan(building, _plan_key(scenario, step_id)), s.d["scans"]
+
+
+@app.post("/api/voice/session")
+def voice_session(building: int, scenario: str, step: str | None = None, view: str = "headset") -> dict:
+    """A short-lived key for the voice, already told about this building's saved plan. `view` is headset or screen."""
+    if not voice.ready():
+        raise HTTPException(503, "voice is not configured on this machine")
+    try:
+        return voice.mint(voice.session(*_voice_brief(building, scenario, step), view))
+    except voice.VoiceError as e:
+        raise HTTPException(502, str(e))
+
+
+@app.get("/api/voice/notes")
+def voice_notes(building: int, scenario: str, step: str | None = None, view: str = "headset") -> dict:
+    """The notes for another forecast step, so a conversation already under way can be told the plan has changed."""
+    return {"instructions": voice.instructions(*_voice_brief(building, scenario, step), view)}
 
 
 # --- plan runs -------------------------------------------------------------------

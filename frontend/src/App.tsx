@@ -10,6 +10,7 @@ type PrepareRoute = Extract<AppRoute, { kind: "prepare" }>;
 const BuildingPage = lazy(() => import("./components/BuildingPage").then(module => ({ default: module.BuildingPage })));
 const MapPage = lazy(() => import("./components/MapPage").then(module => ({ default: module.MapPage })));
 const VrPage = lazy(() => import("./components/VrPage").then(module => ({ default: module.VrPage })));
+const WalkPage = lazy(() => import("./components/WalkPage").then(module => ({ default: module.WalkPage })));
 
 /** Read and scrub invitations before any child can issue a network request. */
 export function captureBrowserRoute(): AppRoute {
@@ -48,12 +49,14 @@ export function App() {
   if (route.kind === "recovery") return <RecoveryEntry case_id={route.case_id} />;
   if (route.kind === "invalid") return <div className="fatal" role="alert">{route.message}</div>;
   return <Suspense fallback={<div className="fatal quiet" role="status">Loading preparation tools…</div>}>
-    <PrepareApp route={route} />
+    {route.kind === "walk"
+      ? <PrepareApp route={{ kind: "prepare", scenario: route.scenario, step: route.step, building: route.building, vr: false }} walk />
+      : <PrepareApp route={route} />}
   </Suspense>;
 }
 
-function PrepareApp({ route }: { route: PrepareRoute }) {
-  const [config, setConfig] = useState<{ sdk_key: string; agent_ready: boolean } | null>(null);
+function PrepareApp({ route, walk = false }: { route: PrepareRoute; walk?: boolean }) {
+  const [config, setConfig] = useState<{ sdk_key: string; agent_ready: boolean; voice_ready: boolean } | null>(null);
   const [scenarios, setScenarios] = useState<Scenario[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [needsSignIn, setNeedsSignIn] = useState(false);
@@ -82,10 +85,12 @@ function PrepareApp({ route }: { route: PrepareRoute }) {
   const scenario = scenarios.find((s) => s.id === route.scenario) ?? scenarios.find((s) => !s.live) ?? scenarios[0];
   const step = scenario.steps.find((s) => s.id === route.step)?.id ?? scenario.steps[scenario.steps.length - 1]?.id ?? null;
 
+  // Keyed by the building alone: moving the forecast clock keeps the walk-through, and its conversation, where they are.
+  if (walk && route.building != null) return <WalkPage key={route.building} id={route.building} scenario={scenario} step={step} voiceReady={config.voice_ready} />;
   if (route.vr && route.building != null) return <VrPage key={route.building} id={route.building} scenario={scenario} step={step} />;
   if (route.building != null) {
     return <BuildingPage key={`${route.building}-${scenario.id}-${step}`} id={route.building} scenario={scenario} step={step}
-                         sdkKey={config.sdk_key} agentReady={config.agent_ready} onBack={() => go(scenario.id, step)} />;
+                         sdkKey={config.sdk_key} agentReady={config.agent_ready} voiceReady={config.voice_ready} onBack={() => go(scenario.id, step)} />;
   }
   return <MapPage scenarios={scenarios} scenario={scenario} step={step}
                   onScenario={(id) => go(id, null)} onStep={(s) => go(scenario.id, s)} onOpen={(id) => go(scenario.id, step, id)} />;

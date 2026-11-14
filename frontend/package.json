@@ -8,9 +8,11 @@
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
     "test:recovery": "node --test tests/recovery-*.test.mjs",
+    "test:gestures": "node --test tests/gestures.test.mjs",
     "test:resident": "node --test src/components/resident/__tests__/*.test.mjs"
   },
   "dependencies": {
+    "@mediapipe/tasks-vision": "0.10.35",
     "leaflet": "^1.9.4",
     "qrcode": "^1.5.4",
     "react": "^18.3.1",

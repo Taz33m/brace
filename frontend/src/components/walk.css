@@ -1,0 +1,81 @@
+/* The walk-through: one picture fills the screen, one sentence and one decision sit over it.
+   Colour is kept for meaning: ember for the approaching conditions and the selected evidence, green for a
+   confirmed change, CoStar blue for the one thing to press. */
+.walk {
+  --walk-blue: #0054a6; --walk-ember: #e2562a; --walk-green: #1f9d61; --walk-ink: #ffffff; --walk-soft: rgba(255, 255, 255, 0.72);
+  position: fixed; inset: 0; overflow: hidden; color: var(--walk-ink); background: #0b1522;
+  font-family: Barlow, "Helvetica Neue", Arial, sans-serif;
+}
+/* The same picture, blurred and dimmed, fills what the picture itself leaves empty. */
+.walk-backdrop { position: absolute; inset: -40px; width: calc(100% + 80px); height: calc(100% + 80px); object-fit: cover; filter: blur(28px) brightness(0.45) saturate(0.9); }
+.walk-picture { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; animation: walk-arrive 420ms ease both; }
+.walk-outside .walk-picture, .walk-inside .walk-picture { object-fit: cover; }
+@keyframes walk-arrive { from { opacity: 0; transform: scale(1.015); } to { opacity: 1; transform: none; } }
+
+.walk-top {
+  position: absolute; top: 0; left: 0; right: 0; display: flex; justify-content: space-between; align-items: flex-start; gap: 24px;
+  padding: 22px 28px 70px; background: linear-gradient(to bottom, rgba(6, 12, 20, 0.82), rgba(6, 12, 20, 0));
+  pointer-events: none;
+}
+.walk-top > * { pointer-events: auto; }
+.walk-place strong, .walk-clock strong { display: block; font-family: "Barlow Condensed", Barlow, sans-serif; font-size: 30px; font-weight: 700; line-height: 1.1; letter-spacing: 0.005em; }
+.walk-place span, .walk-clock span { display: block; margin-top: 4px; font-size: 15px; color: var(--walk-soft); }
+.walk-clock { text-align: right; max-width: 46%; }
+.walk-clock strong { color: #ffb38f; }
+.walk-steps { display: inline-flex; gap: 4px; margin-top: 10px; padding: 3px; border-radius: 999px; background: rgba(255, 255, 255, 0.12); }
+.walk-steps button { padding: 5px 13px; border: 0; border-radius: 999px; font: 600 13px/1 Barlow, sans-serif; color: var(--walk-soft); background: none; cursor: pointer; }
+.walk-steps button[aria-pressed="true"] { color: #0b1522; background: #fff; }
+
+.walk-bottom {
+  position: absolute; left: 0; right: 0; bottom: 0; display: flex; justify-content: space-between; align-items: flex-end; gap: 32px;
+  padding: 110px 28px 26px; background: linear-gradient(to top, rgba(6, 12, 20, 0.92) 35%, rgba(6, 12, 20, 0));
+}
+.walk-finding { max-width: 62ch; min-width: 0; }
+.walk-finding h1 { margin: 0; font-family: "Barlow Condensed", Barlow, sans-serif; font-size: clamp(28px, 3.3vw, 46px); font-weight: 700; line-height: 1.08; text-wrap: balance; }
+.walk-finding p { margin: 10px 0 0; font-size: 18px; line-height: 1.4; color: var(--walk-soft); }
+.walk-facts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: #fff !important; font-weight: 600; }
+.walk-source { font-size: 13px !important; color: rgba(255, 255, 255, 0.55) !important; }
+.walk-chip { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12.5px; font-weight: 700; letter-spacing: 0.01em; white-space: nowrap; color: #0b1522; background: #dfe5ec; }
+.walk-chip.is-approved, .is-still_fits > .walk-chip, .walk-chip.is-still_fits, .is-brought_forward > .walk-chip { color: #fff; background: var(--walk-green); }
+.is-deferred > .walk-chip { color: #fff; background: var(--walk-ember); }
+.is-new > .walk-chip { color: #fff; background: var(--walk-blue); }
+
+.walk-acts { display: flex; flex-direction: column; align-items: flex-end; gap: 12px; flex: none; }
+.walk-acts > button, .walk-primary { padding: 14px 26px; border: 1px solid rgba(255, 255, 255, 0.35); border-radius: 999px; font: 600 17px/1 Barlow, sans-serif; color: #fff; background: rgba(255, 255, 255, 0.08); cursor: pointer; }
+.walk-acts > button.walk-primary { border-color: var(--walk-blue); background: var(--walk-blue); box-shadow: 0 8px 26px rgba(0, 84, 166, 0.45); }
+.walk-acts > button.walk-primary:hover { background: #0a63bd; }
+.walk-quiet { display: flex; align-items: center; gap: 14px; font-size: 13.5px; color: var(--walk-soft); }
+.walk-quiet button, .walk-quiet a { padding: 0; border: 0; background: none; font: inherit; color: var(--walk-soft); text-decoration: none; cursor: pointer; }
+.walk-quiet button:hover:not(:disabled), .walk-quiet a:hover { color: #fff; text-decoration: underline; }
+.walk-quiet button:disabled { opacity: 0.35; cursor: default; }
+
+/* What sits on the stage when the moment is not a photograph: the related scan, the change, the notice. */
+.walk-card {
+  position: absolute; top: 150px; bottom: 176px; right: 28px; width: min(820px, calc(100vw - 420px));
+  display: flex; flex-direction: column; overflow: hidden; padding: 22px 26px; border-radius: 18px; color: #0b1522; background: rgba(250, 251, 253, 0.97);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.45); animation: walk-arrive 380ms ease both;
+}
+.walk-card h2 { margin: 2px 0 10px; font-family: "Barlow Condensed", Barlow, sans-serif; font-size: 28px; font-weight: 700; line-height: 1.12; }
+.walk-eyebrow { margin: 0; font-size: 12.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #5d6876; }
+.walk-note { margin: 10px 0 0; font-size: 12.5px; line-height: 1.4; color: #5d6876; }
+.walk-related .facing-diagram { flex: 1 1 0; min-height: 0; max-height: none; width: 100%; height: 100%; }
+.walk-change ol { list-style: none; margin: 4px 0 0; padding: 0; overflow-y: auto; flex: 1 1 auto; display: flex; flex-direction: column; gap: 8px; }
+.walk-change li { display: grid; grid-template-columns: 218px minmax(0, 1fr); column-gap: 14px; row-gap: 2px; align-items: start; padding: 9px 12px; border-radius: 10px; background: #f0f3f6; }
+.walk-change li > .walk-chip { justify-self: start; }
+.walk-change li strong { font-size: 15.5px; line-height: 1.3; }
+.walk-change li small { grid-column: 2; font-size: 13px; line-height: 1.35; color: #44505e; }
+.walk-change li.is-deferred { background: #fff1ea; }
+.walk-notice pre { flex: 1 1 auto; margin: 0; overflow-y: auto; white-space: pre-wrap; font: 400 15px/1.5 Barlow, sans-serif; color: #26313d; }
+
+/* The conversation sits under the property's name, out of the clock's corner and clear of the cards. */
+.walk .talk { top: 96px; left: 28px; right: auto; width: min(340px, calc(100vw - 56px)); max-height: 46vh; }
+.walk .talk-closed { width: auto; }
+
+@media (max-width: 900px) {
+  .walk-card { left: 28px; width: auto; }
+  .walk-bottom { flex-direction: column; align-items: stretch; }
+  .walk-acts { align-items: stretch; }
+  .walk-change li { grid-template-columns: 1fr; }
+  .walk-change li small { grid-column: 1; }
+}
+@media (prefers-reduced-motion: reduce) { .walk-picture, .walk-card { animation: none; } }

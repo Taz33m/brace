@@ -105,3 +105,104 @@ def test_pano_face_validates_scan_sweep_and_face(client, site, monkeypatch, tmp_
     assert client.get("/api/buildings/7/pano/SCAN1/nope/0.jpg").status_code == 404
     assert client.get("/api/buildings/7/pano/OTHER/w1/0.jpg").status_code == 404
     assert client.get("/api/buildings/7/pano/SCAN1/w1/6.jpg").status_code == 404
+
+
+def test_headset_target_carries_outside_points_and_a_line_to_say(client):
+    sent = client.post("/api/vr/target", json={"building": 7, "lon": -95.4, "lat": 29.7, "label": "Looking at S1 from the west",
+                                               "image": "plans/x/view_001.jpg", "kind": "step", "junk": "x"}).json()
+    assert sent["scan_id"] is None and sent["lon"] == -95.4 and sent["label"].startswith("Looking") and "junk" not in sent
+
+
+def test_headset_approval_needs_an_action_from_the_saved_plan(client, site):
+    plans = server.building_dir(7) / "plans"
+    plans.mkdir(parents=True, exist_ok=True)
+    (plans / "test-storm__t36.json").write_text(json.dumps({"actions": [{"id": "A1"}], "events": [], "stop": "finished", "headline": "x"}))
+    client.post("/api/vr/reset")
+    ask = {"building": 7, "scenario": "test-storm", "step": "t36"}
+    refused = client.post("/api/vr/approve", json={**ask, "action_id": "A9"}).json()
+    assert refused["ok"] is False and client.get("/api/vr/approvals?building=7").json() == {"action_ids": []}
+    done = client.post("/api/vr/approve", json={**ask, "action_id": "A1"}).json()
+    assert done["ok"] is True and "Nothing has been sent yet" in done["say"]
+    client.post("/api/vr/approve", json={**ask, "action_id": "A1"})   # approving twice records it once
+    assert client.get("/api/vr/approvals?building=7").json() == {"action_ids": ["A1"]}
+    assert client.get("/api/vr/approvals?building=8").json() == {"action_ids": []}
+    client.post("/api/vr/reset")
+    assert client.get("/api/vr/approvals?building=7").json() == {"action_ids": []}
+
+
+def test_voice_session_is_refused_without_a_key(client, monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    assert client.post("/api/voice/session?building=7&scenario=test-storm").status_code == 503
+    assert client.get("/api/config").json()["voice_ready"] is False
+
+
+def test_voice_session_grounds_the_voice_in_the_saved_plan(client, site, monkeypatch):
+    plans = server.building_dir(7) / "plans"
+    plans.mkdir(parents=True, exist_ok=True)
+    plan = {"headline": "Trim the courtyard tree.", "stop": "finished", "events": [],
+            "totals": {"before_arrival": {"count": 1, "cost_low": 1200, "cost_high": 4000, "hours": 6}},
+            "actions": [{"id": "A1", "title": "Cut back limbs over the roof", "timing": "before_arrival", "why": "Limbs hang over the roof.",
+                         "crew": "tree crew", "hours_of_work": 6, "cost_low": 1200, "cost_high": 4000, "structure": "S1",
+                         "site": {"lon": -95.4, "lat": 29.7}, "interior": None}],
+            "leads": [{"id": "L2", "title": "Tarp on the roof", "status": "not_a_concern", "note": "The flag predates the photo."}],
+            "messages": [{"kind": "notice", "to": "Residents", "subject": "Bring in balcony items", "body": "secret body text"}]}
+    (plans / "test-storm__t36.json").write_text(json.dumps(plan))
+    seen = {}
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(server.voice, "mint", lambda body: seen.setdefault("body", body) and {"value": "ek_test", "model": body["session"]["model"]})
+    got = client.post("/api/voice/session?building=7&scenario=test-storm&step=t36").json()
+    assert got["value"] == "ek_test" and "test-key" not in json.dumps(got)
+    session = seen["body"]["session"]
+    notes = session["instructions"]
+    assert "A1 | before it arrives | outside, on S1 | Cut back limbs over the roof" in notes and "$1,200 to $4,000" in notes
+    assert "Tarp on the roof: not a concern" in notes and "Resident notice to Residents: Bring in balcony items" in notes
+    assert "secret body text" not in notes and "Never say a crew is coming" in notes
+    assert {t["name"] for t in session["tools"]} == {"go_to_action", "next_finding", "approve_action", "where_am_i", "set_hours_left", "hold_approval"}
+    assert "wearing a headset" in notes and "large screen" not in notes
+    # The big screen gets the same plan with a different account of what the owner can see, and no key is needed to read it.
+    on_screen = client.get("/api/voice/notes?building=7&scenario=test-storm&step=t36&view=screen").json()["instructions"]
+    assert "large screen" in on_screen and "wearing a headset" not in on_screen and "A1 | before it arrives" in on_screen
+    # Only the big screen can see a nod or a shake, so only its voice is told what one means; approval still has to be asked for.
+    assert "A message starting [gesture] is the owner answering by moving their head: a nod means yes and a shake means no." in on_screen
+    assert "ask one short yes-or-no question. The owner may answer aloud or with a nod or a shake." in on_screen
+    assert 'A nod in answer to "Shall I approve it?" counts as clearly asking.' in on_screen
+    assert on_screen.index("[gesture]") < on_screen.index("Those bracketed tags are stage directions")   # so the tag is never said aloud
+    assert "Approve an action only when the owner clearly asks you to approve it." in on_screen and "Approve an action only when the owner clearly asks" in notes
+    assert "[gesture]" not in notes and "a nod or a shake" not in notes
+    earlier = client.get("/api/voice/notes?building=7&scenario=test-storm&step=t48").json()["instructions"]
+    assert "No inspection has been saved" in earlier                       # a step with no saved plan says so
+
+
+def test_saved_plans_lists_only_the_steps_that_have_one(client, site):
+    plans = server.building_dir(7) / "plans"
+    plans.mkdir(parents=True, exist_ok=True)
+    (plans / "test-storm__t36.json").write_text(json.dumps({
+        "headline": "Trim the tree.", "threat": {"hours_left": 30.0}, "events": [], "stop": "finished",
+        "totals": {"before_arrival": {"count": 1, "cost_low": 1200, "cost_high": 4000, "hours": 6}},
+        "actions": [{"id": "A1", "title": "Cut back limbs", "timing": "before_arrival", "hours_of_work": 6,
+                     "cost_low": 1200, "cost_high": 4000, "why": "not needed in the list"}]}))
+    got = client.get("/api/buildings/7/plans?scenario=test-storm").json()["plans"]
+    assert [p["step"] for p in got] == ["t36"] and got[0]["label"] == "36 hours before landfall" and got[0]["hours_left"] == 30.0
+    assert got[0]["actions"] == [{"id": "A1", "title": "Cut back limbs", "timing": "before_arrival", "hours_of_work": 6,
+                                  "cost_low": 1200, "cost_high": 4000}]
+    assert client.get("/api/buildings/7/plans?scenario=nope").status_code == 404
+
+
+def test_descent_lists_real_aerials_widest_first_centred_on_the_site(client, site, monkeypatch, tmp_path):
+    asked = []
+    photo = tmp_path / "wide.jpg"
+    photo.write_bytes((server.building_dir(7) / "aerial.jpg").read_bytes())
+
+    def ortho(area_wkt, buffer_m=8, **kwargs):
+        asked.append((area_wkt, buffer_m, kwargs.get("max_px")))
+        return photo, {"bounds": [-95.5, 29.6, -95.3, 29.8], "first_capture": "2026-01-02", "last_capture": "2026-02-12"}
+
+    monkeypatch.setattr(server.vexcel, "ortho", ortho)
+    got = client.get("/api/buildings/7/descent").json()
+    west, south, east, north = site.d["aerial"]["bounds"]
+    assert got["focus"] == {"lon": (west + east) / 2, "lat": (south + north) / 2}
+    assert [b for _, b, _ in asked] == [10_000, 2_560, 640, 160] and all(px == (1600, 1600) for _, _, px in asked)
+    assert [l["url"] for l in got["levels"]] == [f"/api/buildings/7/descent/{i}.jpg" for i in range(4)]
+    assert got["levels"][0]["last_capture"] == "2026-02-12" and got["site"]["url"] == "/api/buildings/7/aerial.jpg"
+    assert client.get("/api/buildings/7/descent/2.jpg").headers["content-type"] == "image/jpeg"
+    assert client.get("/api/buildings/7/descent/9.jpg").status_code == 404
