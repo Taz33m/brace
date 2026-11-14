@@ -72,11 +72,9 @@ export function useResidentSession(api: ResidentApi, on_session_expired: () => v
         expire();
         return;
       }
-      // Keep showing the last good snapshot; only an initial load failure blocks the screen.
-      if (!homeRef.current) {
-        setLoadState("error");
-        setLoadError(err);
-      }
+      // Keep the snapshot visible, but make failed refreshes retryable rather than silently stale.
+      setLoadState("error");
+      setLoadError(err);
     }
   }, [api, apply, expire]);
 
@@ -166,6 +164,7 @@ export function useResidentSession(api: ResidentApi, on_session_expired: () => v
       void refresh();
     };
     const down = () => setOnline(false);
+    const foreground = () => { if (document.visibilityState === "visible") void refresh(); };
     // Restored from the back/forward cache: the old stream was stopped on pagehide.
     const shown = (e: PageTransitionEvent) => {
       if (!e.persisted) return;
@@ -175,10 +174,12 @@ export function useResidentSession(api: ResidentApi, on_session_expired: () => v
     window.addEventListener("online", up);
     window.addEventListener("offline", down);
     window.addEventListener("pageshow", shown);
+    document.addEventListener("visibilitychange", foreground);
     return () => {
       window.removeEventListener("online", up);
       window.removeEventListener("offline", down);
       window.removeEventListener("pageshow", shown);
+      document.removeEventListener("visibilitychange", foreground);
     };
   }, [refresh]);
 

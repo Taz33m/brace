@@ -10,6 +10,7 @@ import { ActionBar, Message, ScreenHead, StatusPill } from "../ui";
 import { IconCheck } from "../icons";
 import { categoryLabel, reportStatus, supportLabel, supportStatus, type StatusCopy } from "../lib/status";
 import { formatWhen } from "../lib/time";
+import { PhotoGallery } from "../PhotoGallery";
 
 export function ReceiptScreen(props: ReceiptScreenProps) {
   const { receipt, go } = props;
@@ -42,13 +43,8 @@ function ReportReceiptView({ receipt, go }: { receipt: ReportReceipt; go: (s: Sc
       <Fact label="When you noticed it">{r.observed_at ? formatWhen(r.observed_at) : "Not sure"}</Fact>
       <Fact label="Photos">
         {r.media.length ? (
-          <ul className="r-photos rr-photo-list" aria-label="Photos sent with this report">
-            {r.media.map((m) => (
-              <li key={m.media_id} className="r-photo">
-                <img src={m.url} alt={m.alt} />
-              </li>
-            ))}
-          </ul>
+          <PhotoGallery photos={r.media.map(media => ({ id: media.media_id, url: media.url, alt: media.alt }))}
+            label="Photos sent with this report" />
         ) : (
           "No photos"
         )}

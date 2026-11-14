@@ -2,15 +2,13 @@
  * Home: what happened, the property team's latest word, and three ways forward.
  * Kept short so the three actions sit on a 390x844 screen without scrolling past the notice.
  */
-import type { PublishedNotice, ResidentHome, ResidentTask } from "../contract";
-import { taskStatus } from "../lib/status";
+import type { PublishedNotice, ResidentHome, ResidentTask, SupportReceipt } from "../contract";
+import { supportLabel, taskStatus } from "../lib/status";
 import { formatAgo, formatWhen, parseWhen } from "../lib/time";
 import { Choice } from "../ui";
 import { IconAlert, IconChevron, IconClock, IconReport, IconSupport, IconUpdates } from "../icons";
 import type { HomeScreenProps } from "./types";
-
-/** Bodies longer than this are clamped on Home and point to the full list. */
-const LONG_NOTICE = 160;
+import "./updates.css";
 
 const time = (v: string) => parseWhen(v)?.getTime() ?? 0;
 
@@ -34,7 +32,10 @@ export function HomeScreen({ home, fresh_ids, go }: HomeScreenProps) {
   const notice = newestNotice(home.notices);
   const open = openCount(home);
   const task = latestTask(home.tasks);
-  const hasMore = notice ? notice.body.length > LONG_NOTICE || home.notices.length > 1 : false;
+  // Support receipts have no response timestamp; select by request date without calling it unread or new.
+  const response = home.support_requests.reduce<SupportReceipt | null>((best, request) =>
+    request.status === "responded" && request.public_status_detail && (!best || time(request.received_at) > time(best.received_at))
+      ? request : best, null);
 
   return (
     <main className="r-main">
@@ -55,24 +56,31 @@ export function HomeScreen({ home, fresh_ids, go }: HomeScreenProps) {
 
       <section className="r-section" aria-labelledby="home-notice-h">
         <h2 id="home-notice-h" className="r-title-sm">From the property team</h2>
+        {response ? (
+          <div className="r-team-response r-home-response">
+            <h3 className="r-row-title">Response: {supportLabel(response.category)}</h3>
+            <p className="r-row-body r-prewrap r-clamp-3">{response.public_status_detail}</p>
+            <button type="button" className="r-btn" onClick={() => go({ name: "updates" })}>
+              Read response in My updates <IconChevron size={20} />
+            </button>
+          </div>
+        ) : null}
         {notice ? (
           <div className="r-list">
             <article className={`r-row${fresh_ids.has(notice.notice_id) ? " is-new" : ""}`}>
               <h3 className="r-row-title">{notice.title}</h3>
-              <p className="r-row-body r-clamp-3">{notice.body}</p>
+              <p className="r-row-body r-prewrap r-clamp-3">{notice.body}</p>
               <p className="r-meta">
-                {notice.published_by} · <time dateTime={notice.published_at}>{formatWhen(notice.published_at)}</time>
+                Property team · <time dateTime={notice.published_at}>{formatWhen(notice.published_at)}</time>
               </p>
             </article>
-            {hasMore ? (
-              <button type="button" className="r-row r-row-link" onClick={() => go({ name: "updates" })}>
-                <span>Read all updates</span>
-                <IconChevron size={20} />
-              </button>
-            ) : null}
+            <button type="button" className="r-row r-row-link" onClick={() => go({ name: "updates" })}>
+              <span>{home.notices.length > 1 ? "Read all notices" : "Read full notice"}</span>
+              <IconChevron size={20} />
+            </button>
           </div>
         ) : (
-          <p className="r-meta">No notices from the property team yet.</p>
+          response ? null : <p className="r-meta">No notices from the property team yet.</p>
         )}
       </section>
 
@@ -98,7 +106,9 @@ export function HomeScreen({ home, fresh_ids, go }: HomeScreenProps) {
           icon={<IconUpdates size={30} />}
           title="My updates"
           sub={
-            task ? (
+            response ? (
+              "A property-team response is ready to read"
+            ) : task ? (
               <span className="r-clamp-2">
                 Latest: {task.title} — {taskStatus(task).label}
               </span>

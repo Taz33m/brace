@@ -29,6 +29,7 @@ async function compile(source) {
   let { outputText } = ts.transpileModule(await readFile(source, "utf8"), { compilerOptions: {
     target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext, jsx: ts.JsxEmit.ReactJSX,
   } });
+  outputText = outputText.replace(/import\s+"[^"]+\.css";?/g, "");
   const rewrites = new Map();
   for (const [, spec] of outputText.matchAll(/from\s+"([^"]+)"/g)) {
     if (rewrites.has(spec)) continue;

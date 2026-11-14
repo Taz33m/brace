@@ -36,6 +36,7 @@ import { formatWhen, localInputToIso, toLocalInput } from "../lib/time";
 import { preparePhoto } from "../lib/photos";
 import { useDictation } from "../lib/useDictation";
 import { useFlowLifetime } from "../lib/useFlowLifetime";
+import { PhotoGallery } from "../PhotoGallery";
 
 const MAX_PHOTOS = 6;
 
@@ -490,7 +491,9 @@ export function ReportFlow(props: ReportFlowProps) {
               <dt className="r-meta">Photos</dt>
               <dd className="rr-photos-dd">
                 {sendable.length ? (
-                  <PhotoGrid photos={sendable} label="Photos to send" />
+                  <PhotoGallery photos={sendable.filter(p => p.preview_url).map((p, index) => ({
+                    id: p.local_id, url: p.preview_url!, alt: `Photo ${index + 1} to send with your report`,
+                  }))} label="Photos to send" />
                 ) : (
                   <span>No photos</span>
                 )}

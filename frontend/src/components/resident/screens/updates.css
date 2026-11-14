@@ -1,0 +1,11 @@
+.brace-resident .r-updates-nav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.brace-resident .r-updates-nav button { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: var(--r-tap); padding: 10px 14px; border: 1px solid var(--r-line); border-radius: var(--r-radius-sm); background: var(--r-surface); font-weight: 600; text-align: left; }
+.brace-resident .r-updates-count { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; padding: 3px 8px; border-radius: 999px; background: var(--r-sunk); color: var(--r-ink-2); font-family: var(--r-body); font-size: 14px; font-weight: 600; }
+.brace-resident .r-updates-heading { display: flex; align-items: center; gap: 9px; scroll-margin-top: 100px; }
+.brace-resident .r-team-response { display: flex; flex-direction: column; gap: 8px; margin: 6px 0; padding: 14px; border-left: 4px solid var(--r-info); border-radius: var(--r-radius-sm); background: var(--r-info-soft); color: var(--r-ink); overflow-wrap: anywhere; }
+.brace-resident .r-team-response-label { margin: 0; font-size: 14px; font-weight: 700; color: #173f7a; }
+.brace-resident .r-home-response { margin: 0; }
+.brace-resident .r-home-response .r-btn { margin-top: 4px; }
+.brace-resident .r-expandable-text { min-width: 0; overflow-wrap: anywhere; }
+.brace-resident .r-expand-toggle { justify-content: flex-start; margin-left: -8px; }
+.brace-resident .r-row .r-num { overflow-wrap: anywhere; }

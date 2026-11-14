@@ -111,6 +111,9 @@ export function ResidentExperience({ api, on_session_expired }: ResidentExperien
         <TopBar home={home} back={onHome ? null : () => go({ name: "home" })} busy={busy} screenTitle={SCREEN_TITLES[screen.name]} />
         <ModeStrip home={home} />
         <ConnectionStrip connection={session.connection} />
+        {(screen.name === "home" || screen.name === "updates" || session.load_error) && <RefreshUpdates
+          refresh={session.refresh} error={session.load_error?.message ?? null}
+          offline={session.connection === "offline"} />}
         <div ref={mainRef} key={screen.name} className="r-screen">
           {screen.name === "home" && <HomeScreen home={home} fresh_ids={session.fresh_ids} go={go} />}
           {screen.name === "report" && (
@@ -215,6 +218,22 @@ function ConnectionStrip({ connection }: { connection: Connection }) {
     );
   }
   return null;
+}
+
+function RefreshUpdates({ refresh, error, offline }: { refresh: () => Promise<void>; error: string | null; offline: boolean }) {
+  const [refreshing, setRefreshing] = useState(false);
+  const flight = useRef(false);
+  async function update() {
+    if (flight.current || offline) return;
+    flight.current = true; setRefreshing(true);
+    try { await refresh(); } finally { flight.current = false; setRefreshing(false); }
+  }
+  return <div className="r-refresh-updates">
+    {error && <p role="alert">Couldn’t refresh your updates. Showing the last information received. {error}</p>}
+    <button type="button" className="r-btn" onClick={() => void update()} disabled={refreshing || offline}>
+      <IconRetry size={18} />{refreshing ? "Refreshing…" : error ? "Retry updates" : "Refresh updates"}
+    </button>
+  </div>;
 }
 
 function Loading() {

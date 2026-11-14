@@ -6,7 +6,7 @@
  * only when the server confirmed one, and a checked repair always carries the
  * "not occupancy clearance" note.
  */
-import type { ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 import type { PublishedNotice, ResidentReport, ResidentTask, SupportReceipt, TaskStatus } from "../contract";
 import {
   NOT_OCCUPANCY_CLEARANCE,
@@ -21,6 +21,8 @@ import { Message, ScreenHead, StatusPill } from "../ui";
 import { IconClock, IconPin } from "../icons";
 import { TaskTimeline } from "./TaskTimeline";
 import type { UpdatesScreenProps } from "./types";
+import { PhotoGallery } from "../PhotoGallery";
+import "./updates.css";
 
 const time = (v: string | null) => parseWhen(v)?.getTime() ?? 0;
 const newestFirst = <T,>(items: T[], at: (item: T) => string): T[] =>
@@ -39,7 +41,7 @@ export function UpdatesScreen({ home, fresh_ids, go }: UpdatesScreenProps) {
   const rowClass = (id: string) => `r-row${fresh_ids.has(id) ? " is-new" : ""}`;
 
   const repairs = (
-    <Section key="repairs" id="upd-repairs" title="Repairs">
+    <Section key="repairs" id="upd-repairs" title="Repairs" count={tasks.length}>
       {tasks.length ? (
         <ul className="r-list">
           {tasks.map((t) => (
@@ -55,7 +57,7 @@ export function UpdatesScreen({ home, fresh_ids, go }: UpdatesScreenProps) {
   );
 
   const reportSection = (
-    <Section key="reports" id="upd-reports" title="Your reports">
+    <Section key="reports" id="upd-reports" title="Your reports" count={reports.length}>
       {reports.length ? (
         <ul className="r-list">
           {reports.map((r) => (
@@ -74,7 +76,7 @@ export function UpdatesScreen({ home, fresh_ids, go }: UpdatesScreenProps) {
   );
 
   const requestSection = (
-    <Section key="requests" id="upd-requests" title="Your requests">
+    <Section key="requests" id="upd-requests" title="Your requests" count={requests.length}>
       {requests.length ? (
         <ul className="r-list">
           {requests.map((s) => (
@@ -93,7 +95,7 @@ export function UpdatesScreen({ home, fresh_ids, go }: UpdatesScreenProps) {
   );
 
   const noticeSection = (
-    <Section key="notices" id="upd-notices" title="Notices">
+    <Section key="notices" id="upd-notices" title="Notices" count={notices.length}>
       {notices.length ? (
         <ul className="r-list">
           {notices.map((n) => (
@@ -108,11 +110,25 @@ export function UpdatesScreen({ home, fresh_ids, go }: UpdatesScreenProps) {
     </Section>
   );
 
-  // Most actionable first. With no repairs yet, the resident's own reports lead.
-  const ordered =
-    tasks.length === 0 && reports.length > 0
-      ? [reportSection, repairs, requestSection, noticeSection]
-      : [repairs, reportSection, requestSection, noticeSection];
+  const sections = {
+    repairs: { id: "upd-repairs", label: "Repairs", count: tasks.length, content: repairs },
+    reports: { id: "upd-reports", label: "Reports", count: reports.length, content: reportSection },
+    requests: { id: "upd-requests", label: "Requests", count: requests.length, content: requestSection },
+    notices: { id: "upd-notices", label: "Notices", count: notices.length, content: noticeSection },
+  };
+  // Bring a known property-team response into view; no unread or response-time inference.
+  const hasResponse = requests.some((request) => request.status === "responded" && request.public_status_detail);
+  const ordered = hasResponse
+    ? [sections.requests, sections.reports, sections.repairs, sections.notices]
+    : tasks.length === 0 && reports.length > 0
+      ? [sections.reports, sections.repairs, sections.requests, sections.notices]
+      : [sections.repairs, sections.reports, sections.requests, sections.notices];
+
+  function jumpTo(id: string) {
+    const heading = document.getElementById(id);
+    heading?.scrollIntoView({ block: "start" });
+    heading?.focus({ preventScroll: true });
+  }
 
   return (
     <main className="r-main">
@@ -120,20 +136,30 @@ export function UpdatesScreen({ home, fresh_ids, go }: UpdatesScreenProps) {
         title="My updates"
         lede={
           <>
-            Newest first. Information last updated{" "}
+            Newest within each section. Reports and requests are ordered by when you sent them.
+            {" "}Information last updated{" "}
             <time dateTime={home.updated_at}>{formatAgo(home.updated_at)}</time>.
           </>
         }
       />
-      {ordered}
+      <nav className="r-updates-nav" aria-label="Update sections">
+        {ordered.map((section) => (
+          <button key={section.id} type="button" onClick={() => jumpTo(section.id)} aria-controls={section.id}>
+            <span>{section.label}</span><span className="r-updates-count r-num">{section.count}</span>
+          </button>
+        ))}
+      </nav>
+      {ordered.map((section) => section.content)}
     </main>
   );
 }
 
-function Section({ id, title, children }: { id: string; title: string; children: ReactNode }) {
+function Section({ id, title, count, children }: { id: string; title: string; count: number; children: ReactNode }) {
   return (
     <section className="r-section" aria-labelledby={id}>
-      <h2 id={id} className="r-title-sm">{title}</h2>
+      <h2 id={id} className="r-title-sm r-updates-heading" tabIndex={-1}>
+        {title} <span className="r-updates-count r-num">{count}</span>
+      </h2>
       {children}
     </section>
   );
@@ -181,21 +207,17 @@ function ReportRow({ report, className }: { report: ResidentReport; className: s
       <div>
         <StatusPill status={reportStatus(report.status)} />
       </div>
-      {report.text ? <p className="r-row-body r-clamp-2">{report.text}</p> : null}
+      {report.text ? <ExpandableText text={report.text} label="report" /> : null}
       {where ? (
         <p className="r-meta r-inline">
           <IconPin size={16} />
           <span>{where}</span>
         </p>
       ) : null}
-      {report.public_status_detail ? <p className="r-row-body">{report.public_status_detail}</p> : null}
+      {report.public_status_detail ? <p className="r-row-body r-prewrap">{report.public_status_detail}</p> : null}
       {photos.length ? (
-        <div className="r-thumbs" aria-label={`${photos.length} ${photos.length === 1 ? "photo" : "photos"}`} role="group">
-          {photos.slice(0, 4).map((m) => (
-            <img key={m.media_id} src={m.url} alt={m.alt} width={56} height={56} loading="lazy" decoding="async" />
-          ))}
-          {photos.length > 4 ? <span className="r-thumbs-more r-num">+{photos.length - 4}</span> : null}
-        </div>
+        <PhotoGallery compact label={`Photos for ${categoryLabel(report.category).toLowerCase()} report`}
+          photos={photos.map((photo) => ({ id: photo.media_id, url: photo.url, alt: photo.alt }))} />
       ) : null}
       <p className="r-meta">
         Sent <time dateTime={report.received_at}>{formatWhen(report.received_at)}</time> · Report{" "}
@@ -212,8 +234,15 @@ function RequestRow({ request, className }: { request: SupportReceipt; className
       <div>
         <StatusPill status={supportStatus(request.status)} />
       </div>
-      {request.description ? <p className="r-row-body r-clamp-2">{request.description}</p> : null}
-      {request.public_status_detail ? <p className="r-row-body">{request.public_status_detail}</p> : null}
+      {request.description ? <ExpandableText text={request.description} label="request" /> : null}
+      {request.public_status_detail ? request.status === "received" ? (
+        <p className="r-row-body r-prewrap">{request.public_status_detail}</p>
+      ) : (
+        <div className="r-team-response">
+          <h4 className="r-team-response-label">From the property team</h4>
+          <p className="r-row-body r-prewrap">{request.public_status_detail}</p>
+        </div>
+      ) : null}
       <p className="r-meta">
         Sent <time dateTime={request.received_at}>{formatWhen(request.received_at)}</time> · Request{" "}
         <span className="r-num">{request.request_id}</span>
@@ -228,8 +257,25 @@ function NoticeRow({ notice, className }: { notice: PublishedNotice; className: 
       <h3 className="r-row-title">{notice.title}</h3>
       <p className="r-row-body r-prewrap">{notice.body}</p>
       <p className="r-meta">
-        {notice.published_by} · <time dateTime={notice.published_at}>{formatWhen(notice.published_at)}</time>
+        Property team · <time dateTime={notice.published_at}>{formatWhen(notice.published_at)}</time>
       </p>
     </li>
+  );
+}
+
+function ExpandableText({ text, label }: { text: string; label: "report" | "request" }) {
+  const [expanded, setExpanded] = useState(false);
+  const id = useId();
+  const long = text.length > 220 || text.split("\n").length > 3;
+  return (
+    <div className="r-expandable-text">
+      <p id={id} className={`r-row-body r-prewrap${long && !expanded ? " r-clamp-3" : ""}`}>{text}</p>
+      {long ? (
+        <button type="button" className="r-btn quiet r-expand-toggle" aria-expanded={expanded} aria-controls={id}
+          onClick={() => setExpanded((value) => !value)}>
+          {expanded ? "Show less" : `Read full ${label}`}
+        </button>
+      ) : null}
+    </div>
   );
 }
