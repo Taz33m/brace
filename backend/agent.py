@@ -15,7 +15,7 @@ from PIL import Image
 from shapely import wkt as shapely_wkt
 from shapely.geometry import Polygon
 
-from . import matterport, vexcel, vision
+from . import matterport, plan_checks, vexcel, vision
 from .building import Site
 from .config import AGENT_EFFORT, AGENT_MODEL, MAX_AGENT_TURNS
 from .preparation_notices import NOTICE_RULES, correct_notice
@@ -36,6 +36,8 @@ What you have
 How to work
 - Read the record, the threat, the site facts and the measurements, and look at the site from above before anything else. When you give a height or a distance, use a measurement and say it is measured.
 - Open a lead for each specific vulnerability that this threat makes matter, then resolve every lead: add one or more actions, or close it as not a concern or as impossible to check. Let the threat pick the leads. Wind: roof coverings and edges, rooftop equipment, loose objects, trees over the building, large glass, roll-up doors, canopies and carports. Flooding: ground-level spaces and what sits on their floors, low entrances and docks, parking, drains. Wildfire: vegetation touching or near walls, debris on roofs and in gutters, combustible storage and fences against the building, vents, wood construction.
+- If a plan was made at an earlier forecast step, read it. Keep each of its decisions unless the time left, the forecast or something you see has changed it, and when you change one say what changed: in the action's why, or in the note when you close the lead. Something set aside earlier after looking at it stays set aside unless you have a new reason. A job that no longer fits the time moves to after the event; it does not vanish.
+- The notice must say what your plan says it says. If an action relies on the notice (residents do it, or you write that the notice covers it), the notice must tell residents that thing, in words they would recognise: residents do not know structure ids or grid cells, so describe the place ("the tall pine at the south end, by the road").
 - Look before you write. The roof analysis and the detector are pointers and they are sometimes wrong or out of date; the scan survey is a first pass. Confirm with your own eyes, from more than one angle when it is unclear.
 - Match the action to the clock. With 36 hours left nobody re-roofs a building. "before_arrival" actions must be things a crew or the on-site team can finish in the time left, allowing for crews leaving site six hours before conditions turn. Put real repairs under "after_event" (do it once this threat has passed, before the next one) or "capital" (plan and budget).
 - Be specific about place: name the structure and the grid cell or the scanned space. "Secure the eleven rooftop units on S1" is useful; "secure rooftop equipment" is not.
@@ -51,6 +53,8 @@ Site grid: the overhead photo carries a lettered grid (columns A, B, C... west t
 
 When every lead is resolved and the messages are drafted, call finish with a one-line headline and a short summary. Write plainly, without jargon. You cannot see structure, wiring, plumbing, drainage capacity or anything hidden; do not speculate about them."""
 
+# How many times finishing is refused over a notice that disagrees with the plan before the gap is recorded instead.
+MAX_FINISH_REFUSALS = 2
 DIRECTIONS = ["up", "down", "north", "east", "south", "west"]
 VIEWS = ["overhead", "from-north", "from-east", "from-south", "from-west"]
 # "from-south" means the camera is south of the building looking north, which Vexcel calls oblique-north.
@@ -66,6 +70,7 @@ TOOLS: list[dict[str, Any]] = [
     {"name": "get_threat", "description": "The threat at this site: what is forecast here, how many hours are left, and the site's standing flood and fire zoning.", "input_schema": EMPTY},
     {"name": "get_site_facts", "description": "Machine-read facts from the aerial imagery for each structure on the site: roof material, shape and condition (1 worst to 5 best), flagged roof defects, counted rooftop objects, tree cover over the roof and close to the walls; plus site-wide tree cover and the date of the analysis.", "input_schema": EMPTY},
     {"name": "get_measurements", "description": "Measurements of this site, each with the source it rests on: how high each roof stands and the tallest thing beside it (from the aerial surface model), which roof each scanned space is under, the windows and outside doors measured in each scan, and what is counted on the grounds. Use these numbers instead of estimating a height or a distance from a photo. A measurement says how big or how near something is, not what it is: look before calling a tall thing a tree.", "input_schema": EMPTY},
+    {"name": "get_earlier_plan", "description": "The plan already made for this building at the previous forecast step, if there is one: what was checked, what was decided and what was set aside, with the reasons. The owner has already been told this. Read it before opening leads.", "input_schema": EMPTY},
     {"name": "view_site",
      "description": "Look at the site from the air. 'overhead' is the straight-down photo with the grid and each structure outlined and labelled; zoom_cell enlarges the area around one cell. The four 'from-...' views are angled photos taken from that side (walls, glass, roof edges, equipment); structure picks which building they centre on (default the largest).",
      "input_schema": {"type": "object", "properties": {
@@ -156,6 +161,9 @@ class Planner:
         self.actions: list[dict] = []
         self.messages: list[dict] = []
         self.result: dict | None = None
+        self.earlier_read = False
+        self.finish_refusals = 0
+        self.unresolved: list[str] = []
         self.views = 0
         self.focus: dict | None = None  # where the agent is looking, so the UI can follow along
         self.t0 = time.time()
@@ -238,6 +246,41 @@ class Planner:
                "measurements": site_model.measured_notes(model),
                "note": "Each line names its source. Where a stage has not run for this site there is no measurement; do not fill one in."}
         return json.dumps(out, indent=1), "Reading the site's measurements", None
+
+    def earlier_plan(self) -> dict | None:
+        """The plan saved for the nearest earlier forecast step of this scenario. Never a later one: that would be hindsight."""
+        from . import hazards
+        try:
+            scen = next(s for s in hazards.scenarios(include_live=False) if s["id"] == self.threat.get("scenario_id"))
+            steps = [s["id"] for s in scen["steps"]]
+            before = steps[:steps.index(self.threat.get("step_id"))]
+        except (StopIteration, ValueError, hazards.HazardError):
+            return None
+        folder = (self.site.dir / "plans" / self.key).parent          # beside wherever this plan will be saved
+        for step_id in reversed(before):
+            path = folder / f"{self.threat['scenario_id']}__{step_id}.json"
+            if path.exists():
+                plan = json.loads(path.read_text())
+                if plan.get("complete"):
+                    return plan
+        return None
+
+    def t_get_earlier_plan(self) -> tuple[Any, str, str | None]:
+        self.earlier_read = True
+        plan = self.earlier_plan()
+        if plan is None:
+            return "No plan has been made for this building at an earlier forecast step.", "Checking for an earlier plan", None
+        was = plan.get("threat") or {}
+        acts = {a["id"]: a for a in plan.get("actions") or []}
+        outcomes = {"actions": "in the plan", "not_a_concern": "looked at and set aside", "cannot_check": "could not be checked"}
+        out = {"made_for": was.get("label"), "hours_left_then": was.get("hours_left"), "hours_left_now": self.hours_left,
+               "headline": plan.get("headline"),
+               "decisions": [{"concern": l["title"], "hazard": l.get("hazard"), "outcome": outcomes.get(l["status"], l["status"]),
+                              "reason": l.get("note") or l.get("why"),
+                              "actions": [{k: acts[i].get(k) for k in ("title", "timing", "hours_of_work", "crew", "cost_low", "cost_high", "structure")}
+                                          for i in l.get("action_ids") or [] if i in acts]} for l in plan.get("leads") or []],
+               "note": "This is what the owner was told at that step. Carry each decision forward, changed only by the time now left or by what you see, and say what changed."}
+        return json.dumps(out, indent=1), f"Reading the plan made {was.get('label') or 'at the earlier step'}", None
 
     def t_view_site(self, view: str, zoom_cell: str | None = None, structure: str | None = None) -> tuple[Any, str, str | None]:
         s = self.site
@@ -392,9 +435,14 @@ class Planner:
         bad = [x for x in action_ids or [] if x not in known]
         if bad:
             raise ToolError(f"unknown action ids {bad}; actions so far: {sorted(known)}")
-        msg = {"id": f"M{len(self.messages) + 1}", "kind": kind, "to": to, "subject": subject, "body": body, "action_ids": action_ids or []}
+        # There is one notice to the building and one work order per trade. Drafting one again replaces it, keeping its id.
+        earlier = next((m for m in self.messages if m["kind"] == kind and (kind == "notice" or m["to"].strip().lower() == to.strip().lower())), None)
+        msg = {"id": earlier["id"] if earlier else f"M{len(self.messages) + 1}", "kind": kind, "to": to, "subject": subject, "body": body, "action_ids": action_ids or []}
         msg = correct_notice(msg, self.threat)
-        self.messages.append(msg)
+        if earlier:
+            self.messages[self.messages.index(earlier)] = msg
+        else:
+            self.messages.append(msg)
         self.emit("message", message=msg)
         return f"Message {msg['id']} drafted.", f"Drafted {'a notice' if kind == 'notice' else 'a work order'} for {to}", None
 
@@ -404,6 +452,14 @@ class Planner:
             raise ToolError(f"leads still open: {still_open}. Resolve each with add_action or close_lead first.")
         if self.actions and not any(m["kind"] == "notice" for m in self.messages):
             raise ToolError("draft the notice to the people in the building before finishing.")
+        if not self.earlier_read and self.earlier_plan() is not None:
+            raise ToolError("a plan was made for this building at an earlier forecast step and you have not read it. Call get_earlier_plan, "
+                            "then make sure each of its decisions is carried forward or its change explained, before finishing.")
+        gaps = plan_checks.notice_gaps(self.actions, self.messages)
+        if gaps and self.finish_refusals < MAX_FINISH_REFUSALS:
+            self.finish_refusals += 1
+            raise ToolError("the plan and the notice disagree:\n- " + "\n- ".join(gaps) + "\nDraft the notice again (it replaces the earlier one) or change the action, then finish.")
+        self.unresolved = gaps          # anything still open after the allowed tries is recorded on the plan, not hidden
         self.result = {"headline": headline, "summary": summary}
         return "Plan complete.", "Writing the plan", None
 
@@ -498,6 +554,7 @@ class Planner:
                       "hours": round(sum(a["hours_of_work"] for a in actions if a["timing"] == t), 1)} for t in TIMINGS}
         return {
             "building_id": self.site.id, "threat": self.threat, "stop": stop, "complete": self.result is not None,
+            "checks": {"earlier_plan_read": self.earlier_read, "notice_redrafts_asked": self.finish_refusals, "notice_gaps": self.unresolved},
             "model": AGENT_MODEL, "seconds": round(time.time() - self.t0),
             "headline": (self.result or {}).get("headline"), "summary": (self.result or {}).get("summary"),
             "actions": actions, "totals": totals, "messages": self.messages, "leads": self.leads,

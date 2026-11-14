@@ -255,7 +255,7 @@ export function BuildingPage({ id, scenario, step, sdkKey, agentReady, voiceRead
                lon: a.site?.lon ?? inside?.lon ?? null, lat: a.site?.lat ?? inside?.lat ?? null, image: a.site?.oblique_image ?? a.site?.image ?? null });
         conversation.cue("finding", `${a.id} ${a.title}`, `Added to the plan: ${a.title}`);
       }
-      else if (e.type === "message") setMessages((prev) => [...prev, e.message]);
+      else if (e.type === "message") setMessages((prev) => prev.some((m) => m.id === e.message.id) ? prev.map((m) => (m.id === e.message.id ? e.message : m)) : [...prev, e.message]);
       else if (e.type === "step" && e.focus) {
         const f = e.focus;
         if (f.lon != null && f.lat != null) follow.current.point(f.lon, f.lat, e.label, f.scan_id ?? null, f.sweep_id ?? null, f.direction ?? "north");
