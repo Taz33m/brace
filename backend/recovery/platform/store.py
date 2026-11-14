@@ -65,6 +65,7 @@ class CaseStore:
             migrate(conn)
         finally:
             conn.close()
+        self.recover_interrupted_runs()
 
     # ------------------------------------------------------------------ plumbing
 
@@ -569,6 +570,153 @@ class CaseStore:
                 task["completion_evidence_ids"] = []
             self._save_task(conn, case_id, task, actor, "Scope changed")
             return self._result(conn, case_id)
+
+    # assessments
+
+    def _cmd_start_assessment(self, actor, case_id, command: m.StartAssessment, *, launcher=None) -> m.CommandResult:
+        if launcher is None:
+            raise PlatformError(503, "assessment_unavailable", "The assessment service is not running.",
+                                retryable=True)
+        with self._write() as conn:
+            row = self._owner_case(conn, actor, case_id)
+            active = conn.execute("SELECT run_id FROM runs WHERE case_id = ? AND base_analysis_revision = ? "
+                                  "AND status = 'running'", (case_id, row["analysis_revision"])).fetchone()
+            if active is not None:
+                return self._result(conn, case_id, active["run_id"])
+            self._check_revision(row, command.expected_revision)
+            run_id = new_id("run")
+            conn.execute("INSERT INTO runs VALUES (?,?,?,?,NULL,?,NULL)",
+                         (run_id, case_id, row["analysis_revision"], "running", self.now()))
+            self._bump(conn, case_id)
+            self._event(conn, case_id, "assessment.started", entity_id=run_id)
+            result = self._result(conn, case_id, run_id)
+            ticket = {"run_id": run_id, "case_id": case_id, "base_analysis_revision": row["analysis_revision"]}
+        try:
+            launcher(dict(ticket))  # must return promptly; domain work runs in the lead's worker
+        except Exception:
+            self._fail_run(run_id, "The assessment service could not start this run; retry later.")
+            raise PlatformError(503, "assessment_unavailable",
+                                "The assessment service could not start. Try again shortly.", retryable=True) from None
+        return result
+
+    def _fail_run(self, run_id: str, reason: str) -> None:
+        with self._write() as conn:
+            run = conn.execute("SELECT * FROM runs WHERE run_id = ?", (run_id,)).fetchone()
+            if run is None or run["status"] != "running":
+                return
+            now = self.now()
+            conn.execute("UPDATE runs SET status = 'failed', failure_reason = ?, finished_at = ? WHERE run_id = ?",
+                         (reason, now, run_id))
+            if conn.execute("SELECT 1 FROM assessments WHERE run_id = ?", (run_id,)).fetchone() is None:
+                failed = m.Assessment(
+                    assessment_id="assessment_" + run_id, run_id=run_id,
+                    base_analysis_revision=run["base_analysis_revision"], status="failed",
+                    headline="Assessment needs another run", summary=reason, created_at=now, published_at=None,
+                    valuation=None, observation_ids=[], unresolved_questions=[], failure_reason=reason)
+                conn.execute("INSERT INTO assessments VALUES (?,?,?,?,?,?,?)",
+                             (failed.assessment_id, run_id, run["case_id"], run["base_analysis_revision"],
+                              "failed", dumps(failed), now))
+            self._bump(conn, run["case_id"])
+            self._event(conn, run["case_id"], "assessment.failed", entity_id=run_id)
+
+    def recover_interrupted_runs(self) -> int:
+        """On startup: nothing is running in this fresh process, so `running` means interrupted."""
+        with self._read() as conn:
+            ids = [r["run_id"] for r in conn.execute("SELECT run_id FROM runs WHERE status = 'running'")]
+        for run_id in ids:
+            self._fail_run(run_id, "Interrupted by a server restart. Start the assessment again to retry.")
+        return len(ids)
+
+    def snapshot_for_analysis(self, case_id: str) -> dict:
+        """Worker read: the full OwnerCaseView at its current analysis_revision (system actor)."""
+        with self._read() as conn:
+            row = conn.execute("SELECT * FROM cases WHERE case_id = ?", (case_id,)).fetchone()
+            if row is None:
+                raise not_found("This case")
+            return self._owner_view(conn, row).model_dump(mode="json")
+
+    def complete_assessment(self, run_id: str, base_analysis_revision: int, result: dict) -> m.Assessment:
+        """Save the worker's envelope in one transaction; newer inputs force `stale`.
+
+        Idempotent by run_id: a repeat commit returns the stored assessment unchanged.
+        Proposals and draft notices are kept only when the result is a current draft.
+        """
+        with self._write() as conn:
+            run = conn.execute("SELECT * FROM runs WHERE run_id = ?", (run_id,)).fetchone()
+            if run is None:
+                raise not_found("This assessment run")
+            existing = conn.execute("SELECT json FROM assessments WHERE run_id = ?", (run_id,)).fetchone()
+            if existing is not None:
+                return m.Assessment.model_validate_json(existing["json"])
+            if run["base_analysis_revision"] != base_analysis_revision:
+                raise PlatformError(409, "run_mismatch", "This result does not match its run.")
+            case_id = run["case_id"]
+            data = dict(result["assessment"])
+            if data.get("run_id") != run_id or data.get("base_analysis_revision") != base_analysis_revision:
+                raise PlatformError(409, "run_mismatch", "This result does not match its run.")
+            if data.get("status") not in ("draft", "failed", "stale"):
+                raise invalid("A completed run must be a draft, failed, or stale.")
+            current = conn.execute("SELECT analysis_revision FROM cases WHERE case_id = ?",
+                                   (case_id,)).fetchone()["analysis_revision"]
+            if data["status"] == "draft" and current != base_analysis_revision:
+                data["status"] = "stale"
+            data["published_at"] = None
+            data["assessment_id"] = "assessment_" + run_id  # server-issued; never collides across runs
+            assessment = m.Assessment.model_validate(data)
+            conn.execute("INSERT INTO assessments VALUES (?,?,?,?,?,?,?)",
+                         (assessment.assessment_id, run_id, case_id, base_analysis_revision, assessment.status,
+                          dumps(assessment), self.now()))
+            conn.execute("UPDATE runs SET status = ?, finished_at = ?, failure_reason = ? WHERE run_id = ?",
+                         ("failed" if assessment.status == "failed" else "completed", self.now(),
+                          assessment.failure_reason, run_id))
+            if assessment.status == "draft":
+                known = {r["household_id"] for r in conn.execute(
+                    "SELECT household_id FROM households WHERE case_id = ?", (case_id,))}
+                for proposal in result.get("proposed_tasks", []):
+                    task = m.RecoveryTask.model_validate(proposal)
+                    taken = conn.execute("SELECT 1 FROM tasks WHERE task_id = ?", (task.task_id,)).fetchone()
+                    self._insert_task(
+                        conn, case_id, title=task.title, scope=task.scope,
+                        household_ids=[h for h in task.household_ids if h in known],
+                        location=task.location.model_dump(mode="json") if task.location else None,
+                        evidence_ids=task.evidence_ids, assignee_label=task.assignee_label,
+                        actor_id="agent:" + run_id, task_id=None if taken else task.task_id)
+                for draft in result.get("draft_notices", []):
+                    conn.execute("INSERT INTO notices VALUES (?,?,?,NULL,?,?)",
+                                 (new_id("ntc"), case_id, "draft", json.dumps(draft, sort_keys=True), self.now()))
+            self._bump(conn, case_id)
+            self._event(conn, case_id, "assessment.completed", entity_id=assessment.assessment_id)
+            return assessment
+
+    def _cmd_publish_assessment(self, actor, case_id, command: m.PublishAssessment, **_) -> m.CommandResult:
+        with self._owner_edit(actor, case_id, command.expected_revision) as conn:
+            row = conn.execute("SELECT * FROM assessments WHERE assessment_id = ? AND case_id = ?",
+                               (command.assessment_id, case_id)).fetchone()
+            if row is None:
+                raise not_found("This assessment")
+            current = conn.execute("SELECT analysis_revision FROM cases WHERE case_id = ?",
+                                   (case_id,)).fetchone()["analysis_revision"]
+            if row["status"] == "stale" or (row["status"] == "draft" and row["base_analysis_revision"] != current):
+                raise PlatformError(409, "assessment_stale",
+                                    "New information arrived after this assessment. Run it again before publishing.",
+                                    retryable=True)
+            if row["status"] != "draft":
+                raise PlatformError(409, "invalid_transition", "Only a draft assessment can be published.")
+            data = json.loads(row["json"])
+            data["status"], data["published_at"] = "published", self.now()
+            conn.execute("UPDATE assessments SET status = 'published', json = ? WHERE assessment_id = ?",
+                         (dumps(data), command.assessment_id))
+            self._bump(conn, case_id)
+            self._event(conn, case_id, "assessment.published", entity_id=command.assessment_id)
+            return self._result(conn, case_id)
+
+    def draft_notices(self, actor: Actor, case_id: str) -> list[dict]:
+        """Agent-drafted notices: owner-only, never resident-visible until published as a notice."""
+        with self._read() as conn:
+            self._owner_case(conn, actor, case_id)
+            return [json.loads(r["json"]) for r in conn.execute(
+                "SELECT json FROM notices WHERE case_id = ? AND status = 'draft' ORDER BY created_at, rowid",
+                (case_id,))]
 
     # notices
 
