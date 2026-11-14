@@ -96,6 +96,10 @@ async def event_stream(store: CaseStore, token: str, role: str, cursor: int, cas
             yield {"id": str(event.event_id), "data": event.model_dump_json()}
         current = await run_in_threadpool(store.resolve_session, token)
         if current is None or current != actor:
+            # The revocation and its session.revoked event commit together; drain once more
+            # so a revocation landing between the two reads above is still delivered.
+            for event in await run_in_threadpool(store.events_after, actor, cursor, case_id):
+                yield {"id": str(event.event_id), "data": event.model_dump_json()}
             return
         if not events:
             await asyncio.sleep(poll_seconds)
