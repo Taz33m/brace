@@ -1,81 +1,107 @@
 # Brace
 
-**The forecast sets the clock. The building shapes the response.**
+**If a wildfire burned an apartment building, what would the owner have to pay to replace everything inside it? Brace answers that with an itemised, priced list, built from a 3D scan the owner already has.**
 
-Brace helps residents and property teams prepare for a disaster, respond to reports, and organize recovery. It combines CoStar property information, Vexcel aerial data, Matterport interiors, and public weather forecasts for the same address.
+Built at HackPrinceton Fall 2026 for the CoStar track ("Inside and Out: AI for the Built World"), with the Business and Enterprise and LangChain tracks.
 
-The central question is simple: **what can we still do for the people in this building, with the time and resources left?**
+## The problem
 
-Built for the CoStar track at HackPrinceton 2026. This README describes the current implementation and labels the next work separately. Start here; older planning documents may describe an earlier stage.
+The owner of an apartment community insures the buildings and everything built into them: floors, cabinets, counters, appliances, doors, light fixtures. To buy that insurance they have to tell the insurer what it would all cost to replace. Most owners have no list of what is actually in their apartments, so they estimate from a rough cost per square foot. If the estimate is too low, a fire leaves them paying the difference.
 
-## The experience
+## The idea
 
-1. **A forecast starts the clock.** Brace finds affected properties in Houston or Los Angeles and shows the forecast, building facts, and hours until conditions arrive.
-2. **The agent investigates the building.** It reads records, examines aerial and interior images, and uses available measurements to propose work with a location, crew, duration, cost range, and supporting evidence.
-3. **The clock constrains the work.** A proposed task must fit before the crew cutoff. As the forecast advances, the agent must split work or move it until after the event.
-4. **The owner approves the communication.** A notice can be published to selected households. Connected residents receive it through their private portal and iMessage.
-5. **Residents report what is happening or ask for help.** Reports appear in the owner's case and site feed. A description can be matched to a scanned room or fixture; a scan check shows what the historical record supports.
-6. **The response changes.** Rebuilding the building plan includes the case's resident reports. The owner can review evidence, run a recovery assessment, manage tasks, and send a household-specific update.
-7. **Recovery gets a financial record.** The assessment keeps repair scope, comparable evidence, costs, downtime, and valuation assumptions together. A report alone does not create a dollar loss.
+Most apartment communities already have a 3D walkthrough of a model apartment, made with a Matterport camera so renters can tour it online. That scan shows every room and everything in it. Nobody uses it for insurance.
 
-A report is an observation that deserves a response. A historical scan helps locate and contextualize it; it cannot prove that new damage did or did not happen.
+Brace reads that scan and turns it into the missing list:
 
-## What is implemented
+1. **Look through the scan, room by room,** and name each thing the owner would have to replace: one refrigerator, twelve feet of base cabinets, two ceiling fans.
+2. **Measure the rooms** for the floors, walls, paint and doors.
+3. **Find a price for each kind of item** on the web, and keep the price only if the page really says it.
+4. **Add it up for one apartment, then multiply** across all the apartments like it in the community.
 
-| Area | Current behavior |
+The result is one total with everything behind it. You can open the total into buildings, a building into apartments, an apartment into rooms, a room into items, and an item into the web page its price came from.
+
+Brace does not predict fires. It answers one stated question: *if fire reached this building, what would it cost to replace what is inside?*
+
+## Where the data comes from
+
+Three datasets from the hackathon's sponsor kit, plus the web:
+
+| Source | What it is | What Brace takes from it |
+|---|---|---|
+| **Matterport** | 3D scans of building interiors | The rooms, their measurements, and photos from every spot the camera stood |
+| **Vexcel** | Aerial photos and measurements of buildings from above | How much vegetation grows close to each building's walls |
+| **CoStar / Apartments.com** | Property records and apartment listings | How many apartments the community has, their floor plans, and the advertised rents |
+| **Web cost guides** | Public pages that state what things cost to install | A price range for each kind of item |
+
+## Words this project uses
+
+| Term | Meaning |
 |---|---|
-| Forecasts | Hurricane Beryl 2024 and January 2025 Los Angeles fire-weather replays, plus live forecast support. Historical steps retain their issue times. |
-| Building planning | A Claude tool loop inspects evidence, opens and resolves leads, writes located actions, and drafts resident notices and work orders. |
-| Time rules | Before-arrival work must fit within forecast hours remaining minus a six-hour crew stand-down. This is an application policy, not an official emergency instruction. |
-| Portfolio coordination | The storm desk compares saved building plans and assigns scarce trades within working windows. It can compare additional crews and record owner decisions. It does not book contractors. |
-| Resident communication | Owner-managed households, private invitations, resident reports and photos, support requests, approved notices, and owner follow-ups. Photon connects linked iMessage conversations when configured. |
-| Report checks | Matches descriptions to indexed rooms/fixtures and returns `fits`, `wrong_place`, or `cannot_tell`. These describe consistency with the scan index, not damage severity or resident honesty. An optional vision pass describes the historical view. |
-| Recovery and value | Case-scoped evidence, assessments, tasks, comparable screening, repair/disruption calculations, and conditional valuation with explicit inputs. |
-| Spatial work | Scan-to-roof fitting, aerial surface/terrain measurements, indexed interior search, and sourced site models. Coverage depends on which properties have been prepared. |
-| Navigation and interaction | Matterport viewing, synchronized phone headset views, optional voice, and scan-based wayfinding with wheelchair constraints. Routes describe recorded geometry, not current emergency clearance. |
-| Room exploration | Views of a room as scanned, cleared, and furnished again; optional generated 3D furniture. These are design explorations, not evidence of completed repairs. |
-| CoStar market context | Recorded sale information and Apartments.com community asking rents/availability alongside the building. Asking rents are not collected income. |
+| **Put back** | Replace or rebuild after a loss. "What a fire would cost to put back" means the cost to replace what burned |
+| **Fit-out** | Everything built into an apartment that the owner owns: flooring, cabinets, counters, appliances, doors, fixtures. Not furniture, and not anything belonging to a tenant |
+| **Leasing scan** | The 3D walkthrough of an apartment made to advertise it to renters |
+| **Schedule** | The itemised, priced list. It is the insurance word for a list of what is insured and its value |
+| **Fuel at the wall** | Plants that can burn (brush, shrubs, trees) growing within 5 feet of a building's walls. Not a gas line. Wildfires usually reach a building through vegetation touching it, so buildings with more of it are more exposed |
+| **Kinds of home** | The community's floor plans, such as one-bedroom and two-bedroom |
+| **Lost rent** | The rent the owner stops collecting while burned apartments cannot be lived in |
 
-The local Houston phone loop has been exercised with a resident report, its placement in a representative scan, and a subsequent building-plan run that retained the report's identity. That does not establish the resident's exact unit or automatically complete a recovery assessment.
+## How it works
 
-## How the data fits together
+```mermaid
+flowchart LR
+    MP["Matterport scan of one apartment"] --> MEAS["Measure rooms, walls, doors"]
+    MP --> INV["AI agent names the items, one helper per room"]
+    INV --> PRICE["Second agent finds a price for each kind of item"]
+    WEB["Web cost guides"] --> PRICE
+    AP["Apartments.com listing: floor plans, counts, rents"] --> SCHED
+    VX["Vexcel: vegetation near the walls"] --> SCHED
+    MEAS --> SCHED["Add up one apartment, multiply across the community"]
+    PRICE --> SCHED
+    SCHED --> TREE["The total, which opens down to every item"]
+```
 
-| Source | What it contributes |
+- **Naming the items.** An AI agent built on LangChain's `deepagents` gives each room to its own helper. The helper looks at that room's photos and records what it sees. It may only record 22 kinds of item that an owner owns. The code refuses furniture, and refuses any item recorded from a photo the helper never looked at.
+- **Pricing.** A second agent searches the web for what each kind of item costs to install. The code then fetches the page itself and keeps the price only if the price is really on it.
+- **Adding up.** Plain code does all the arithmetic. No AI model touches a total.
+- **Ranking buildings.** Buildings are ordered by how much vegetation grows within 5 feet of their walls, as a sign of which are most exposed.
+
+The AI steps run ahead of time and their results are saved. The screens only read saved results, so nothing waits on a model.
+
+## How far to trust the numbers
+
+- **Prices are ranges for a kind of item**, such as "a refrigerator, installed", taken from national cost guides. They are not a valuation of the specific refrigerator in the scan, and some ranges are wide.
+- **One apartment was scanned; the rest are estimated from it.** A floor plan with the same bedrooms and bathrooms gets the same figure. A different floor plan gets the figure scaled by its floor area. The screen marks these as estimates.
+- **An item with no confirmed price shows no figure** and is left out of the total. Each total says how many of its lines are priced.
+- **Apartments per building are estimated from roof area**, because no source counts them per building.
+- **The building ranking is about exposure, not the chance of a fire.** Today it uses vegetation near the walls and nothing else.
+- **Advertised rents are not what tenants actually pay.**
+- **The scans are sample data from the sponsor kit**, not a real customer's insured property.
+
+## What is built
+
+| Piece | What it does |
 |---|---|
-| CoStar property records | Building identity, location, construction, unit mix, managers, business occupancies, and sale evidence. Business tenants are not a household roster. |
-| Apartments.com listings in the kit | Community and floor-plan asking rents, reported units available, bedrooms, bathrooms, sizes, and management-company references. |
-| Homes.com listings in the kit | Residential sale/rental records, listing status, home features, listing contacts, and associated Matterport media. Housing matching is planned below. |
-| Vexcel | Aerial imagery, structure outlines, roof/grounds attributes, and available surface and terrain data. |
-| Matterport | Scanned interiors, rooms, sweep positions, imagery, floor plans, and available geometry. Some scans represent model units. |
-| Public hazard sources | Forecasts, warnings, standing flood/fire information, and available observed rainfall. |
+| Inventory agent | Reads a scanned apartment and saves the list of items it found |
+| Price research | Finds and confirms a price range for each kind of item |
+| Schedule | Builds the full list for a property, with totals at every level and lost rent per month. Served at `GET /api/schedule/{property_id}` |
+| Tree screen (`#/schedule`) | The total at the top; click down through building, apartment, room and item to the source page |
+| Voice | You can ask the schedule questions out loud. It answers by opening the relevant part of the screen. It cannot change a figure |
+| Phone as microphone (`#/ctl`) | The same screen on a phone. The big screen follows whatever the phone opens |
+| One apartment under water (`#/file`) | The same kind of list for a flood of a chosen depth, as an example of a partial loss |
+| First-person room (`#/inside`, `#/inside/vr`) | The room as seen by a person standing in it, on a screen or in a phone headset |
 
-Evidence retains its source and, where available, capture or issue date. Different layers can describe different dates. Fitting a scan beneath a roof does not necessarily establish its exact position along that roof or identify a resident's unit.
+Not built yet: ranking buildings by trees over the roof and by official fire zone, the home-page walkthrough for Los Angeles (`/` still plays an earlier Houston flood sequence), labels drawn on the items inside the scan, recording what each AI run cost, narrowing price ranges by item quality, and scanning more than one apartment per property.
 
-The kit includes 3,339 commercial properties, 1,747 apartment-community listings, and 2,120 residential listing records. The residential records include sales and closed listings: only 26 records, representing 25 homes, are active rentals in this snapshot.
+For more detail:
 
-## Next: housing and relocation
+| Document | What it holds |
+|---|---|
+| [ARCHITECTURE.md](ARCHITECTURE.md) | How the system is put together and where each number comes from |
+| [DEMO_LOOP.md](DEMO_LOOP.md) | The two-minute demo, step by step, and the decisions the team has settled |
+| [PRD.md](PRD.md) | Requirements and who builds what |
 
-The next product extension is **helping a displaced household find suitable accommodation while its home is repaired**. This is planned; Brace does not currently match or reserve replacement housing.
-
-The intended loop is:
-
-- Collect dates, household size, budget, pets, mobility requirements, and transport needs.
-- Search Apartments.com floor plans and Homes.com rental homes; deduplicate and filter by listing status.
-- Screen candidate addresses against the incident and inspect relevant layouts where scans exist.
-- Ask the provider to confirm actual availability, lease duration, access requirements, and full price.
-- Track provider confirmation, resident acceptance, placement, and extensions as repair dates change.
-- Allocate limited confirmed options across households without assigning the same unit twice.
-
-The listing snapshot is from November 2026. It is not live booking inventory or evidence of availability during a 2024 or 2025 event. Reported vacancies do not establish short-stay terms, current condition, or immediate move-in readiness.
-
-## Current gaps to know about
-
-- **Replanning is explicit.** A resident report is included when the building plan is rebuilt; it does not yet trigger a fully automatic, incremental replan across every workflow.
-- **The two report readers need unifying.** The building planner reads recovery-case reports; the storm-desk agent currently reads the local site-report store. Do not assume every phone report reaches the portfolio agent.
-- **Scheduling uses assumptions.** Travel time and working hours are fixed policies. The current scheduler's `people` field combines home and business-tenant counts; it is not a verified headcount or a measure of lives protected.
-- **Location can be tentative.** A description match and a representative floor plan do not verify a household's actual unit. Missing objects in an index can reflect incomplete indexing.
-- **Value needs evidence.** Missing financial inputs remain unavailable. The footprint calculator uses owner-entered damage extent and rates; it does not detect damage automatically or establish an appraisal.
-- **Prepared assets matter.** Source bundles, spatial indexes, saved plans, and generated media live outside Git. A fresh clone will not contain the prepared walkthroughs.
+Brace began the hackathon as a different product, a tool for preparing buildings and residents for a storm. The team changed direction on 14 November 2026. That earlier code still works and is described under [Earlier work still in the repo](#earlier-work-still-in-the-repo).
 
 ## Run locally
 
@@ -109,17 +135,29 @@ Use your own sponsor credentials and model keys in `.env`:
 | `MATTERPORT_API_KEY`, `MATTERPORT_API_TOKEN` | Fetching scan data |
 | `MATTERPORT_SDK_KEY` | Embedded Matterport viewer |
 | `VEXCEL_API_KEY` | Aerial imagery and site data |
-| `ANTHROPIC_API_KEY` | New plans and visual analysis |
-| `OPENAI_API_KEY` | Optional live voice |
+| `ANTHROPIC_API_KEY` | The inventory agent, price research, plans and visual analysis |
+| `OPENAI_API_KEY` | Optional voice |
 | `MESHY_API_KEY` | Optional new 3D furniture generation |
 
-Model overrides are `BRACE_AGENT_MODEL`, `BRACE_VISION_MODEL`, and `BRACE_AGENT_EFFORT`. New source fetches and model runs can incur provider usage; saved results are reused where available.
+Model overrides are `BRACE_AGENT_MODEL`, `BRACE_VISION_MODEL`, `BRACE_AGENT_EFFORT`, `BRACE_VOICE_MODEL` and `BRACE_VOICE`. New source fetches and model runs can incur provider usage; saved results are reused where available.
 
-Prepare the baseline data, then start:
+### Build a schedule
+
+The demo property is a Los Angeles apartment community, CoStar ID `9519837`, with Matterport scan `CaSLe7ZwnfF`. Its building data and the scan's room measurements must already be downloaded into `data/cache/`.
 
 ```bash
-uv run python -m scripts.scan_parcels
-uv run python -m scripts.fetch_hazards
+uv run python -m scripts.flood_research --prices 9519837 CaSLe7ZwnfF   # price the building work, once
+uv run python -m scripts.inventory 9519837 CaSLe7ZwnfF                 # read the scan, about 80 seconds for one home
+uv run python -m scripts.inventory 9519837 CaSLe7ZwnfF --prices        # price what it named, about 3 minutes
+```
+
+Add `--only kitchen-1 --dry` to the inventory command for a short run that saves nothing.
+
+Saved runs live in `data/cache/inventory/` and `data/cache/flood/` and are never committed. A fresh clone has none, and the schedule endpoint answers 404 until a scan has been read.
+
+### Start
+
+```bash
 uv run python -m scripts.start
 ```
 
@@ -129,7 +167,7 @@ The single start command runs the API, desktop web app, HTTPS phone app, and Pho
 - API: **http://127.0.0.1:8001**
 - Phone: **https://YOUR-LAN-IP:5175** — the start command prints the address.
 
-The supplied Matterport SDK configuration requires `localhost` for the desktop viewer. For phones, use the same network and accept the local certificate once. If the network isolates devices, connect the computer through the phone's hotspot.
+The supplied Matterport SDK configuration requires `localhost` for the desktop viewer. For phones, use the same network and accept the local certificate once. If the network isolates devices, connect the computer through the phone's hotspot. The phone's microphone needs the HTTPS address.
 
 To choose other ports, pass them in the shell:
 
@@ -139,70 +177,17 @@ BRACE_API_PORT=8011 BRACE_WEB_PORT=5184 BRACE_VR_PORT=5185 uv run python -m scri
 
 ### Where to go
 
-The home page lists four scrolling experiences: **Before the storm**, **Five buildings, two crews**, **After the storm**, and **The way out**. Their routes are `#/story/storm`, `#/story/desk`, `#/story/after`, and `#/story/inside`.
-
-Operational views are also available:
-
 | Route | Purpose |
 |---|---|
-| `#/beryl-2024/adv33` | Houston portfolio at an earlier forecast step |
-| `#/beryl-2024/adv37/b/4303509` | The Parker at Ellington at a later forecast step |
-| `#/la-red-flag-jan-2025` | Los Angeles fire-weather scenario |
-| `#/model` | Prepared site models |
-| `#/recovery` | Owner recovery cases |
-| `#/resident` | Resident portal; first access requires a private invitation |
+| `#/schedule` | The tree for the lead property. `#/schedule/<property>` for another |
+| `#/ctl` | The same schedule on a phone, as the microphone. The "Phone" button on the big screen shows a QR code for it |
+| `#/file` | One home's schedule under a flood depth. `#/file/<property>/<scan>` for another |
+| `#/inside`, `#/inside/vr` | The room from where a person stands, for one eye or two |
+| `/` | The scroll-played 2.5D site. Today it plays the Houston flood |
 
-## Enable recovery and resident messaging
+To talk to the schedule without a microphone, shift-click "Talk with Brace", then press `/` to type.
 
-Add these settings to `.env` for local owner access:
-
-```dotenv
-BRACE_RECOVERY_ENABLED=1
-BRACE_LOCAL_OWNER=1
-BRACE_ALLOWED_ORIGINS=http://localhost:5174,http://127.0.0.1:5174
-```
-
-Local-owner mode opens the owner workspace directly on this computer's loopback browser. For owner sign-in elsewhere, set a private `BRACE_OWNER_SECRET`. Add the exact HTTPS phone origin to `BRACE_ALLOWED_ORIGINS`; update desktop origins if using different ports.
-
-Recovery needs a registered case. Generate a source run using `scripts.recovery` (see `--help` for incident dates, assessment date, source fetching, and model options), then stop the server and import the returned run directory:
-
-```bash
-uv run python -m scripts.recovery --help
-uv run python -m scripts.import_recovery_case data/recovery/CASE_ID/RUN_ID
-```
-
-Restart, open `#/recovery`, add a household, and create its private invitation. Household creation does not verify a unit or scan association. Use one API process with the local store.
-
-To connect preparation notices and reports to that case, set the explicit mapping:
-
-```dotenv
-BRACE_PREPARATION_CASES={"4303509:beryl-2024":"YOUR_CASE_ID"}
-```
-
-For iMessage:
-
-```bash
-npm --prefix messaging/photon ci
-```
-
-Set `PHOTON_PROJECT_ID`, `PHOTON_PROJECT_SECRET`, and a private `BRACE_PHOTON_BRIDGE_SECRET`. The Photon dashboard calls the first two values Spectrum project credentials; Brace expects the `PHOTON_` variable names. The start command supplies the bridge URL for its API port.
-
-A resident must link their conversation to their household. Publishing an approved notice queues delivery to connected households; owner responses to support requests can return to that same conversation. Queued delivery and confirmed delivery are different states.
-
-## Useful commands
-
-Prepare plans for the chosen forecast steps:
-
-```bash
-uv run python -m scripts.plan --list
-uv run python -m scripts.plan --scenario beryl-2024 --step adv33 4303509
-uv run python -m scripts.plan --scenario beryl-2024 --step adv37 4303509
-uv run python -m scripts.desk --scenario beryl-2024 --step adv37 --schedule-only
-```
-
-Spatial preparation is separate: `scripts.open_geolocation` fits scans to roofs, `scripts.open_reconstruct` gathers surface measurements, and `scripts.open_search` builds the interior search index. Run each with `--help`; they need appropriate source bundles and some operations use paid APIs.
-
-Checks:
+## Checks
 
 ```bash
 uv run pytest
@@ -214,33 +199,78 @@ npm --prefix messaging/photon run selftest
 
 ## Code map
 
-```mermaid
-flowchart LR
-    Sources["CoStar + Vexcel + Matterport"] --> Site["Building bundle and spatial evidence"]
-    Weather["Forecast and hours left"] --> Planner["Building planner and time rules"]
-    Site --> Planner
-    Planner --> Owner["Owner review and approval"]
-    Owner --> Resident["Resident portal and iMessage"]
-    Resident --> Case["Reports, requests and case evidence"]
-    Case --> Planner
-    Case --> Recovery["Recovery assessment and valuation"]
-    Recovery --> Owner
-    Planner --> Desk["Portfolio crew scheduling"]
-```
-
 | Location | Responsibility |
 |---|---|
-| `backend/agent.py`, `backend/clock.py` | Building planning and deadline checks |
-| `backend/hazards/`, `backend/screen.py` | Forecasts and portfolio screening |
-| `backend/site_model.py`, `backend/report_check.py` | Spatial evidence, report placement, historical scan checks |
-| `backend/openproblems/`, `backend/wayfind.py` | Spatial analysis, room exploration, navigation |
-| `backend/desk.py`, `backend/desk_agent.py` | Crew scheduling and portfolio agent |
-| `backend/recovery/domain/` | Recovery reasoning, comparables, costs, valuation |
-| `backend/recovery/platform/` | Cases, households, invitations, reports, tasks, persistence |
-| `backend/recovery/photon.py`, `messaging/photon/` | Messaging bridge and Spectrum worker |
-| `frontend/src/story/` | Scrolling scenario experiences |
-| `frontend/src/components/`, `frontend/src/recovery/` | Building, owner, resident, spatial and headset views |
+| `backend/inventory_agent.py` | The deep agent: lead, readers, tools and the rules held in code |
+| `backend/schedule.py` | The tree and all its arithmetic |
+| `backend/flood_agent.py` | Price research with web search and page fetch; `confirm()` |
+| `backend/insurer_file.py`, `backend/openings.py` | Quantities measured from a scan; the one-home schedule under a flood depth |
+| `backend/portfolio.py` | CoStar records; Apartments.com floor plans and rents |
+| `backend/flood.py` | Buildings, outlines and vegetation, from the kit and Vexcel |
+| `backend/voice.py` | The voice session and what it is told about a schedule |
+| `backend/server.py` | The API |
+| `scripts/inventory.py`, `scripts/flood_research.py` | Run the inventory agent and the price research |
+| `frontend/src/story/` | `ScheduleTree.tsx`, `Home.tsx`, `InsurerFile.tsx`, `InsidePov.tsx`, and the earlier scroll scenarios |
+| `tests/test_inventory_schedule.py`, `tests/test_insurer_file.py`, `tests/test_flood_agent.py` | Tests for the new product |
 
-For deeper implementation details, see [recovery-core.md](docs/recovery-core.md) and the [shared contract](docs/recovery-handoffs/05-SHARED-CONTRACT.md). [HANDOFF.md](HANDOFF.md), [PRD.md](PRD.md), and the [original team split](docs/recovery-handoffs/00-START-HERE.md) explain earlier decisions; their status lists can lag behind the code.
+## Earlier work still in the repo
 
-Development is on **main**. Keep changes focused so parallel work can be integrated without replacing another contributor's changes. The sponsor kit, cached imagery, resident data, `.env`, and credentials remain local and are not committed.
+Before the change of direction, Brace helped property teams prepare for a storm or fire, respond to resident reports, and organize recovery. That product is cut from the pitch. Its code shares the data layer with the schedule and is left in place.
+
+| Area | What it does | Where |
+|---|---|---|
+| Forecast replays | Hurricane Beryl 2024 and January 2025 Los Angeles fire weather, plus live forecasts | `backend/hazards/`, `backend/screen.py` |
+| Building planning | A Claude tool loop proposes located work that must fit before a crew cutoff | `backend/agent.py`, `backend/clock.py` |
+| Portfolio coordination | Assigns scarce trades across saved building plans. It does not book contractors | `backend/desk.py`, `backend/desk_agent.py` |
+| Resident communication | Households, private invitations, reports, approved notices, and iMessage through Photon | `backend/recovery/platform/`, `backend/recovery/photon.py`, `messaging/photon/` |
+| Report checks | Matches a description to a scanned room. It describes consistency with the scan, not damage or honesty | `backend/site_model.py`, `backend/report_check.py` |
+| Recovery and value | Case evidence, tasks, comparables, repair costs and conditional valuation | `backend/recovery/domain/` |
+| Spatial work | Scan-to-roof fitting, aerial measurements, interior search, wayfinding, room exploration | `backend/openproblems/`, `backend/wayfind.py` |
+| Flood stress test | A site under a chosen water depth, with researched fixes | `backend/flood.py`, `#/flood` |
+
+Routes: `#/story/storm`, `#/story/flood`, `#/story/desk`, `#/story/after`, `#/story/fire`, `#/beryl-2024/adv33`, `#/beryl-2024/adv37/b/4303509`, `#/la-red-flag-jan-2025`, `#/model`, `#/recovery`, and `#/resident`.
+
+Prepare its baseline data and plans with:
+
+```bash
+uv run python -m scripts.scan_parcels
+uv run python -m scripts.fetch_hazards
+uv run python -m scripts.plan --list
+uv run python -m scripts.plan --scenario beryl-2024 --step adv37 4303509
+uv run python -m scripts.desk --scenario beryl-2024 --step adv37 --schedule-only
+```
+
+Spatial preparation is separate: `scripts.open_geolocation`, `scripts.open_reconstruct` and `scripts.open_search`. Run each with `--help`; some operations use paid APIs.
+
+### Recovery and resident messaging
+
+Add these settings to `.env` for local owner access:
+
+```dotenv
+BRACE_RECOVERY_ENABLED=1
+BRACE_LOCAL_OWNER=1
+BRACE_ALLOWED_ORIGINS=http://localhost:5174,http://127.0.0.1:5174
+```
+
+Local-owner mode opens the owner workspace directly on this computer's loopback browser. For owner sign-in elsewhere, set a private `BRACE_OWNER_SECRET`. Add the exact HTTPS phone origin to `BRACE_ALLOWED_ORIGINS`.
+
+Recovery needs a registered case. Generate a source run, then stop the server and import the returned run directory:
+
+```bash
+uv run python -m scripts.recovery --help
+uv run python -m scripts.import_recovery_case data/recovery/CASE_ID/RUN_ID
+```
+
+Restart, open `#/recovery`, add a household, and create its private invitation. To connect preparation notices and reports to that case, set the mapping:
+
+```dotenv
+BRACE_PREPARATION_CASES={"4303509:beryl-2024":"YOUR_CASE_ID"}
+```
+
+For iMessage, run `npm --prefix messaging/photon ci` and set `PHOTON_PROJECT_ID`, `PHOTON_PROJECT_SECRET`, and a private `BRACE_PHOTON_BRIDGE_SECRET`. The Photon dashboard calls the first two values Spectrum project credentials. A resident must link their conversation to their household. Queued delivery and confirmed delivery are different states.
+
+For deeper detail on this work, see [recovery-core.md](docs/recovery-core.md), the [shared contract](docs/recovery-handoffs/05-SHARED-CONTRACT.md), [HANDOFF.md](HANDOFF.md) and [DEMO.md](DEMO.md). Their status lists describe the earlier product and can lag behind the code.
+
+## Working in this repo
+
+Development is on **main**. Keep changes focused so parallel work can be integrated without replacing another contributor's changes. The sponsor kit, cached imagery, saved runs, resident data, `.env`, and credentials remain local and are not committed. Figures for a single property come from the data at run time and are not written into tracked documents.
