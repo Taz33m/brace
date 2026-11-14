@@ -103,7 +103,7 @@ export function FloodTest({ site }: { site: number | null }) {
   // What the agent did, in the order it did it: its searches, what it found, then why the plan is this plan.
   const research = base.research, confirmed = research.found.filter((f) => f.checked).length;
   const lines: { text: string; tag?: string }[] = !done ? [] : research.by === "agent"
-    ? [...research.steps.filter((x) => x.kind === "search").slice(0, 3).map((x) => ({ text: x.text, tag: "Searched" })),
+    ? [...[...new Set(research.steps.filter((x) => x.kind === "search").map((x) => x.text))].slice(0, 3).map((text) => ({ text, tag: "Searched" })),
        { text: `${research.found.length} fixes found in ${research.searches} searches. ${confirmed} prices confirmed on the page`, tag: "Agent" },
        ...done.tradeoffs.slice(0, 4).map((text) => ({ text }))]
     : [{ text: `Ground level under ${base.buildings.length} buildings`, tag: "Vexcel" }, { text: `${wet} in the water, valued from the sale`, tag: "CoStar" },
