@@ -112,7 +112,9 @@ def _resident_lines(body: str) -> list[str]:
                 continue
             if re.search(r"(?:most likely cause|our roof is old|has leaked in places)", sentence, re.I):
                 continue
-            if _MOVE_INSIDE.search(sentence):
+            # A sentence telling people what NOT to bring in, or what to leave out, is already the safe instruction:
+            # keep it as written. Only an instruction to bring things in needs the fuel exclusion added.
+            if _MOVE_INSIDE.search(sentence) and not re.match(r"\s*(?:do not|don't|never|leave)\b", sentence, re.I):
                 # A source sentence can list fuel alongside furniture; never
                 # preserve that instruction and merely append a contradiction.
                 if re.search(r"\b(?:propane|fuel|gas cans?|cylinders?)\b", sentence, re.I):
@@ -121,7 +123,7 @@ def _resident_lines(body: str) -> list[str]:
                                   "chairs, tables, grill covers, planters, bikes, decorations", sentence, flags=re.I)
                 sentence = re.sub(r"\bgrills?(?!\s+covers?\b)\s*,\s*", "", sentence, flags=re.I)
                 sentence = re.sub(r",?\s*(?:and\s+)?grills?\b(?!\s+covers?\b)", "", sentence, flags=re.I)
-                sentence = re.sub(r"\banything else\b", "other small loose items", sentence, flags=re.I)
+                sentence = re.sub(r"\banything else(?:\s+(?:that is\s+)?loose)?\b", "other small loose items", sentence, flags=re.I)
                 sentence = re.sub(r"\b(?:everything|anything|every chair)\b",
                                   lambda m: "small loose items" if m.group(0).lower() != "every chair" else "chairs",
                                   sentence, flags=re.I)
@@ -134,6 +136,9 @@ def _resident_lines(body: str) -> list[str]:
                 else:
                     sentence += "."
             kept.append(sentence)
+        # A line left pointing at something an earlier sentence named ("If you have one outside...") says nothing alone.
+        if kept and re.match(r"If you (?:have|keep|own) (?:one|them|any)\b", kept[0], re.I):
+            kept = kept[1:]
         if kept:
             text = context + " ".join(kept)
             if text not in result:
