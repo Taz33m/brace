@@ -48,3 +48,16 @@ def test_a_community_with_a_read_scan_ranks_first_then_by_rent_and_missing_rent_
 def test_a_community_whose_schedule_cannot_be_built_still_lists_with_a_null_total(kit):
     kit["records"] = [_rec(1)]
     assert schedule.communities()["communities"][0]["total"] is None
+
+
+def test_a_community_whose_saved_files_are_broken_does_not_take_the_list_down(kit, monkeypatch):
+    kit["records"] = [_rec(1), _rec(2)]
+    kit["totals"] = {2: {"low": 100, "high": 200}}
+
+    def built(pid, scan=None):
+        if pid == 1:
+            raise ValueError("a half-written file")
+        return {"total": kit["totals"][pid]}
+    monkeypatch.setattr(schedule, "schedule", built)
+    rows = schedule.communities()["communities"]
+    assert [(c["id"], c["total"]) for c in rows] == [(2, {"low": 100, "high": 200}), (1, None)]

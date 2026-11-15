@@ -272,7 +272,7 @@ def communities(city: str = "Los Angeles") -> dict:
         try:
             total = schedule(b["id"])["total"]
             total = {"low": total["low"], "high": total["high"]} if total["low"] is not None else None
-        except ScheduleError:
+        except Exception:       # not read yet, or its saved files are broken: listed without a figure, and the list still loads
             total = None
         rows.append({"id": b["id"], "name": b.get("name"), "address": b.get("address"), "fire_zone": zone, "scans": len(b["model_ids"]),
                      "homes": sum(p["homes"] for p in plans) if plans else None,
