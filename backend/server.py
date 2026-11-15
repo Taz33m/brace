@@ -540,6 +540,15 @@ def place_find(model_id: str, q: str, start: str | None = None, mover: str = "wa
     return wayfind.find(model_id, q, start, mover, chair_in)
 
 
+@app.get("/api/schedule")
+def schedule_portfolio(state: str = "CA") -> dict:
+    """How many apartment communities in a state have a scan of the inside, and which have been read into a schedule."""
+    from . import inventory_agent
+    rows = [b for b in portfolio_data.buildings() if b.get("state") == state and b.get("type") == "Multifamily" and b.get("model_ids")]
+    read = [{"id": b["id"], "name": b.get("name")} for b in rows if any(inventory_agent.saved(m) for m in b["model_ids"])]
+    return {"state": state, "communities_scanned": len(rows), "scans": sum(len(b["model_ids"]) for b in rows), "read": read}
+
+
 @app.get("/api/schedule/{property_id}")
 def schedule_tree(property_id: int, scan: str | None = None) -> dict:
     """What an owner would have to replace if fire reached this property, as a tree: property, building, home, room, item."""

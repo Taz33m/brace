@@ -136,9 +136,10 @@ def home(property_id: int, scan_id: str) -> dict:
     net = measured["wall_less_doorways_ft"] / measured["wall_ft"] if measured["wall_ft"] else 1.0      # doorways come out of every room alike
     names = inventory_agent.InventoryRun(property_id, scan_id).rooms       # the agent's room ids against Matterport's
     read_as = {r["matterport_id"]: rid for rid, r in names.items()}
+    headings = {sw["id"]: sw.get("heading") for sw in scan.get("sweeps") or []}      # which way the camera faced at each standpoint, to turn a picture the right way
     by_room: dict[str, list[dict]] = {}
     for i in inv["items"]:
-        by_room.setdefault(i["room"], []).append(i)
+        by_room.setdefault(i["room"], []).append({**i, "at": {**i["at"], "heading_deg": headings.get(i["at"]["sweep_id"])}})
 
     rooms, count = [], {}
     for r in scan.get("rooms") or []:

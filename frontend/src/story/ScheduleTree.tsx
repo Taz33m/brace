@@ -29,7 +29,7 @@ const short = (n: number) => (n >= 1e6 ? `$${(n / 1e6).toFixed(1)}M` : n >= 1e4 
 const range = (m: { low: number | null; high: number | null }) => (m.low == null || m.high == null ? "no price confirmed" : m.low === m.high ? short(m.low) : `${short(m.low)} to ${short(m.high)}`);
 const each = (l: Line) => (l.price_low == null ? "" : l.price_high && l.price_high !== l.price_low ? `$${l.price_low.toLocaleString("en-US")} to $${l.price_high.toLocaleString("en-US")}` : `$${l.price_low.toLocaleString("en-US")}`);
 
-export function ScheduleTree({ site, controller = false }: { site: number; controller?: boolean }) {
+export function ScheduleTree({ site, controller = false, inline = false }: { site: number; controller?: boolean; inline?: boolean }) {
   const [data, setData] = useState<Schedule | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);        // the building that is open
@@ -118,15 +118,17 @@ export function ScheduleTree({ site, controller = false }: { site: number; contr
       .then((d: Schedule) => { setData(d); setOpen(d.buildings.find((b) => b.units.length)?.id ?? null); }).catch((e) => setError(e.message));
   }, [site]);
   useEffect(() => {
-    const key = (e: KeyboardEvent) => { if (e.key === "Escape") { if (how) setHow(false); else if (room) setRoom(null); else window.location.hash = "#/"; } };
+    const key = (e: KeyboardEvent) => { if (e.key === "Escape") { if (how) setHow(false); else if (room) setRoom(null); else if (!inline) window.location.hash = "#/"; } };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
-  }, [how, room]);
+  }, [how, room, inline]);
 
   // Whatever was opened, by a click or by the voice, is brought into view.
   useEffect(() => {
     const el = document.querySelector(room ? ".sc-home-rows > div.is-open" : ".sc-list > li.is-open");
-    el?.scrollIntoView({ block: room ? "start" : "nearest", behavior: "smooth" });
+    // Inside its own list only: at the foot of the home page the page itself must not be dragged to it.
+    const box = el?.closest(".sc-list");
+    if (el && box) box.scrollTo({ top: (el as HTMLElement).offsetTop - (box as HTMLElement).offsetTop - (room ? 0 : 40), behavior: "smooth" });
   }, [open, room]);
 
   const shapes = useMemo(() => {
@@ -137,7 +139,7 @@ export function ScheduleTree({ site, controller = false }: { site: number; contr
   }, [data]);
 
   if (error) return <div className="fatal" role="alert">{error}</div>;
-  if (!data) return <div className="st-wait" />;
+  if (!data) return <div className={inline ? "sc is-inline" : "st-wait"} />;
   const p = data.property, n = data.numbers, count = data.buildings.length;
   const partial = (data.total.lines_priced ?? 0) < (data.total.lines ?? 0);
 
@@ -155,7 +157,7 @@ export function ScheduleTree({ site, controller = false }: { site: number; contr
   }
 
   return (
-    <div className="st sc">
+    <div className={`st sc${inline ? " is-inline" : ""}`}>
       <div className="sc-map">
         <svg viewBox={`0 0 ${p.aerial.width} ${p.aerial.height}`} preserveAspectRatio="xMidYMid slice" aria-hidden="true">
           <image href={`/api/buildings/${site}/aerial.jpg`} width={p.aerial.width} height={p.aerial.height} />
@@ -168,7 +170,7 @@ export function ScheduleTree({ site, controller = false }: { site: number; contr
       </div>
 
       <div className="sc-tree">
-        <a className="st-home sc-home" href="#/">Brace</a>
+        {!inline && <a className="st-home sc-home" href="#/">Brace</a>}
         <ConversationPanel ready={voiceReady} compact />
         <header>
           <h1>{p.name}</h1>
