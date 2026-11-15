@@ -449,24 +449,24 @@ export function LoopGround() {
           {offered.map((b) => (
             <button key={b.id} type="button" data-id={b.id} className={`lp-pick${b.units.length ? " is-scanned" : ""}${b.id === chosen ? " is-on" : ""}`}
                     onClick={() => { if (b.units.length) enter(); else setChosen(b.id); }}>
-              <i /><span>{b.units.length ? "Scanned home" : `Building ${b.id}`}</span>
+              <i /><span>{b.units.length ? "Open this home" : `Building ${b.id}`}</span>
             </button>
           ))}
         </div>
         <div ref={(n) => { cap.current[1] = n; }} className="lp-cap">
           <h2>{sched?.property.name}</h2>
-          <p>Choose a home. Brace opens its leasing scan and reads what is inside.</p>
+          <p>Choose a home. Brace looks inside and reads what is there.</p>
           <small>Roofs shaded by the fuel at their walls · Vexcel</small>
           {other && (
             <div className="lp-chosen">
               <b>Building {other.id}</b>
               <span>{other.brush_within_5ft_percent != null ? `${Math.round(other.brush_within_5ft_percent)}% of its walls have fuel within 5 ft. ` : ""}No home under this roof has been scanned, so its figure is the scanned home, multiplied.</span>
-              <button type="button" onClick={enter}>Open the scanned home</button>
+              <button type="button" onClick={enter}>Open this home</button>
             </div>
           )}
         </div>
         <div ref={(n) => { cap.current[2] = n; }} className="lp-cap">
-          <h2>One home, scanned for leasing</h2>
+          <h2>Inside the home</h2>
           <p>Its floor plan, placed under the roof it belongs to.</p>
           <small>Matterport</small>
         </div>
@@ -485,10 +485,10 @@ export function LoopGround() {
             <span>If fire reaches it</span>
             <strong>{range(sched.total)}</strong>
             <table><tbody>
-              {sched.kinds_of_home.map((k) => <tr key={k.name}><th>{k.homes} x {k.name}</th><td>{range(k.per_home)} each</td><td>{k.scanned ? "the scanned home" : "scaled from it"}</td><td>{range(k)}</td></tr>)}
+              {sched.kinds_of_home.map((k) => <tr key={k.name}><th>{k.homes} x {k.name}</th><td>{range(k.per_home)} each</td><td>{k.scanned ? "this home" : "scaled from it"}</td><td>{range(k)}</td></tr>)}
               {sched.lost_rent_per_month && <tr><th>Rent, each month empty</th><td /><td>asking rents</td><td>{range(sched.lost_rent_per_month)}</td></tr>}
             </tbody></table>
-            <small>{sched.numbers.rooms_read} rooms, {sched.numbers.views_looked_at} views, {sched.numbers.items_named} items named, {sched.numbers.prices_confirmed} prices confirmed. One scanned home, multiplied: an extrapolation.</small>
+            <small>{sched.numbers.rooms_read} rooms, {sched.numbers.views_looked_at} views, {sched.numbers.items_named} items named, {sched.numbers.prices_confirmed} prices confirmed. One home, multiplied: an extrapolation.</small>
           </div>
         )}
         <div ref={(n) => { cap.current[5] = n; }} className="lp-close">
