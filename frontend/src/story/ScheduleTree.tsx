@@ -24,13 +24,13 @@ interface Unit { scan_id: string; name: string; scan_date: string | null; rooms:
                  decisions: { left_out: number; merged: number; doubts: number }; rechecks: { room_name: string; changed: string[] }[] }
 interface Cover { check: { cover: number; verdict: string; say: string; example: { loss: number; low: number; high: number } }; note: string }
 interface Again { room: string; state: "looking" | "done" | "failed"; changed: string[]; statement: string | null; before?: Money; after?: Money }
-interface Building { id: string; exposure_rank: number; brush_within_5ft_percent: number | null; in_fire_zone: boolean | null; homes_assumed: number; polygon: [number, number][]; total: Money; units: Unit[] }
+interface Building { id: string; exposure_rank: number; brush_within_5ft_percent: number | null; tree_cover_over_roof_percent: number | null; fire_zone: string | null; in_fire_zone: boolean | null; homes_assumed: number; polygon: [number, number][]; total: Money; units: Unit[] }
 export interface Schedule {
   property: { id: number; name: string; address: string | null; homes: number; homes_on_record: number; scenario: string; scan_date: string | null; bounds: [number, number, number, number]; aerial: { width: number; height: number } };
   total: Money; home: { name: string; total: Money; multiplied_by: number };
   kinds_of_home: { name: string; homes: number; per_home: Money; low: number | null; high: number | null; basis: string; scanned: boolean }[];
   lost_rent_per_month: { low: number; high: number; how: string } | null;
-  numbers: { scans_read: number; rooms_read: number; views_looked_at: number; items_named: number; prices_confirmed: number; minutes: number | null };
+  numbers: { scans_read: number; rooms_read: number; views_looked_at: number; items_named: number; prices_confirmed: number; minutes: number | null; model_cost_usd: number | null; cost_how?: string };
   buildings: Building[]; assumptions: string[]; not_counted: string[];
 }
 
@@ -226,6 +226,7 @@ export function ScheduleTree({ site, controller = false, inline = false, onRepla
   if (error) return <div className="fatal" role="alert">{error}</div>;
   if (!data) return <div className={inline ? "sc is-inline" : "st-wait"} />;
   const p = data.property, n = data.numbers, count = data.buildings.length;
+  const zones = [...new Set(data.buildings.map((b) => b.fire_zone))], oneZone = zones.length === 1 ? zones[0] : null;     // every building in the same fire zone: say it once, above the list
   const partial = (data.total.lines_priced ?? 0) < (data.total.lines ?? 0);
   const carded = card ? data.buildings.flatMap((b) => b.units).flatMap((u) => u.rooms).find((r) => r.name === card.room)?.items.find((l) => l.what === card.what) ?? null : null;
   const looking = !!card && finding?.key === `${card.room}:${card.what}` ? finding.state : null;
@@ -312,6 +313,7 @@ export function ScheduleTree({ site, controller = false, inline = false, onRepla
           ))}
         </tbody></table>
 
+        {oneZone && <p className="sc-zone">{count === 1 ? "The building stands" : `All ${count} buildings stand`} in a {oneZone} fire hazard severity zone (CAL FIRE). They are ordered by vegetation within 5 ft of the walls, then tree cover over the roof.</p>}
         <ol className="sc-list">
           {data.buildings.map((b) => {
             const unit = b.units[0];
@@ -319,7 +321,7 @@ export function ScheduleTree({ site, controller = false, inline = false, onRepla
               <li key={b.id} className={b.id === open ? "is-open" : ""}>
                 <button type="button" onClick={() => { setOpen(b.id === open ? null : b.id); setRoom(null); }}>
                   <b>{b.exposure_rank}</b><span>Building {b.id}{unit ? <small>this home</small> : null}</span>
-                  <span>{b.brush_within_5ft_percent != null ? `${Math.round(b.brush_within_5ft_percent)}% of walls` : ""}</span>
+                  <span title={b.fire_zone ? `${b.fire_zone} fire hazard severity zone (CAL FIRE)` : b.in_fire_zone === false ? "Outside the mapped fire hazard severity zones (CAL FIRE)" : undefined}>{[!oneZone && b.fire_zone ? `${b.fire_zone} zone` : null, b.brush_within_5ft_percent != null ? `${Math.round(b.brush_within_5ft_percent)}% of walls` : null, b.tree_cover_over_roof_percent != null ? `${Math.round(b.tree_cover_over_roof_percent)}% of roof` : null].filter(Boolean).join(", ")}</span>
                   <span>{b.homes_assumed} {b.homes_assumed === 1 ? "home" : "homes"}</span><strong>{range(b.total)}</strong>
                 </button>
                 {b.id === open && unit && (
@@ -368,7 +370,7 @@ export function ScheduleTree({ site, controller = false, inline = false, onRepla
           <button type="button" className="ft-how sc-how" onClick={() => setHow(!how)}>How this is worked out</button>
           <button type="button" className="ft-how sc-how" onClick={() => { setAsking(!asking); setCover(null); }}>Check my cover</button>
           <button type="button" className="ft-how sc-how" onClick={() => void showPhone()}>Phone</button>
-          <span>{n.scans_read} scan, {n.rooms_read} rooms, {n.views_looked_at} views, {n.items_named} items named, {n.prices_confirmed} prices confirmed{n.minutes ? `, ${n.minutes} minutes` : ""}</span>
+          <span>{n.scans_read} scan, {n.rooms_read} rooms, {n.views_looked_at} views, {n.items_named} items named, {n.prices_confirmed} prices confirmed{n.minutes ? `, ${n.minutes} minutes` : ""}{n.model_cost_usd != null ? <span title={n.cost_how}>, ${n.model_cost_usd.toFixed(2)} in model runs</span> : null}</span>
         </footer>
         {asking && (
           <form className="ft-panel sc-panel sc-cover" onSubmit={(e) => { e.preventDefault(); const n = Number(amount.replace(/[^0-9.]/g, "")); if (n > 0) void checkCover(n); }}>

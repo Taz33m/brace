@@ -1,0 +1,37 @@
+/* Headset view (J-1). Scoped to .hs-* so nothing else in the app changes. Dark, high contrast, big type:
+   it is read through two lenses at arm's length. */
+.hs-panel {
+  min-height: 100%; box-sizing: border-box; max-width: 640px; margin: 0 auto; padding: 32px 22px 40px;
+  color: #eef1f4; font-family: "Barlow", "Helvetica Neue", Arial, sans-serif; display: flex; flex-direction: column; gap: 14px; justify-content: center;
+}
+.hs-panel h1 { margin: 0; font-family: "Barlow Condensed", "Arial Narrow", sans-serif; font-weight: 700; font-size: 34px; line-height: 1.05; }
+.hs-panel p { margin: 0; font-size: 17px; line-height: 1.45; color: #c4cfdc; }
+.hs-sub { color: #f6d58b !important; font-weight: 600; }
+.hs-quiet { font-size: 14.5px !important; color: #8d9aab !important; }
+.hs-steps { margin: 4px 0; padding-left: 22px; font-size: 18px; line-height: 1.6; }
+.hs-field { display: flex; flex-direction: column; gap: 6px; font-size: 15px; font-weight: 600; }
+.hs-field input { font: inherit; font-weight: 400; font-size: 18px; padding: 13px 14px; border-radius: 8px; border: 1.5px solid #45566b; background: #111b27; color: #fff; }
+.hs-error { color: #ffb4be !important; font-weight: 500; }
+.hs-btn {
+  font: inherit; font-weight: 700; font-size: 18px; min-height: 54px; border-radius: 10px; border: 0; cursor: pointer;
+  background: #f6d58b; color: #1a1300; padding: 12px 22px;
+}
+.hs-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.hs-btn:focus-visible { outline: 3px solid #7fb0ff; outline-offset: 3px; }
+.hs-start { font-size: 22px; min-height: 64px; }
+.hs-stage { position: fixed; inset: 0; background: #05080c; touch-action: none; user-select: none; -webkit-user-select: none; }
+.hs-canvas { position: absolute; inset: 0; }
+.hs-canvas canvas { display: block; width: 100%; height: 100%; }
+.hs-note {
+  position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); margin: 0; padding: 8px 14px; border-radius: 8px;
+  background: rgba(11, 21, 34, 0.85); color: #eef1f4; font: 500 14px "Barlow", Arial, sans-serif; text-align: center; max-width: 90%;
+}
+/* Fit screen: one cross per eye at the fitted spacing; merge them through the lenses. */
+.hs-fit { position: fixed; inset: 0; background: #05080c; color: #eef1f4; font-family: "Barlow", "Helvetica Neue", Arial, sans-serif; user-select: none; -webkit-user-select: none; }
+.hs-cross { position: absolute; top: 50%; width: 46px; height: 46px; margin: -23px 0 0 -23px; pointer-events: none; }
+.hs-cross::before, .hs-cross::after { content: ""; position: absolute; background: #ffffff; }
+.hs-cross::before { left: 50%; top: 0; bottom: 0; width: 4px; margin-left: -2px; }
+.hs-cross::after { top: 50%; left: 0; right: 0; height: 4px; margin-top: -2px; }
+.hs-fit-text { position: absolute; top: 12px; left: 0; right: 0; margin: 0; text-align: center; font-size: 15px; color: #c4cfdc; padding: 0 16px; }
+.hs-fit-bar { position: absolute; bottom: 12px; left: 0; right: 0; display: flex; gap: 12px; justify-content: center; }
+.hs-fit-btn { min-width: 64px; font-size: 28px; padding: 6px 18px; }

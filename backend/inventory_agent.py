@@ -290,24 +290,31 @@ def saved(scan_id: str) -> dict | None:
         return None
 
 
+def tokens(counted: dict, messages: list) -> dict:
+    """The tokens a run used. `counted` is what was counted at every model call, lead and readers alike, by model;
+    when nothing was counted on the way, the lead's own messages are all there is to add up."""
+    rows = list(counted.values()) if counted else [getattr(m, "usage_metadata", None) or {} for m in messages]
+    return {k: sum(r.get(k, 0) or 0 for r in rows) for k in ("input_tokens", "output_tokens")}
+
+
 def _ask(agent: Any, message: str, what: str = "The inventory") -> tuple[str, str, dict, dict]:
     """Give the agent one message and collect what came back: how it stopped, its last words, the files it wrote, the tokens it used.
 
     A run that fails comes back as "error" with the reason in its statement, so the caller can keep what was recorded so far.
     """
     stop, statement, files, usage = "finished", "", {}, {"input_tokens": 0, "output_tokens": 0}
+    from langchain_core.callbacks import UsageMetadataCallbackHandler
+    counter = UsageMetadataCallbackHandler()       # hears every model call, the readers' as well as the lead's
     try:
-        out = agent.invoke({"messages": [{"role": "user", "content": message}]}, config={"recursion_limit": MAX_STEPS})
+        out = agent.invoke({"messages": [{"role": "user", "content": message}]}, config={"recursion_limit": MAX_STEPS, "callbacks": [counter]})
         statement = next((_text(m.content) for m in reversed(out["messages"]) if getattr(m, "type", "") == "ai" and _text(m.content)), "")
         for path, data in (out.get("files") or {}).items():
             content = data.get("content") if isinstance(data, dict) else data
             files[path] = "\n".join(content) if isinstance(content, list) else str(content or "")
-        for m in out["messages"]:
-            meta = getattr(m, "usage_metadata", None) or {}
-            for k in usage:
-                usage[k] += meta.get(k, 0) or 0
+        usage = tokens(counter.usage_metadata, out["messages"])
     except Exception as e:      # a failed run is recorded as failed, with what it had recorded so far
         stop, statement = "error", f"{what} stopped: {e}"
+        usage = tokens(counter.usage_metadata, [])
     return stop, statement, files, usage
 
 
