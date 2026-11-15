@@ -540,6 +540,13 @@ def place_find(model_id: str, q: str, start: str | None = None, mover: str = "wa
     return wayfind.find(model_id, q, start, mover, chair_in)
 
 
+@app.get("/api/schedule")
+def schedule_portfolio(city: str = "Los Angeles") -> dict:
+    """The scanned apartment communities inside a mapped fire zone, ranked."""
+    from . import schedule
+    return schedule.communities(city)
+
+
 @app.get("/api/schedule/{property_id}")
 def schedule_tree(property_id: int, scan: str | None = None) -> dict:
     """What an owner would have to replace if fire reached this property, as a tree: property, building, home, room, item."""

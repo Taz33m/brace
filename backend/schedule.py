@@ -239,3 +239,34 @@ def schedule(property_id: int, scan_id: str | None = None) -> dict:
         ],
         "not_counted": ["Furniture and anything a tenant owns", "The structure itself: frame, roof, wiring, plumbing", "Ceilings", "Common areas and anything outside the homes"],
     }
+
+
+def communities(city: str = "Los Angeles") -> dict:
+    """The scanned apartment communities in a city that stand inside a mapped fire hazard severity zone, ranked.
+
+    A community whose scan has been read comes first, by what the fire would cost to put back. The rest follow by
+    the asking rent they would stop collecting each month, the one figure in dollars the listing gives for a community
+    nobody has read yet. A community with no listing has no homes and no rent to show: null, and it comes last.
+    """
+    scanned = [b for b in portfolio.buildings() if b.get("type") == "Multifamily" and b.get("model_ids") and (b.get("city") or "").lower() == city.lower()]
+    rows = []
+    for b in scanned:
+        zone = exposure.zone_at(b["lat"], b["lon"])[0] if b.get("lat") is not None and b.get("lon") is not None else None
+        if not zone:
+            continue
+        plans = portfolio.floor_plans(b["id"])
+        rented = [p for p in plans if p.get("rent_low") and p.get("rent_high")]
+        try:
+            total = schedule(b["id"])["total"]
+            total = {"low": total["low"], "high": total["high"]} if total["low"] is not None else None
+        except ScheduleError:
+            total = None
+        rows.append({"id": b["id"], "name": b.get("name"), "address": b.get("address"), "fire_zone": zone, "scans": len(b["model_ids"]),
+                     "homes": sum(p["homes"] for p in plans) if plans else None,
+                     "rent_per_month": {"low": round(sum(p["homes"] * p["rent_low"] for p in rented)), "high": round(sum(p["homes"] * p["rent_high"] for p in rented))} if rented else None,
+                     "total": total})
+    rows.sort(key=lambda r: (r["total"] is None, -(r["total"] or {}).get("high", 0), r["rent_per_month"] is None, -(r["rent_per_month"] or {}).get("high", 0), r["id"]))
+    return {"city": city, "communities": [{**r, "rank": i} for i, r in enumerate(rows, 1)], "counted": {"scanned": len(scanned), "in_zone": len(rows)},
+            "how": ("Apartment communities in the kit with a Matterport scan, at an address inside a CAL FIRE fire hazard severity zone. A community whose scan has been read ranks first, "
+                    "by what it would cost to put back; the rest rank by the asking rent they would stop collecting each month, from their Apartments.com listing. "
+                    "It is an ordering, not a chance of fire.")}
