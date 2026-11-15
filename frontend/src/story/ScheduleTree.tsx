@@ -11,7 +11,7 @@ import { ScheduleReview } from "./ScheduleReview";
  * at their walls; under the building that holds the scanned home, the home, its rooms, and each line: a quantity
  * from the scan times a price a page states. Every figure opens down to where it came from.
  */
-interface Money { low: number | null; high: number | null; lines?: number; lines_priced?: number }
+interface Money { low: number | null; high: number | null; lines?: number; lines_priced?: number; middle?: number | null; likely_low?: number | null; likely_high?: number | null }
 interface Line { what: string; quantity: number; unit: string; from: string; price_low: number | null; price_high: number | null; low: number | null; high: number | null;
                  source_url: string | null; seen: string | null; at: { standpoint: string; direction: string } | null;
                  key?: string | null; match?: Match | null; guide_low?: number | null; guide_high?: number | null;
@@ -31,7 +31,7 @@ interface Building { id: string; exposure_rank: number; brush_within_5ft_percent
 export interface Schedule {
   property: { id: number; name: string; address: string | null; homes: number; homes_on_record: number; scenario: string; scan_date: string | null; bounds: [number, number, number, number]; aerial: { width: number; height: number } };
   total: Money; home: { name: string; total: Money; multiplied_by: number };
-  kinds_of_home: { name: string; homes: number; per_home: Money; low: number | null; high: number | null; basis: string; scanned: boolean }[];
+  kinds_of_home: { name: string; homes: number; per_home: Money; low: number | null; high: number | null; middle?: number | null; basis: string; scanned: boolean }[];
   lost_rent_per_month: { low: number; high: number; how: string } | null;
   numbers: { scans_read: number; rooms_read: number; views_looked_at: number; items_named: number; prices_confirmed: number; minutes: number | null; model_cost_usd: number | null; cost_how?: string };
   buildings: Building[]; assumptions: string[]; not_counted: string[];
@@ -40,6 +40,9 @@ export interface Schedule {
 const short = (n: number) => (n >= 1e6 ? `$${(n / 1e6).toFixed(1)}M` : n >= 1e4 ? `$${Math.round(n / 1e3)}K` : `$${Math.round(n).toLocaleString("en-US")}`);
 const range = (m: { low: number | null; high: number | null }) => (m.low == null || m.high == null ? "no price confirmed" : m.low === m.high ? short(m.low) : `${short(m.low)} to ${short(m.high)}`);
 const dollars = (m: { low: number | null; high: number | null }) => (m.low == null || m.high == null ? "no price confirmed" : m.low === m.high ? `$${Math.round(m.low).toLocaleString("en-US")}` : `$${Math.round(m.low).toLocaleString("en-US")} to $${Math.round(m.high).toLocaleString("en-US")}`);
+/** A total as it is led with: the middle of its lines. The likely band about it is said beside it. */
+const figure = (m: Money) => (m.middle != null ? short(m.middle) : range(m));
+const likely = (m: Money) => (m.likely_low != null && m.likely_high != null && m.likely_low !== m.likely_high ? `${short(m.likely_low)} to ${short(m.likely_high)}` : null);
 const each = (l: Line) => (l.price_low == null ? "" : l.price_high && l.price_high !== l.price_low ? `$${l.price_low.toLocaleString("en-US")} to $${l.price_high.toLocaleString("en-US")}` : `$${l.price_low.toLocaleString("en-US")}`);
 
 export function ScheduleTree({ site, controller = false, inline = false, onReplayHome, aftermath = false }: { site: number; controller?: boolean; inline?: boolean; onReplayHome?: () => void; aftermath?: boolean }) {
@@ -110,7 +113,7 @@ export function ScheduleTree({ site, controller = false, inline = false, onRepla
   // Each tool moves the screen and hands back only what the schedule holds, so the voice has nothing else to say.
   useEffect(() => {
     const like = (a: string, b: string) => a.toLowerCase().replace(/[^a-z0-9]/g, "").includes(b.toLowerCase().replace(/[^a-z0-9]/g, ""));
-    const money = (m: { low: number | null; high: number | null }) => range(m);      // rounded as on the screen, so what is said matches what is shown
+    const money = (m: Money) => (m.middle != null ? `about ${short(m.middle)}${likely(m) ? `, likely ${likely(m)}` : ""}` : range(m));      // rounded as on the screen, so what is said matches what is shown
     const told = (m: Match, l?: Line) => ({ label: m.label, make: m.make, model: m.model, name: m.name, products_each: dollars(m),
                                   line_price_each: l ? dollars({ low: l.price_low, high: l.price_high }) : undefined,
                                   line_price_rests_on: l ? (matched(l) ? (l.fitting_low != null ? "these products plus the labour to fit one" : "these products, fitting not priced") : "the cost guide: one lookalike is not a range") : undefined,
@@ -264,7 +267,7 @@ export function ScheduleTree({ site, controller = false, inline = false, onRepla
         {review && <ScheduleReview data={review.data} captured={review.captured} aftermath={review.aftermath} voiceReady={voiceReady} onClose={() => setReview(null)} />}
         {!review && <ConversationPanel ready={voiceReady} />}
         <h1>{p.name}</h1>
-        <strong>{range(data.total)}</strong>
+        <strong>{figure(data.total)}</strong>
         <p>{pointed ? pointed.replace(":", ", ") : room ? room : open ? `Building ${open}` : how ? "How this is worked out" : "Ask Brace to explain the evidence paper."}</p>
         <small>The big screen follows.</small>
       </div>
@@ -337,8 +340,8 @@ export function ScheduleTree({ site, controller = false, inline = false, onRepla
           <p>If fire reaches it. {p.homes.toLocaleString("en-US")} homes.</p>
         </header>
         <div className="sc-total">
-          <strong>{range(data.total)}</strong>
-          <span>to put back what the owner owns inside{data.lost_rent_per_month ? `, and ${short(data.lost_rent_per_month.low)} to ${short(data.lost_rent_per_month.high)} of rent for each month empty` : ""}</span>
+          <strong>{figure(data.total)}</strong>
+          <span>to put back what the owner owns inside{likely(data.total) ? `, likely ${likely(data.total)}` : ""}{data.lost_rent_per_month ? `, and ${short(data.lost_rent_per_month.low)} to ${short(data.lost_rent_per_month.high)} of rent for each month empty` : ""}</span>
           {partial && <em>{data.total.lines_priced} of {data.total.lines} lines have a confirmed price.</em>}
         </div>
         <button className="sr-open" onClick={() => setReview({ data: structuredClone(data), captured: new Date().toISOString() })}>{aftermath ? "Before-fire evidence PDF" : "Review & export the evidence"}</button>
@@ -346,7 +349,7 @@ export function ScheduleTree({ site, controller = false, inline = false, onRepla
         <table className="sc-kinds"><tbody>
           {data.kinds_of_home.map((k) => (
             <tr key={k.name} title={k.basis}>
-              <th>{k.homes} x {k.name}</th><td>{range(k.per_home)} each</td><td>{k.scanned ? "this home" : "scaled from this home"}</td><td>{range(k)}</td>
+              <th>{k.homes} x {k.name}</th><td>{figure(k.per_home)} each</td><td>{k.scanned ? "this home" : "scaled from this home"}</td><td>{figure(k)}</td>
             </tr>
           ))}
         </tbody></table>
@@ -359,11 +362,11 @@ export function ScheduleTree({ site, controller = false, inline = false, onRepla
                 <button type="button" onClick={() => { setOpen(b.id === open ? null : b.id); setRoom(null); }}>
                   <b>{b.exposure_rank}</b><span>Building {b.id}{unit ? <small>this home</small> : null}</span>
                   <span title={b.fire_zone ? `${b.fire_zone} fire hazard severity zone (CAL FIRE)` : b.in_fire_zone === false ? "Outside the mapped fire hazard severity zones (CAL FIRE)" : undefined}>{b.brush_within_5ft_percent != null ? `${Math.round(b.brush_within_5ft_percent)}% of walls` : ""}</span>
-                  <span>{b.homes_assumed} {b.homes_assumed === 1 ? "home" : "homes"}</span><strong>{range(b.total)}</strong>
+                  <span>{b.homes_assumed} {b.homes_assumed === 1 ? "home" : "homes"}</span><strong>{figure(b.total)}</strong>
                 </button>
                 {b.id === open && unit && (
                   <div className="sc-home-rows">
-                    <p>{unit.name}. Matterport{unit.scan_date ? `, scan dated ${unit.scan_date}` : ""}. {range(unit.total)}.</p>
+                    <p>{unit.name}. Matterport{unit.scan_date ? `, scan dated ${unit.scan_date}` : ""}. {figure(unit.total)}{likely(unit.total) ? `, likely ${likely(unit.total)}` : ""}.</p>
                     {unit.rooms.map((r) => (
                       <div key={r.name} className={r.name === room ? "is-open" : ""}>
                         <button type="button" onClick={() => { setRoom(r.name === room ? null : r.name); setPointed(null); }}>

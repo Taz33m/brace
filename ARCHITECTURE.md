@@ -186,6 +186,12 @@ Rules that hold everywhere:
 
 - Money that is not known is null, never zero, and is left out of totals. Each total carries its count of priced lines.
 - Every extrapolation is marked as one, in the data and on the screen.
+- A total leads with one figure: the middle of every line's range, added up (`middle`). Beside it is a likely band
+  (`likely_low`, `likely_high`), which is the root of the sum of the squares of the lines' own spreads, lines of one
+  kind taken together first (`schedule._band`). It assumes lines priced from different pages are off independently.
+  It does not cover anything that moves every price together (Los Angeles labour against national guides) or the
+  other homes differing from the scanned one. The two ends (`low`, `high`: every line at its low or its high) are
+  kept and shown under "How this is worked out". Lines and rooms still show their own ranges.
 - The scenario is stated ("fire reaches the building"), never forecast.
 
 ## Other endpoints

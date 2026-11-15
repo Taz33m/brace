@@ -19,11 +19,13 @@ const SITE = 9519837;
 
 interface At { sweep_id: string; yaw_deg: number; pitch_deg: number; heading_deg: number | null }
 interface Line { what: string; quantity: number; low: number | null; high: number | null; at: At | null }
+/** A total: its two ends, and the middle with the likely band about it that the screen leads with. */
+interface Sum { low: number | null; high: number | null; middle?: number | null; likely_low?: number | null; likely_high?: number | null }
 interface Schedule {
   property: { name: string; homes: number };
-  total: { low: number | null; high: number | null };
-  home: { name: string; total: { low: number | null; high: number | null } };
-  kinds_of_home: { name: string; homes: number; per_home: { low: number | null; high: number | null }; low: number | null; high: number | null; scanned: boolean }[];
+  total: Sum;
+  home: { name: string; total: Sum };
+  kinds_of_home: ({ name: string; homes: number; per_home: Sum; scanned: boolean } & Sum)[];
   lost_rent_per_month: { low: number; high: number } | null;
   numbers: { rooms_read: number; views_looked_at: number; items_named: number; prices_confirmed: number };
   buildings: { id: string; exposure_rank: number; brush_within_5ft_percent: number | null; polygon: [number, number][]; units: { scan_id: string; decisions?: { left_out: number; merged: number; doubts: number };
@@ -34,6 +36,8 @@ interface Stand { scan: string; room: string; sweep: string; heading: number; it
 
 const short = (n: number) => (n >= 1e6 ? `$${(n / 1e6).toFixed(1)}M` : n >= 1e4 ? `$${Math.round(n / 1e3)}K` : `$${Math.round(n).toLocaleString("en-US")}`);
 const range = (m: { low: number | null; high: number | null }) => (m.low == null || m.high == null ? "no price confirmed" : m.low === m.high ? short(m.low) : `${short(m.low)} to ${short(m.high)}`);
+const figure = (m: Sum) => (m.middle != null ? short(m.middle) : range(m));
+const likely = (m: Sum) => (m.likely_low != null && m.likely_high != null && m.likely_low !== m.likely_high ? `${short(m.likely_low)} to ${short(m.likely_high)}` : null);
 const clamp = (v: number) => Math.min(1, Math.max(0, v));
 const span = (p: number, a: number, b: number) => clamp((p - a) / (b - a));
 const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
@@ -425,6 +429,7 @@ export function LoopGround({ replay = 0, onAftermath }: { replay?: number; onAft
         const geometry = new THREE.SphereGeometry(FACE, 64, 40);
         geometry.scale(-1, 1, 1);
         const sphere = new THREE.Mesh(geometry, mat);
+        sphere.renderOrder = 1;      // drawn over the scanned room, so the room can be seen turning into the scenario
         // Match the equirectangular reference to the original cube's compass heading.
         sphere.rotation.y = -Math.PI / 2 - rad(st.heading);
         box.add(sphere);
@@ -463,9 +468,15 @@ export function LoopGround({ replay = 0, onAftermath }: { replay?: number; onAft
       rooms.forEach(({ st, mats, fireMats, tags, yaws }, i) => {
         // One room at a time: each fades in at its start and out at its end, the first and last holding to the edges of the beat.
         const here = (i === 0 ? 1 : span(p, st.from - 0.012, st.from + 0.012)) * (i + 1 === rooms.length ? 1 : 1 - span(p, st.to - 0.012, st.to + 0.012));
-        const burned = afterRef.current && fireMats.length > 0;
-        for (const m of mats) m.opacity = burned ? 0 : here;
-        for (const m of fireMats) m.opacity = burned ? here : 0;
+        // After the fire the room is first shown as it was scanned. The scenario comes over it as the scroll goes on, so the two are seen one after the other from the same place.
+        const turned = afterRef.current && fireMats.length > 0 ? ease(span(p, st.from + 0.075, st.from + 0.115)) : 0;
+        for (const m of mats) m.opacity = here;
+        for (const m of fireMats) m.opacity = here * turned;
+        if (afterRef.current && here >= 0.5 && fireLabel.current) {
+          const after = turned > 0.5, title = fireLabel.current.querySelector("h2"), note = fireLabel.current.querySelector("p");
+          if (title && title.textContent !== (after ? "After the fire" : "Before the fire")) title.textContent = after ? "After the fire" : "Before the fire";
+          if (note && note.textContent !== (after ? "AI-generated scenario · Not observed damage" : "As Matterport scanned it")) note.textContent = after ? "AI-generated scenario · Not observed damage" : "As Matterport scanned it";
+        }
         if (here >= 0.5) {
           const at = span(p, st.from + 0.02, st.to - 0.03) * (yaws.length - 1), a = Math.floor(at), b = Math.min(yaws.length - 1, a + 1);
           const yaw = yaws[a] + (yaws[b] - yaws[a]) * (at - a), pitch = (st.items[a].at.pitch_deg + (st.items[b].at.pitch_deg - st.items[a].at.pitch_deg) * (at - a)) * 0.45;
@@ -587,7 +598,7 @@ export function LoopGround({ replay = 0, onAftermath }: { replay?: number; onAft
           <p>Its floor plan, placed under the roof it belongs to.</p>
           <small>Matterport</small>
         </div>
-        {aftermath && <div ref={fireLabel} className="lp-fire-label"><h2>After the fire</h2><p>AI-generated scenario · Not observed damage</p></div>}
+        {aftermath && <div ref={fireLabel} className="lp-fire-label"><h2>Before the fire</h2><p>As Matterport scanned it</p></div>}
         <div ref={(n) => { cap.current[3] = n; }} className="lp-lines">
           <span>{sched?.home.name}</span>
           <strong ref={sub} />
@@ -601,9 +612,10 @@ export function LoopGround({ replay = 0, onAftermath }: { replay?: number; onAft
         {sched && (
           <div ref={(n) => { cap.current[4] = n; }} className="lp-tree">
             <span>If fire reaches it</span>
-            <strong>{range(sched.total)}</strong>
+            <strong>{figure(sched.total)}</strong>
+            {likely(sched.total) && <em>likely {likely(sched.total)}</em>}
             <table><tbody>
-              {sched.kinds_of_home.map((k) => <tr key={k.name}><th>{k.homes} x {k.name}</th><td>{range(k.per_home)} each</td><td>{k.scanned ? "this home" : "scaled from it"}</td><td>{range(k)}</td></tr>)}
+              {sched.kinds_of_home.map((k) => <tr key={k.name}><th>{k.homes} x {k.name}</th><td>{figure(k.per_home)} each</td><td>{k.scanned ? "this home" : "scaled from it"}</td><td>{figure(k)}</td></tr>)}
               {sched.lost_rent_per_month && <tr><th>Rent, each month empty</th><td /><td>asking rents</td><td>{range(sched.lost_rent_per_month)}</td></tr>}
             </tbody></table>
             <small>{sched.numbers.rooms_read} rooms, {sched.numbers.views_looked_at} views, {sched.numbers.items_named} items named, {sched.numbers.prices_confirmed} prices confirmed. One home, multiplied: an extrapolation.</small>

@@ -16,8 +16,10 @@ export function reviewQuestions(data: Schedule): string[] {
   questions.push("Confirm actual units per building. Roof-area allocation is an estimate, not a verified occupancy map.");
   return questions;
 }
-export function reviewMoney(value: { low: number | null; high: number | null }, fractionDigits = 0): string {
+export function reviewMoney(value: { low: number | null; high: number | null; middle?: number | null; likely_low?: number | null; likely_high?: number | null }, fractionDigits = 0): string {
   const dollar = (n: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: fractionDigits, maximumFractionDigits: fractionDigits }).format(n);
+  // A total leads with the middle of its lines and the likely band about it; a line has only its range.
+  if (value.middle != null && value.likely_low != null && value.likely_high != null) return `${dollar(value.middle)} (likely ${dollar(value.likely_low)}–${dollar(value.likely_high)})`;
   return value.low == null || value.high == null ? "Unpriced / unavailable" : value.low === value.high ? dollar(value.low) : `${dollar(value.low)}–${dollar(value.high)}`;
 }
 export function sourceLink(value: string | null): string | undefined {

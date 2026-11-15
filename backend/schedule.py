@@ -74,6 +74,40 @@ def _sum(lines: list[dict]) -> dict:
     return {"low": sum(l["low"] for l in priced) if priced else None, "high": sum(l["high"] for l in priced) if priced else None, "lines": len(lines), "lines_priced": len(priced)}
 
 
+def _band(unit: dict) -> float | None:
+    """How far either side of its middle one home's total is likely to lie, as a share of the middle.
+
+    Every line has a low and a high. Adding all the lows and all the highs gives the two ends, which is what the total would be if every price were wrong
+    the same way at once. Lines priced from different pages are not: their errors partly cancel, so the likely spread of a total is the root of the sum of
+    the squares of the lines' own spreads. Lines of one kind share a price, so they are taken together first. What this leaves out is said where it is shown.
+    """
+    spread: dict[str, float] = {}
+    middle = 0.0
+    for room in unit["rooms"]:
+        for l in room["items"]:
+            if l["low"] is None:
+                continue
+            spread[l["what"]] = spread.get(l["what"], 0.0) + (l["high"] - l["low"])
+            middle += (l["low"] + l["high"]) / 2
+    return 0.5 * math.sqrt(sum(w * w for w in spread.values())) / middle if middle else None
+
+
+def _figure(m: dict, band: float | None) -> dict:
+    """A total with its middle and the likely band about it. The two ends stay as low and high."""
+    if m.get("low") is None or m.get("high") is None or band is None:
+        return {**m, "middle": None, "likely_low": None, "likely_high": None}
+    middle = (m["low"] + m["high"]) / 2
+    return {**m, "middle": round(middle), "likely_low": round(middle * (1 - band)), "likely_high": round(middle * (1 + band))}
+
+
+def banded(s: dict) -> dict:
+    """The same schedule with each total's low and high replaced by its likely band, for what is said or written about the total as a whole."""
+    def b(m: dict | None) -> dict | None:
+        return {**m, "low": m["likely_low"], "high": m["likely_high"]} if m and m.get("likely_low") is not None else m
+    return {**s, "total": b(s["total"]), "home": {**s["home"], "total": b(s["home"]["total"])},
+            "kinds_of_home": [{**b(k), "per_home": b(k["per_home"])} for k in s["kinds_of_home"]]}
+
+
 def _times(total: dict, n: int) -> dict:
     return {"low": total["low"] * n if total["low"] is not None else None, "high": total["high"] * n if total["high"] is not None else None}
 
@@ -231,6 +265,11 @@ def schedule(property_id: int, scan_id: str | None = None) -> dict:
     confirmed = len(used)      # the kinds of line on this schedule that carry a confirmed price
     seconds = (unit.get("seconds") or 0) + (price_run.get("seconds") or 0)
     listed = bool(portfolio.floor_plans(property_id))
+    band = _band(unit)
+    unit = {**unit, "total": _figure(unit["total"], band)}
+    kinds = [{**_figure(k, band), "per_home": _figure(k["per_home"], band)} for k in kinds]
+    buildings = [{**b, "total": _figure(b["total"], band), "units": [{**u, "total": _figure(u["total"], band)} for u in b["units"]]} for b in buildings]
+    total = _figure(total, band)
     return {
         "property": {"id": property_id, "name": s["name"], "address": s["address"], "homes": homes, "homes_on_record": record_homes, "scenario": "fire reaches the community",
                      "scan_date": unit["scan_date"], "bounds": s["bounds"], "aerial": s["aerial"]},
@@ -244,7 +283,13 @@ def schedule(property_id: int, scan_id: str | None = None) -> dict:
                     "prices_confirmed": confirmed, "minutes": round(seconds / 60, 1) if seconds else None, "model_cost_usd": cost, "cost_how": run_cost.HOW},
         "buildings": buildings,
         "exposure": ranking,
+        "estimate": {"band": round(band, 3) if band is not None else None,
+                     "how": "The figure is the middle of every line's range, added up. The band about it assumes the lines' prices are off independently of one another, so their errors partly cancel."},
         "assumptions": [
+            ((f"The figure is the middle of every line's range, added up: ${total['middle']:,}. It is likely to lie within {round(band * 100)}% of that, ${total['likely_low']:,} to ${total['likely_high']:,}, "
+              f"if the lines' prices are off independently of one another, because their errors then partly cancel. If every line were at its low end or at its high end together, the total would be "
+              f"${total['low']:,} to ${total['high']:,}. The band does not cover anything that would move every price the same way, such as Los Angeles labour rates against national cost guides, "
+              "and it does not cover the other homes differing from the scanned one.") if total.get("middle") is not None else "No figure can be given: no line has a confirmed price."),
             "The scenario is stated, not forecast: fire reaches the community and the fit-out of its homes is a total loss.",
             (f"The kinds of home and how many of each are from the community's Apartments.com listing: {homes:,} homes. The kind that was scanned takes the scanned home's figure; a kind that was not is scaled by floor area. Both are extrapolations."
              + (f" CoStar's property record gives {record_homes:,}; the schedule counts only the homes the listing describes." if record_homes and record_homes != homes else "")

@@ -576,6 +576,7 @@ def schedule_cover(property_id: int, amount: float = Query(..., gt=0), share: fl
     from . import cover, schedule
     try:
         sched = schedule.schedule(property_id)
+        sched = schedule.banded(sched)      # the cover is checked against the likely band, the same figures the screen leads with
         result = cover.check(sched["total"], amount, share)
     except schedule.ScheduleError as e:
         raise HTTPException(404, str(e))

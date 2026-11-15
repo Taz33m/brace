@@ -96,7 +96,7 @@ def test_the_schedule_multiplies_one_home_across_the_property_and_says_so(hill_c
     assert kitchen["items"][0]["from"] == "read from the scan" and kitchen["items"][0]["at"]["sweep_id"] == "s1" and kitchen["items"][1]["from"] == "measured from the scan"
     assert kitchen["items"][2]["quantity"] == 72 and kitchen["items"][2]["low"] is None                                     # 10 ft of wall less doorways (x0.9) to an 8 ft ceiling; its price was not confirmed
     home_total = s["home"]["total"]
-    assert home_total == {"low": 600 + 5 * 210, "high": 1200 + 5 * 210, "lines": 14, "lines_priced": 4}                      # the fridge and three rooms of flooring; nothing else is priced
+    assert home_total == {"low": 600 + 5 * 210, "high": 1200 + 5 * 210, "lines": 14, "lines_priced": 4, "middle": 1950, "likely_low": 1650, "likely_high": 2250}                      # the fridge and three rooms of flooring; nothing else is priced
     assert s["total"]["low"] == home_total["low"] * 10 and s["home"]["multiplied_by"] == 10 and s["buildings"][1]["units"][0]["extrapolated"] is True
     assert sum(b["homes_assumed"] for b in s["buildings"]) == 10 and s["buildings"][1]["homes_assumed"] > s["buildings"][0]["homes_assumed"]
     assert s["lost_rent_per_month"] is None and s["kinds_of_home"][0]["homes"] == 10 and s["numbers"]["minutes"] == 3.0                 # no listing: no rent is known, and it is not made up and s["numbers"]["model_cost_usd"] is None and s["numbers"]["prices_confirmed"] == 2
