@@ -52,6 +52,7 @@ Rules
 - Reporting is the only way a product counts; one you only mention in your last line is lost. If you have opened six pages and reported nothing, report the closest product you have from the page most likely to state its price, so that it can be checked.
 - Report the price of one unit as the page states it now, and copy the price as the page prints it into price_text. Do not work out a price, do not average, and do not add delivery or fitting.
 - Match what is visible. This is apartment-grade fit-out unless the pictures show otherwise; do not pick a dearer or a cheaper product than the pictures support.
+- Report only a product that is the whole of the thing named. A tap alone is not a sink with its faucet; a vanity top alone is not a vanity; a door slab is a door. If the thing is sold as a set (a sink with its faucet, a vanity with its top), look for the set. If all you can find is a part of it, report nothing: a part priced as the whole would understate what the owner has to replace.
 - A picture cannot tell you the exact product. In why, say which visible details the product shares, and nothing more.
 - Stop when three products are kept or you have searched eight times. Finish with one line saying how many were kept and, if none was, why."""
 
