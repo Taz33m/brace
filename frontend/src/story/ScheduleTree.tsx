@@ -5,8 +5,6 @@ import { ConversationPanel } from "../components/ConversationPanel";
 import { conversation } from "../conversation";
 import "./story.css";
 import { ScheduleReview } from "./ScheduleReview";
-import { FireAftermath } from "./FireAftermath";
-import { smooth } from "./gsap";
 
 /**
  * The schedule as a tree. The property's total at the top; under it the buildings, ranked by how much fuel stands
@@ -26,13 +24,13 @@ interface Unit { scan_id: string; name: string; scan_date: string | null; rooms:
                  decisions: { left_out: number; merged: number; doubts: number }; rechecks: { room_name: string; changed: string[] }[] }
 interface Cover { check: { cover: number; verdict: string; say: string; example: { loss: number; low: number; high: number } }; note: string }
 interface Again { room: string; state: "looking" | "done" | "failed"; changed: string[]; statement: string | null; before?: Money; after?: Money }
-interface Building { id: string; exposure_rank: number; brush_within_5ft_percent: number | null; in_fire_zone: boolean | null; homes_assumed: number; polygon: [number, number][]; total: Money; units: Unit[] }
+interface Building { id: string; exposure_rank: number; brush_within_5ft_percent: number | null; tree_cover_over_roof_percent: number | null; fire_zone: string | null; in_fire_zone: boolean | null; homes_assumed: number; polygon: [number, number][]; total: Money; units: Unit[] }
 export interface Schedule {
   property: { id: number; name: string; address: string | null; homes: number; homes_on_record: number; scenario: string; scan_date: string | null; bounds: [number, number, number, number]; aerial: { width: number; height: number } };
   total: Money; home: { name: string; total: Money; multiplied_by: number };
   kinds_of_home: { name: string; homes: number; per_home: Money; low: number | null; high: number | null; basis: string; scanned: boolean }[];
   lost_rent_per_month: { low: number; high: number; how: string } | null;
-  numbers: { scans_read: number; rooms_read: number; views_looked_at: number; items_named: number; prices_confirmed: number; minutes: number | null };
+  numbers: { scans_read: number; rooms_read: number; views_looked_at: number; items_named: number; prices_confirmed: number; minutes: number | null; model_cost_usd: number | null; cost_how?: string };
   buildings: Building[]; assumptions: string[]; not_counted: string[];
 }
 
@@ -41,8 +39,8 @@ const range = (m: { low: number | null; high: number | null }) => (m.low == null
 const dollars = (m: { low: number | null; high: number | null }) => (m.low == null || m.high == null ? "no price confirmed" : m.low === m.high ? `$${Math.round(m.low).toLocaleString("en-US")}` : `$${Math.round(m.low).toLocaleString("en-US")} to $${Math.round(m.high).toLocaleString("en-US")}`);
 const each = (l: Line) => (l.price_low == null ? "" : l.price_high && l.price_high !== l.price_low ? `$${l.price_low.toLocaleString("en-US")} to $${l.price_high.toLocaleString("en-US")}` : `$${l.price_low.toLocaleString("en-US")}`);
 
-export function ScheduleTree({ site, controller = false, inline = false }: { site: number; controller?: boolean; inline?: boolean }) {
-  const [review, setReview] = useState<{ data: Schedule; captured: string } | null>(null);
+export function ScheduleTree({ site, controller = false, inline = false, onReplayHome, aftermath = false }: { site: number; controller?: boolean; inline?: boolean; onReplayHome?: () => void; aftermath?: boolean }) {
+  const [review, setReview] = useState<{ data: Schedule; captured: string; aftermath?: boolean } | null>(null);
   const [data, setData] = useState<Schedule | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);        // the building that is open
@@ -228,6 +226,7 @@ export function ScheduleTree({ site, controller = false, inline = false }: { sit
   if (error) return <div className="fatal" role="alert">{error}</div>;
   if (!data) return <div className={inline ? "sc is-inline" : "st-wait"} />;
   const p = data.property, n = data.numbers, count = data.buildings.length;
+  const zones = [...new Set(data.buildings.map((b) => b.fire_zone))], oneZone = zones.length === 1 ? zones[0] : null;     // every building in the same fire zone: say it once, above the list
   const partial = (data.total.lines_priced ?? 0) < (data.total.lines ?? 0);
   const carded = card ? data.buildings.flatMap((b) => b.units).flatMap((u) => u.rooms).find((r) => r.name === card.room)?.items.find((l) => l.what === card.what) ?? null : null;
   const looking = !!card && finding?.key === `${card.room}:${card.what}` ? finding.state : null;
@@ -245,27 +244,22 @@ export function ScheduleTree({ site, controller = false, inline = false }: { sit
     );
   }
 
-  const returnHome = () => {
-    setReview(null);
-    requestAnimationFrame(() => {
-      const target = document.getElementById("home-after-fire");
-      if (target) {
-        if (smooth.lenis) smooth.lenis.scrollTo(target, { immediate: true, force: true });
-        else target.scrollIntoView({ behavior: "instant" as ScrollBehavior });
-        target.querySelector<HTMLElement>("[tabindex]")?.focus({ preventScroll: true });
-      }
-    });
+  const replayHome = () => {
+    if (onReplayHome) onReplayHome();
+    else { sessionStorage.setItem("brace:fire-replay", "1"); window.location.hash = "#/"; }
   };
 
   return (<>
     <div className={`st sc${inline ? " is-inline" : ""}`}>
-      {review && <ScheduleReview data={review.data} captured={review.captured} onClose={() => setReview(null)} onContinue={site === 9519837 ? returnHome : undefined} />}
+      {review && <ScheduleReview data={review.data} captured={review.captured} aftermath={review.aftermath} onClose={() => setReview(null)} />}
       <div className="sc-map">
-        <svg viewBox={`0 0 ${p.aerial.width} ${p.aerial.height}`} preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+        <svg viewBox={`0 0 ${p.aerial.width} ${p.aerial.height}`} preserveAspectRatio="xMidYMid slice" role="group" aria-label="Property buildings">
           <image href={`/api/buildings/${site}/aerial.jpg`} width={p.aerial.width} height={p.aerial.height} />
           {shapes.map((b) => (
             <polygon key={b.id} points={b.points} className={`${b.id === open ? "is-open" : ""}${b.scanned ? " is-scanned" : ""}`}
-              style={{ fillOpacity: 0.12 + 0.5 * (1 - (b.rank - 1) / Math.max(1, count - 1)) }} onClick={() => { setOpen(b.id); setRoom(null); }} />
+              style={{ fillOpacity: 0.12 + 0.5 * (1 - (b.rank - 1) / Math.max(1, count - 1)) }} role="button" tabIndex={0} aria-label={b.scanned && site === 9519837 ? `Revisit building ${b.id} after the fire` : `Select building ${b.id}`}
+              onClick={() => { if (b.scanned && site === 9519837) replayHome(); else { setOpen(b.id); setRoom(null); } }}
+              onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); if (b.scanned && site === 9519837) replayHome(); else { setOpen(b.id); setRoom(null); } } }} />
           ))}
         </svg>
         <p className="sc-key"><i />More fuel at the walls<small>Vexcel</small></p>
@@ -309,7 +303,8 @@ export function ScheduleTree({ site, controller = false, inline = false }: { sit
           <span>to put back what the owner owns inside{data.lost_rent_per_month ? `, and ${short(data.lost_rent_per_month.low)} to ${short(data.lost_rent_per_month.high)} of rent for each month empty` : ""}</span>
           {partial && <em>{data.total.lines_priced} of {data.total.lines} lines have a confirmed price.</em>}
         </div>
-        <button className="sr-open" onClick={() => setReview({ data: structuredClone(data), captured: new Date().toISOString() })}>Review &amp; export the evidence</button>
+        <button className="sr-open" onClick={() => setReview({ data: structuredClone(data), captured: new Date().toISOString() })}>{aftermath ? "Before-fire evidence PDF" : "Review & export the evidence"}</button>
+        {(aftermath || !inline) && site === 9519837 && <button className="sr-open" onClick={() => setReview({ data: structuredClone(data), captured: new Date().toISOString(), aftermath: true })}>After-fire recovery PDF</button>}
         <table className="sc-kinds"><tbody>
           {data.kinds_of_home.map((k) => (
             <tr key={k.name} title={k.basis}>
@@ -325,7 +320,7 @@ export function ScheduleTree({ site, controller = false, inline = false }: { sit
               <li key={b.id} className={b.id === open ? "is-open" : ""}>
                 <button type="button" onClick={() => { setOpen(b.id === open ? null : b.id); setRoom(null); }}>
                   <b>{b.exposure_rank}</b><span>Building {b.id}{unit ? <small>this home</small> : null}</span>
-                  <span>{b.brush_within_5ft_percent != null ? `${Math.round(b.brush_within_5ft_percent)}% of walls` : ""}</span>
+                  <span title={b.fire_zone ? `${b.fire_zone} fire hazard severity zone (CAL FIRE)` : b.in_fire_zone === false ? "Outside the mapped fire hazard severity zones (CAL FIRE)" : undefined}>{b.brush_within_5ft_percent != null ? `${Math.round(b.brush_within_5ft_percent)}% of walls` : ""}</span>
                   <span>{b.homes_assumed} {b.homes_assumed === 1 ? "home" : "homes"}</span><strong>{range(b.total)}</strong>
                 </button>
                 {b.id === open && unit && (
@@ -394,12 +389,13 @@ export function ScheduleTree({ site, controller = false, inline = false }: { sit
         {phone && <aside className="sc-phone"><img src={phone.qr} alt="" /><span>{phone.url}</span></aside>}
         {how && (
           <aside className="ft-panel sc-panel">
+            {oneZone && <p>All {count} buildings are in a {oneZone} fire hazard severity zone (CAL FIRE). Vegetation at the walls and tree cover over the roof determine their order within that zone.</p>}
+            {n.model_cost_usd != null && <p title={n.cost_how}>Model runs: ${n.model_cost_usd.toFixed(2)}.</p>}
             <ul>{data.assumptions.map((a) => <li key={a}>{a}</li>)}</ul>
             <ul className="ft-found"><li className="is-used">Not counted: {data.not_counted.join("; ").toLowerCase()}.</li></ul>
           </aside>
         )}
       </div>
     </div>
-    {site === 9519837 && <FireAftermath />}
   </>);
 }

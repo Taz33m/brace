@@ -73,7 +73,18 @@ function tag(line: Line): THREE.Sprite {
   return sprite;
 }
 
-export function LoopGround() {
+const FIRE_VIEWS: Record<string, string> = {
+  x9aueidhw980n197tiue89t3c: "/aftermath/verdugo/fire.png",
+  naaiahpb2a7bgebbitnx189gc: "/aftermath/verdugo/bathroom-fire.png",
+};
+
+export function LoopGround({ replay = 0, onAftermath }: { replay?: number; onAftermath?: () => void }) {
+  const aftermath = replay > 0;
+  const afterRef = useRef(aftermath); afterRef.current = aftermath;
+  const wildfireLabel = useRef<HTMLDivElement>(null);
+  const firePick = useRef<HTMLButtonElement>(null);
+  const lastReplay = useRef(0);
+  const fireLabel = useRef<HTMLDivElement>(null);
   const section = useRef<HTMLElement>(null), stage = useRef<HTMLDivElement>(null);
   const wide = useRef<HTMLDivElement>(null), mount = useRef<HTMLDivElement>(null), roomMount = useRef<HTMLDivElement>(null);
   const cap = useRef<(HTMLElement | null)[]>([]), list = useRef<HTMLOListElement>(null), sub = useRef<HTMLElement>(null);
@@ -99,10 +110,18 @@ export function LoopGround() {
     if (!el || !pinned) return;
     const trigger = ScrollTrigger.create({ trigger: el, start: "top top", end: "bottom bottom", pin: pinned, pinSpacing: false, scrub: true, invalidateOnRefresh: true, onUpdate: (self) => {
       // Until a home is chosen the page is held at the site: scrolling further is put back.
-      if (!picked.current && self.progress > GATE) {
+      if (!picked.current && self.progress > GATE + 0.0001) {
         progress.current = GATE;
         const y = self.start + GATE * (self.end - self.start);
         if (smooth.lenis) smooth.lenis.scrollTo(y, { immediate: true, force: true }); else if (window.scrollY > y + 1) window.scrollTo({ top: y, behavior: "instant" as ScrollBehavior });
+        return;
+      }
+      // Hold the community-wide fire scene until the owner chooses the same home again.
+      if (!afterRef.current && self.progress > 0.8901) {
+        progress.current = 0.89;
+        const y = self.start + 0.89 * (self.end - self.start);
+        if (smooth.lenis) smooth.lenis.scrollTo(y, { immediate: true, force: true });
+        else window.scrollTo({ top: y, behavior: "instant" as ScrollBehavior });
         return;
       }
       progress.current = self.progress;
@@ -132,6 +151,21 @@ export function LoopGround() {
     };
     requestAnimationFrame(step);
   };
+
+  useEffect(() => {
+    if (!replay || replay === lastReplay.current || !site || !sched || !trig.current) return;
+    lastReplay.current = replay;
+    picked.current = true;
+    setChosen(null);
+    const t = trig.current;
+    const start = t.start + GATE * (t.end - t.start);
+    progress.current = GATE;
+    if (smooth.lenis) smooth.lenis.scrollTo(start, { immediate: true, force: true });
+    else window.scrollTo({ top: start, behavior: "instant" as ScrollBehavior });
+    // Let the same roof/floor-plan scene render before entering along the existing path.
+    const frame = requestAnimationFrame(() => enter());
+    return () => cancelAnimationFrame(frame);
+  }, [replay, site, sched]);
 
   const decided = sched?.buildings.find((b) => b.units.length)?.units[0].decisions ?? null;
   // The two standpoints that saw the most, in the order the view visits them, each with its share of the inside beat.
@@ -235,6 +269,30 @@ export function LoopGround() {
       scene.add(mesh);
       caps.push({ mat, strength: 0.1 + 0.55 * ((b.brush_within_5ft_percent ?? 0) / 100) });
     }
+    // Illustrative fire and smoke at actual building footprints; not a fire-spread model.
+    const makeParticle = (smoke: boolean) => {
+      const canvas = document.createElement("canvas"); canvas.width = 128; canvas.height = 256;
+      const c = canvas.getContext("2d")!;
+      const glow = c.createRadialGradient(64, smoke ? 128 : 193, 2, 64, 140, smoke ? 90 : 105);
+      if (smoke) { glow.addColorStop(0, "rgba(55,45,40,.65)"); glow.addColorStop(.5, "rgba(80,65,55,.35)"); glow.addColorStop(1, "rgba(55,45,40,0)"); }
+      else { glow.addColorStop(0, "rgba(255,245,170,1)"); glow.addColorStop(.23, "rgba(255,185,35,.95)"); glow.addColorStop(.55, "rgba(238,65,10,.75)"); glow.addColorStop(1, "rgba(160,25,5,0)"); }
+      c.fillStyle = glow; c.fillRect(0, 0, 128, 256);
+      const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace;
+      return texture;
+    };
+    const flameMap = makeParticle(false), smokeMap = makeParticle(true);
+    const fireParticles: { sprite: THREE.Sprite; base: THREE.Vector3; phase: number; smoke: boolean; building: number }[] = [];
+    sched.buildings.forEach((b, index) => {
+      const center = pickAt.current.get(b.id)!;
+      for (let j = 0; j < 5; j++) {
+        const smoke = j > 2;
+        const material = new THREE.SpriteMaterial({ map: smoke ? smokeMap : flameMap, transparent: true, opacity: 0, depthWrite: false, depthTest: false, blending: smoke ? THREE.NormalBlending : THREE.AdditiveBlending });
+        const sprite = new THREE.Sprite(material); sprite.renderOrder = smoke ? 4 : 3;
+        const base = center.clone().add(new THREE.Vector3((j % 3 - 1) * 5, smoke ? 12 : 3, ((index + j) % 3 - 1) * 4));
+        sprite.position.copy(base); scene.add(sprite);
+        fireParticles.push({ sprite, base, phase: index * 1.71 + j * 2.3, smoke, building: index });
+      }
+    });
     // The scanned home's floor plan: where its own GPS put it, and where it sits once fitted under the roof.
     const fit = site.fits[0];
     let outline: THREE.LineLoop | null = null, raw: Float32Array | null = null, fitted: Float32Array | null = null;
@@ -298,8 +356,26 @@ export function LoopGround() {
           node.style.transform = `translate(${((spot.x + 1) / 2) * el.clientWidth}px, ${((1 - spot.y) / 2) * el.clientHeight}px)`;
         });
       }
+      const burn = afterRef.current ? 1 : span(p, 0.79, 0.875);
+      const seconds = performance.now() / 1000;
+      fireParticles.forEach(({ sprite, base, phase, smoke, building }) => {
+        const arrive = span(burn, (building / Math.max(1, sched.buildings.length)) * 0.55, 0.55 + (building / Math.max(1, sched.buildings.length)) * 0.45);
+        const flicker = 0.78 + 0.22 * Math.sin(seconds * (smoke ? 0.7 : 7) + phase);
+        sprite.material.opacity = arrive * (smoke ? 0.55 : 0.85) * flicker;
+        sprite.visible = arrive > 0;
+        const rise = smoke ? ((seconds * 0.2 + phase) % 1) : 0;
+        sprite.position.copy(base).add(new THREE.Vector3(smoke ? rise * 8 : Math.sin(seconds * 3 + phase), rise * 22, 0));
+        const scale = smoke ? 24 + rise * 20 : 12 + flicker * 5;
+        sprite.scale.set(scale, smoke ? scale * 1.1 : scale * 1.7, 1);
+      });
+      if (firePick.current) {
+        const active = !afterRef.current && p >= 0.835;
+        firePick.current.style.visibility = active ? "visible" : "hidden";
+        spot.copy(homeAt).setY(homeTop + 6).project(camera);
+        firePick.current.style.transform = `translate(${((spot.x + 1) / 2) * el.clientWidth}px, ${((1 - spot.y) / 2) * el.clientHeight}px)`;
+      }
       const shade = ease(span(p, T.site[0] + 0.08, T.site[0] + 0.12)) * (1 - near * 0.7);
-      for (const c of caps) c.mat.opacity = shade * c.strength;
+      for (const c of caps) { c.mat.opacity = Math.max(shade * c.strength, burn * 0.45); c.mat.color.setHex(burn > 0.1 ? 0xe54816 : 0xff7a3c); }
       if (outline && raw && fitted) {
         const pos = outline.geometry.attributes.position as THREE.BufferAttribute;
         for (let i = 0; i < raw.length; i++) (pos.array as Float32Array)[i] = raw[i] + (fitted[i] - raw[i]) * snap;
@@ -317,7 +393,7 @@ export function LoopGround() {
       renderer.render(scene, camera);
     };
     tick();
-    return () => { cancelAnimationFrame(raf); watch.disconnect(); renderer.dispose(); el.removeChild(renderer.domElement); };
+    return () => { cancelAnimationFrame(raf); watch.disconnect(); fireParticles.forEach(p => p.sprite.material.dispose()); flameMap.dispose(); smokeMap.dispose(); renderer.dispose(); el.removeChild(renderer.domElement); };
   }, [site, sched, descent]);
 
   // ---- inside: the scan from the standpoints that saw the most, turning, with a tag on each thing as the view reaches it ----
@@ -333,7 +409,7 @@ export function LoopGround() {
     camera.rotation.order = "YXZ";
     const loader = new THREE.TextureLoader(), FACE = 40, side = FACE * 2.002;
     const rooms = stands.map((st) => {
-      const box = new THREE.Group(), mats: THREE.MeshBasicMaterial[] = [];
+      const box = new THREE.Group(), mats: THREE.MeshBasicMaterial[] = [], fireMats: THREE.MeshBasicMaterial[] = [];
       const face = (f: number) => {
         const tex = loader.load(`/api/buildings/${SITE}/pano/${st.scan}/${st.sweep}/${f}.jpg?size=2048`);
         tex.colorSpace = THREE.SRGBColorSpace;
@@ -341,10 +417,24 @@ export function LoopGround() {
         mats.push(mat);
         return new THREE.Mesh(new THREE.PlaneGeometry(side, side), mat);
       };
-      for (let k = 0; k < 4; k++) { const pivot = new THREE.Group(), m = face(k + 1); m.position.z = -FACE; pivot.add(m); pivot.rotation.y = -rad(st.heading + 90 * k); box.add(pivot); }
-      const caps = new THREE.Group(), up = face(0), down = face(5);
-      up.position.y = FACE; up.rotation.x = Math.PI / 2; down.position.y = -FACE; down.rotation.x = -Math.PI / 2;
-      caps.add(up, down); caps.rotation.y = -rad(st.heading); box.add(caps);
+      if (FIRE_VIEWS[st.sweep]) {
+        const texture = loader.load(FIRE_VIEWS[st.sweep]);
+        texture.colorSpace = THREE.SRGBColorSpace;
+        const mat = new THREE.MeshBasicMaterial({ map: texture, depthTest: false, depthWrite: false, transparent: true, opacity: 0 });
+        fireMats.push(mat);
+        const geometry = new THREE.SphereGeometry(FACE, 64, 40);
+        geometry.scale(-1, 1, 1);
+        const sphere = new THREE.Mesh(geometry, mat);
+        // Match the equirectangular reference to the original cube's compass heading.
+        sphere.rotation.y = -Math.PI / 2 - rad(st.heading);
+        box.add(sphere);
+      }
+      {
+        for (let k = 0; k < 4; k++) { const pivot = new THREE.Group(), m = face(k + 1); m.position.z = -FACE; pivot.add(m); pivot.rotation.y = -rad(st.heading + 90 * k); box.add(pivot); }
+        const caps = new THREE.Group(), up = face(0), down = face(5);
+        up.position.y = FACE; up.rotation.x = Math.PI / 2; down.position.y = -FACE; down.rotation.x = -Math.PI / 2;
+        caps.add(up, down); caps.rotation.y = -rad(st.heading); box.add(caps);
+      }
       scene.add(box);
       const tags = st.items.map((l) => {
         const t = tag(l), y = rad(l.at.yaw_deg), pt = rad(l.at.pitch_deg);
@@ -355,7 +445,7 @@ export function LoopGround() {
       // The head turns from the first thing to the last, the short way round.
       const yaws = st.items.map((l) => l.at.yaw_deg);
       for (let i = 1; i < yaws.length; i++) { while (yaws[i] - yaws[i - 1] > 180) yaws[i] -= 360; while (yaws[i] - yaws[i - 1] < -180) yaws[i] += 360; }
-      return { st, mats, tags, yaws };
+      return { st, mats, fireMats, tags, yaws };
     });
     const size = () => { renderer.setSize(el.clientWidth, el.clientHeight, false); camera.aspect = el.clientWidth / Math.max(1, el.clientHeight); camera.updateProjectionMatrix(); };
     size();
@@ -370,10 +460,12 @@ export function LoopGround() {
       el.style.opacity = String(on);
       if (on <= 0) return;
       let seen = 0;
-      rooms.forEach(({ st, mats, tags, yaws }, i) => {
+      rooms.forEach(({ st, mats, fireMats, tags, yaws }, i) => {
         // One room at a time: each fades in at its start and out at its end, the first and last holding to the edges of the beat.
         const here = (i === 0 ? 1 : span(p, st.from - 0.012, st.from + 0.012)) * (i + 1 === rooms.length ? 1 : 1 - span(p, st.to - 0.012, st.to + 0.012));
-        for (const m of mats) m.opacity = here;
+        const burned = afterRef.current && fireMats.length > 0;
+        for (const m of mats) m.opacity = burned ? 0 : here;
+        for (const m of fireMats) m.opacity = burned ? here : 0;
         if (here >= 0.5) {
           const at = span(p, st.from + 0.02, st.to - 0.03) * (yaws.length - 1), a = Math.floor(at), b = Math.min(yaws.length - 1, a + 1);
           const yaw = yaws[a] + (yaws[b] - yaws[a]) * (at - a), pitch = (st.items[a].at.pitch_deg + (st.items[b].at.pitch_deg - st.items[a].at.pitch_deg) * (at - a)) * 0.45;
@@ -382,7 +474,7 @@ export function LoopGround() {
         const step = (st.to - st.from - 0.05) / yaws.length;
         tags.forEach((t, j) => {
           const reached = span(p, st.from + 0.02 + j * step, st.from + 0.035 + j * step);
-          (t.material as THREE.SpriteMaterial).opacity = reached * here;
+          (t.material as THREE.SpriteMaterial).opacity = afterRef.current ? 0 : reached * here;
           if (reached > 0.5) seen += 1;
         });
       });
@@ -399,7 +491,17 @@ export function LoopGround() {
       renderer.render(scene, camera);
     };
     tick();
-    return () => { cancelAnimationFrame(raf); watch.disconnect(); renderer.dispose(); el.removeChild(renderer.domElement); };
+    return () => {
+      cancelAnimationFrame(raf); watch.disconnect();
+      scene.traverse(object => {
+        if (object instanceof THREE.Mesh || object instanceof THREE.Sprite) {
+          if (object instanceof THREE.Mesh) object.geometry.dispose();
+          const materials = Array.isArray(object.material) ? object.material : [object.material];
+          materials.forEach(material => { material.map?.dispose(); material.dispose(); });
+        }
+      });
+      renderer.dispose(); el.removeChild(renderer.domElement);
+    };
   }, [stands]);
 
   // ---- the words and the wide view, set straight on their elements as the scroll moves ----
@@ -424,11 +526,23 @@ export function LoopGround() {
         window_(p, T.tree[0], T.tree[0] + 0.03, T.tree[1], T.tree[1] + 0.02),
         span(p, T.close[0], T.close[0] + 0.03),
       ];
+      if (aftermath) shows[3] = 0;
+      else { shows[4] = 0; shows[5] = 0; }
+      if (wildfireLabel.current) {
+        const o = aftermath ? 0 : span(p, 0.80, 0.835);
+        wildfireLabel.current.style.opacity = String(o);
+        wildfireLabel.current.style.visibility = o > 0.01 ? "visible" : "hidden";
+      }
+      if (fireLabel.current) {
+        const opacity = window_(p, T.inside[0], T.inside[0] + 0.03, T.inside[1] - 0.02, T.inside[1]);
+        fireLabel.current.style.opacity = String(opacity);
+        fireLabel.current.style.visibility = opacity > 0.01 ? "visible" : "hidden";
+      }
       shows.forEach((o, i) => { const node = cap.current[i]; if (node) { node.style.opacity = String(o); node.style.visibility = o > 0.01 ? "visible" : "hidden"; } });
     };
     tick();
     return () => cancelAnimationFrame(raf);
-  }, []);
+  }, [aftermath]);
 
   // Four homes are offered: the one that has been scanned, and the three buildings with the most fuel at their walls.
   const offered = sched ? [...sched.buildings.filter((b) => b.units.length).slice(0, 1), ...sched.buildings.filter((b) => !b.units.length).slice(0, 3)] : [];
@@ -440,6 +554,8 @@ export function LoopGround() {
         <div ref={wide} className="lp-wide">{levels.map((l) => <img key={l.level} src={l.url} alt="" draggable={false} />)}</div>
         <div ref={mount} className="lp-scene" />
         <div ref={roomMount} className="lp-room" />
+        <div ref={wildfireLabel} className="lp-wildfire-label"><h2>A wildfire reaches the community.</h2><p>Hypothetical scenario · All buildings assumed affected</p></div>
+        <button ref={firePick} type="button" className="lp-pick is-scanned lp-fire-pick" onClick={onAftermath} aria-label="Return to this home after the wildfire"><i /><span>Return to this home</span></button>
 
         <div ref={(n) => { cap.current[0] = n; }} className="lp-cap lp-cap-mid">
           <h2>Los Angeles</h2>
@@ -467,10 +583,11 @@ export function LoopGround() {
           )}
         </div>
         <div ref={(n) => { cap.current[2] = n; }} className="lp-cap">
-          <h2>Inside the home</h2>
+          <h2>{aftermath ? "The same home. After the fire." : "Inside the home"}</h2>
           <p>Its floor plan, placed under the roof it belongs to.</p>
           <small>Matterport</small>
         </div>
+        {aftermath && <div ref={fireLabel} className="lp-fire-label"><h2>After the fire</h2><p>AI-generated scenario · Not observed damage</p></div>}
         <div ref={(n) => { cap.current[3] = n; }} className="lp-lines">
           <span>{sched?.home.name}</span>
           <strong ref={sub} />
