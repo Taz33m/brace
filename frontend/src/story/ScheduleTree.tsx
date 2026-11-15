@@ -313,7 +313,6 @@ export function ScheduleTree({ site, controller = false, inline = false, onRepla
           ))}
         </tbody></table>
 
-        {oneZone && <p className="sc-zone">{count === 1 ? "The building stands" : `All ${count} buildings stand`} in a {oneZone} fire hazard severity zone (CAL FIRE). They are ordered by vegetation within 5 ft of the walls, then tree cover over the roof.</p>}
         <ol className="sc-list">
           {data.buildings.map((b) => {
             const unit = b.units[0];
@@ -321,7 +320,7 @@ export function ScheduleTree({ site, controller = false, inline = false, onRepla
               <li key={b.id} className={b.id === open ? "is-open" : ""}>
                 <button type="button" onClick={() => { setOpen(b.id === open ? null : b.id); setRoom(null); }}>
                   <b>{b.exposure_rank}</b><span>Building {b.id}{unit ? <small>this home</small> : null}</span>
-                  <span title={b.fire_zone ? `${b.fire_zone} fire hazard severity zone (CAL FIRE)` : b.in_fire_zone === false ? "Outside the mapped fire hazard severity zones (CAL FIRE)" : undefined}>{[!oneZone && b.fire_zone ? `${b.fire_zone} zone` : null, b.brush_within_5ft_percent != null ? `${Math.round(b.brush_within_5ft_percent)}% of walls` : null, b.tree_cover_over_roof_percent != null ? `${Math.round(b.tree_cover_over_roof_percent)}% of roof` : null].filter(Boolean).join(", ")}</span>
+                  <span title={b.fire_zone ? `${b.fire_zone} fire hazard severity zone (CAL FIRE)` : b.in_fire_zone === false ? "Outside the mapped fire hazard severity zones (CAL FIRE)" : undefined}>{b.brush_within_5ft_percent != null ? `${Math.round(b.brush_within_5ft_percent)}% of walls` : ""}</span>
                   <span>{b.homes_assumed} {b.homes_assumed === 1 ? "home" : "homes"}</span><strong>{range(b.total)}</strong>
                 </button>
                 {b.id === open && unit && (
@@ -370,7 +369,7 @@ export function ScheduleTree({ site, controller = false, inline = false, onRepla
           <button type="button" className="ft-how sc-how" onClick={() => setHow(!how)}>How this is worked out</button>
           <button type="button" className="ft-how sc-how" onClick={() => { setAsking(!asking); setCover(null); }}>Check my cover</button>
           <button type="button" className="ft-how sc-how" onClick={() => void showPhone()}>Phone</button>
-          <span>{n.scans_read} scan, {n.rooms_read} rooms, {n.views_looked_at} views, {n.items_named} items named, {n.prices_confirmed} prices confirmed{n.minutes ? `, ${n.minutes} minutes` : ""}{n.model_cost_usd != null ? <span title={n.cost_how}>, ${n.model_cost_usd.toFixed(2)} in model runs</span> : null}</span>
+          <span>{n.scans_read} scan, {n.rooms_read} rooms, {n.views_looked_at} views, {n.items_named} items named, {n.prices_confirmed} prices confirmed{n.minutes ? `, ${n.minutes} minutes` : ""}</span>
         </footer>
         {asking && (
           <form className="ft-panel sc-panel sc-cover" onSubmit={(e) => { e.preventDefault(); const n = Number(amount.replace(/[^0-9.]/g, "")); if (n > 0) void checkCover(n); }}>
@@ -390,6 +389,8 @@ export function ScheduleTree({ site, controller = false, inline = false, onRepla
         {phone && <aside className="sc-phone"><img src={phone.qr} alt="" /><span>{phone.url}</span></aside>}
         {how && (
           <aside className="ft-panel sc-panel">
+            {oneZone && <p>All {count} buildings are in a {oneZone} fire hazard severity zone (CAL FIRE). Vegetation at the walls and tree cover over the roof determine their order within that zone.</p>}
+            {n.model_cost_usd != null && <p title={n.cost_how}>Model runs: ${n.model_cost_usd.toFixed(2)}.</p>}
             <ul>{data.assumptions.map((a) => <li key={a}>{a}</li>)}</ul>
             <ul className="ft-found"><li className="is-used">Not counted: {data.not_counted.join("; ").toLowerCase()}.</li></ul>
           </aside>
