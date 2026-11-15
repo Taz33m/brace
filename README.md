@@ -86,12 +86,12 @@ The AI steps run ahead of time and their results are saved. The screens only rea
 | Price research | Finds and confirms a price range for each kind of item |
 | Schedule | Builds the full list for a property, with totals at every level and lost rent per month. Served at `GET /api/schedule/{property_id}` |
 | Tree screen (`#/schedule`) | The total at the top; click down through building, apartment, room and item to the source page |
-| Voice | You can ask the schedule questions out loud. It answers by opening the relevant part of the screen. It cannot change a figure |
+| Voice | You can ask the schedule questions out loud. It answers by opening the relevant part of the screen. It can also have the agent look at a room again, find a likely make and model for an item, or check the owner's cover |
 | Phone as microphone (`#/ctl`) | The same screen on a phone. The big screen follows whatever the phone opens |
 | One apartment under water (`#/file`) | The same kind of list for a flood of a chosen depth, as an example of a partial loss |
 | First-person room (`#/inside`, `#/inside/vr`) | The room as seen by a person standing in it, on a screen or in a phone headset |
 
-Not built yet: ranking buildings by trees over the roof and by official fire zone, the home-page walkthrough for Los Angeles (`/` still plays an earlier Houston flood sequence), labels drawn on the items inside the scan, recording what each AI run cost, narrowing price ranges by item quality, and scanning more than one apartment per property.
+Not built yet: ranking buildings by trees over the roof and by official fire zone, recording what each AI run cost, narrowing price ranges by item quality, and scanning more than one apartment per property.
 
 For more detail:
 
@@ -183,7 +183,7 @@ BRACE_API_PORT=8011 BRACE_WEB_PORT=5184 BRACE_VR_PORT=5185 uv run python -m scri
 | `#/ctl` | The same schedule on a phone, as the microphone. The "Phone" button on the big screen shows a QR code for it |
 | `#/file` | One home's schedule under a flood depth. `#/file/<property>/<scan>` for another |
 | `#/inside`, `#/inside/vr` | The room from where a person stands, for one eye or two |
-| `/` | The scroll-played 2.5D site. Today it plays the Houston flood |
+| `/` | The walkthrough: Los Angeles from above, down to one community, into the scanned home, then the schedule |
 
 To talk to the schedule without a microphone, shift-click "Talk with Brace", then press `/` to type.
 

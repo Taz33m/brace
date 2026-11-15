@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit",
     "test:recovery": "node --test tests/recovery-*.test.mjs",
     "test:gestures": "node --test tests/gestures.test.mjs",
+    "test:voice": "node --test tests/voice.test.mjs",
     "test:resident": "node --test src/components/resident/__tests__/*.test.mjs"
   },
   "dependencies": {

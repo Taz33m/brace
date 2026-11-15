@@ -455,12 +455,13 @@ export function LoopGround() {
         </div>
         <div ref={(n) => { cap.current[1] = n; }} className="lp-cap">
           <h2>{sched?.property.name}</h2>
+          <p>Its owner insures what is inside these homes without a list of it.</p>
           <p>Choose a home. Brace looks inside and reads what is there.</p>
           <small>Roofs shaded by the fuel at their walls · Vexcel</small>
           {other && (
             <div className="lp-chosen">
               <b>Building {other.id}</b>
-              <span>{other.brush_within_5ft_percent != null ? `${Math.round(other.brush_within_5ft_percent)}% of its walls have fuel within 5 ft. ` : ""}No home under this roof has been scanned, so its figure is the scanned home, multiplied.</span>
+              <span>{other.brush_within_5ft_percent != null ? `${Math.round(other.brush_within_5ft_percent)}% of its walls have fuel within 5 ft. ` : ""}No home under this roof has been scanned, so its figure is worked out from the one that has.</span>
               <button type="button" onClick={enter}>Open this home</button>
             </div>
           )}
@@ -476,7 +477,7 @@ export function LoopGround() {
           <ol ref={list}>
             {stands.flatMap((s) => [<li key={s.sweep} className="is-room">{s.room}</li>,
               ...s.items.map((l, i) => <li key={`${s.sweep}:${i}`}><b>{l.quantity > 1 ? `${l.quantity} x ` : ""}{l.what}</b><i>{range(l)}</i></li>),
-              ...(s.left ? [<li key={`${s.sweep}:out`} className="is-out"><b>{s.left.saw.replace(/\s*\(.*\)$/, "")}</b><i>left out: {s.left.why.replace("furniture or a tenant's own", "not the owner's")}</i></li>] : [])])}
+              ...(s.left ? [<li key={`${s.sweep}:out`} className="is-out"><b>{s.left.saw.replace(/\s*\(.*\)$/, "")}</b><i>left out: {s.left.why.replace("furniture or a tenant's own", "not the owner's").replace("already recorded from another standpoint", "already counted")}</i></li>] : [])])}
           </ol>
           <small>{decided ? `The agent named these from the scan. It left ${decided.left_out} things out and is unsure of ${decided.doubts} counts. Each price is from a page it opened.` : "Named by an agent looking at the scan. Priced from a page it opened."}</small>
         </div>
