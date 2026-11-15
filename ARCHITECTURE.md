@@ -51,7 +51,10 @@ Models run only in the middle column, ahead of time. Nothing on a screen waits o
 | What fit-out is in each room, and how many | The inventory agent, looking at the scan's panoramas | `backend/inventory_agent.py` |
 | A price range for each kind of line | A web page, kept only when a fetch of the page finds the price and the sentence | `backend/flood_agent.py` (`price`, `confirm`) |
 | Kinds of home, how many of each, asking rents | The community's Apartments.com listing, as it stands in the kit | `backend/portfolio.py` (`floor_plans`, `rent`) |
-| Vegetation within 5 ft of each building's walls | Vexcel | the height files, read in `backend/flood.py` (`site`) |
+| Vegetation within 5 ft of each building's walls, tree cover over its roof | Vexcel | the saved building file, read in `backend/exposure.py` |
+| The fire hazard severity zone at each building | CAL FIRE's map, saved on disk | `backend/exposure.py` (`zone_at`) |
+| The order of the buildings | Zone, then vegetation at the walls, then tree cover over the roof. An ordering, not a score | `backend/exposure.py` |
+| What the runs cost | Tokens each saved run recorded, times the published price for its model. Web search fees are not counted | `backend/run_cost.py` |
 | Every total | Arithmetic in code | `backend/schedule.py` |
 
 ## Listings: what Apartments.com and Homes.com are used for
@@ -149,6 +152,13 @@ Rules that hold everywhere:
 - Every extrapolation is marked as one, in the data and on the screen.
 - The scenario is stated ("fire reaches the building"), never forecast.
 
+## Other endpoints
+
+- `GET /api/exposure/{property_id}`: each building with its three facts, its place in the order, and the sources.
+- `GET /api/schedule`: the scanned Los Angeles apartment communities inside a mapped fire zone. A community whose
+  scan has been read ranks first, by its total; the rest rank by asking rent per month from the listing. A community
+  with no listing has null homes and rent and comes last.
+
 ## Talking to it, and the phone
 
 The schedule is not driven by a chat box. It is spoken to, and it answers by opening things on the screen.
@@ -178,7 +188,9 @@ flowchart LR
 ```
 backend/
   inventory_agent.py   the deep agent: lead, readers, tools, rules                     (new, 14 Nov)
-  schedule.py          the tree and its arithmetic                                      (new, 14 Nov)
+  schedule.py          the tree and its arithmetic; communities(), the portfolio list   (new, 14 Nov)
+  exposure.py          each building's three facts and the order they put it in         (new, 14 Nov)
+  run_cost.py          what the saved runs cost, from their own token counts            (new, 14 Nov)
   flood_agent.py       price research with web search and page fetch; confirm()
   insurer_file.py      quantities from a scan; the one-home schedule under a flood depth
   openings.py          Matterport's wall and opening measurements
@@ -196,7 +208,8 @@ frontend/src/story/
   InsurerFile.tsx      #/file: one home's schedule under a flood depth
   InsidePov.tsx        #/inside, #/inside/vr: the room from where a person stands
 tests/
-  test_inventory_schedule.py, test_insurer_file.py, test_flood_agent.py
+  test_inventory_schedule.py, test_insurer_file.py, test_flood_agent.py,
+  test_exposure.py, test_schedule_portfolio.py, test_run_cost.py
 ```
 
 Saved runs, never committed: `data/cache/inventory/<scan>.json` (the inventory),
@@ -219,10 +232,9 @@ The lead home's run: 6 rooms, 60 views, 34 items named, 20 kinds of line priced 
 
 | What | Who | Note |
 | --- | --- | --- |
-| Exposure rank from brush, trees over the roof and fire zone | Ryan | Today the rank is vegetation at the walls only, and `in_fire_zone` is null |
+| Fire zones on the home page (beat 1) and the portfolio list on a screen (beat 6) | nobody yet | The data is served: `GET /api/schedule` lists the scanned Los Angeles communities inside a zone, ranked |
 | The loop on the home page for Los Angeles | Tazeem | `/` still plays the Houston flood |
 | Tags drawn on the panorama from each item's direction | Jimmy | The directions are in the schedule (`at`) |
-| The run's own cost | Ryan | `numbers.model_cost_usd` is null |
 | A grade for each item (basic, mid, high) to narrow its price range | nobody yet | Would cut the width of the total |
 | More than one scanned home per property | nobody yet | The lead property has one scan |
 

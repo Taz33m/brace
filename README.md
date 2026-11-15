@@ -64,7 +64,7 @@ flowchart LR
 - **Naming the items.** An AI agent built on LangChain's `deepagents` gives each room to its own helper. The helper looks at that room's photos and records what it sees. It may only record 22 kinds of item that an owner owns. The code refuses furniture, and refuses any item recorded from a photo the helper never looked at.
 - **Pricing.** A second agent searches the web for what each kind of item costs to install. The code then fetches the page itself and keeps the price only if the price is really on it.
 - **Adding up.** Plain code does all the arithmetic. No AI model touches a total.
-- **Ranking buildings.** Buildings are ordered by how much vegetation grows within 5 feet of their walls, as a sign of which are most exposed.
+- **Ranking buildings.** Buildings are ordered by their official fire hazard zone (from CAL FIRE's map), then by how much vegetation grows within 5 feet of their walls, then by how much of the roof is under trees.
 
 The AI steps run ahead of time and their results are saved. The screens only read saved results, so nothing waits on a model.
 
@@ -74,7 +74,7 @@ The AI steps run ahead of time and their results are saved. The screens only rea
 - **One apartment was scanned; the rest are estimated from it.** A floor plan with the same bedrooms and bathrooms gets the same figure. A different floor plan gets the figure scaled by its floor area. The screen marks these as estimates.
 - **An item with no confirmed price shows no figure** and is left out of the total. Each total says how many of its lines are priced.
 - **Apartments per building are estimated from roof area**, because no source counts them per building.
-- **The building ranking is about exposure, not the chance of a fire.** Today it uses vegetation near the walls and nothing else.
+- **The building ranking is about exposure, not the chance of a fire.** It orders buildings by official fire zone, then vegetation near the walls, then tree cover over the roof.
 - **Advertised rents are not what tenants actually pay.**
 - **The scans are sample data from the sponsor kit**, not a real customer's insured property.
 
@@ -85,13 +85,16 @@ The AI steps run ahead of time and their results are saved. The screens only rea
 | Inventory agent | Reads a scanned apartment and saves the list of items it found |
 | Price research | Finds and confirms a price range for each kind of item |
 | Schedule | Builds the full list for a property, with totals at every level and lost rent per month. Served at `GET /api/schedule/{property_id}` |
+| Exposure rank | Orders a property's buildings by fire zone, vegetation near the walls and tree cover over the roof. Served at `GET /api/exposure/{property_id}` |
+| Portfolio list | Lists the scanned Los Angeles apartment communities inside a fire zone, ranked. Served at `GET /api/schedule` |
+| Run cost | Works out what the AI runs cost from the tokens they recorded, and shows it with the other run figures |
 | Tree screen (`#/schedule`) | The total at the top; click down through building, apartment, room and item to the source page |
 | Voice | You can ask the schedule questions out loud. It answers by opening the relevant part of the screen. It cannot change a figure |
 | Phone as microphone (`#/ctl`) | The same screen on a phone. The big screen follows whatever the phone opens |
 | One apartment under water (`#/file`) | The same kind of list for a flood of a chosen depth, as an example of a partial loss |
 | First-person room (`#/inside`, `#/inside/vr`) | The room as seen by a person standing in it, on a screen or in a phone headset |
 
-Not built yet: ranking buildings by trees over the roof and by official fire zone, the home-page walkthrough for Los Angeles (`/` still plays an earlier Houston flood sequence), labels drawn on the items inside the scan, recording what each AI run cost, narrowing price ranges by item quality, and scanning more than one apartment per property.
+Not built yet: a screen for the portfolio list, the home-page walkthrough for Los Angeles (`/` still plays an earlier Houston flood sequence), labels drawn on the items inside the scan, narrowing price ranges by item quality, and scanning more than one apartment per property.
 
 For more detail:
 
@@ -206,6 +209,8 @@ npm --prefix messaging/photon run selftest
 | `backend/flood_agent.py` | Price research with web search and page fetch; `confirm()` |
 | `backend/insurer_file.py`, `backend/openings.py` | Quantities measured from a scan; the one-home schedule under a flood depth |
 | `backend/portfolio.py` | CoStar records; Apartments.com floor plans and rents |
+| `backend/exposure.py` | Each building's fire zone, vegetation and tree cover, and the order they put it in |
+| `backend/run_cost.py` | What the saved runs cost, from their own token counts |
 | `backend/flood.py` | Buildings, outlines and vegetation, from the kit and Vexcel |
 | `backend/voice.py` | The voice session and what it is told about a schedule |
 | `backend/server.py` | The API |
