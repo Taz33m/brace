@@ -550,6 +550,16 @@ def schedule_tree(property_id: int, scan: str | None = None) -> dict:
         raise HTTPException(404, str(e))
 
 
+@app.get("/api/exposure/{property_id}")
+def exposure_rank(property_id: int) -> dict:
+    """Each building at a property with the three facts behind its exposure and its place in the order."""
+    from . import exposure
+    try:
+        return exposure.exposure(property_id)
+    except exposure.ExposureError as e:
+        raise HTTPException(404, str(e))
+
+
 SCHEDULE_LIVE: dict[int, dict] = {}     # what the phone last opened on the schedule, for the big screen to follow
 
 

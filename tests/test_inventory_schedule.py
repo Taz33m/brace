@@ -67,7 +67,9 @@ def test_a_line_without_a_confirmed_price_has_null_money_and_stays_out_of_the_to
     assert schedule._times(schedule._sum([priced, bare]), 268) == {"low": 160_800, "high": 321_600}
 
 
-def test_the_schedule_multiplies_one_home_across_the_property_and_says_so(run, tmp_path, monkeypatch):
+@pytest.fixture
+def hill_court(run, tmp_path, monkeypatch):
+    """One read home at a two-building property, with a few prices saved."""
     t = run.tools()
     t["look"]("kitchen-1", "p1", "ahead"); t["record_item"]("kitchen-1", "refrigerator", 1, "p1", "ahead", 0.5, 0.5, "white fridge")
     (tmp_path / "inv").mkdir()
@@ -84,6 +86,9 @@ def test_the_schedule_multiplies_one_home_across_the_property_and_says_so(run, t
     monkeypatch.setattr(flood, "site", lambda pid: {"name": "Hill Court", "address": "1 Hill Rd", "homes": 10, "bounds": [0, 0, 1, 1], "aerial": {"width": 1, "height": 1},
                                                     "buildings": [{"id": "A", "polygon": [], "trees_within_5ft_percent": 20.0}, {"id": "B", "polygon": [], "trees_within_5ft_percent": 80.0}]})
     monkeypatch.setattr(schedule.portfolio, "floor_plans", lambda pid: [])
+
+
+def test_the_schedule_multiplies_one_home_across_the_property_and_says_so(hill_court):
     s = schedule.schedule(7)
     kitchen = s["buildings"][1]["units"][0]["rooms"][0]
     assert [b["id"] for b in s["buildings"]] == ["B", "A"] and s["buildings"][0]["exposure_rank"] == 1                       # the building with more brush at its walls ranks first
@@ -96,6 +101,21 @@ def test_the_schedule_multiplies_one_home_across_the_property_and_says_so(run, t
     assert sum(b["homes_assumed"] for b in s["buildings"]) == 10 and s["buildings"][1]["homes_assumed"] > s["buildings"][0]["homes_assumed"]
     assert s["lost_rent_per_month"] is None and s["kinds_of_home"][0]["homes"] == 10 and s["numbers"]["minutes"] == 3.0                 # no listing: no rent is known, and it is not made up and s["numbers"]["model_cost_usd"] is None and s["numbers"]["prices_confirmed"] == 2
     assert [r["name"] for r in s["buildings"][1]["units"][0]["rooms"]] == ["Kitchen", "Bedroom", "Closet", "Throughout the home"] and s["buildings"][1]["units"][0]["rooms"][2]["read"] is False
+
+
+def test_the_schedule_takes_its_building_order_and_fire_zone_from_exposure(hill_court, monkeypatch):
+    row = lambda id, rank, brush: {"id": id, "exposure_rank": rank, "brush_within_5ft_percent": brush, "tree_cover_over_roof_percent": 12.0, "fire_zone": "High", "in_fire_zone": True, "polygon": [], "footprint_sqft": 1}
+    monkeypatch.setattr(schedule.exposure, "exposure", lambda pid: {"buildings": [row("A", 1, 20.0), row("B", 2, 80.0)], "how": "Ordered by zone, then walls, then roof.", "sources": {"vegetation": "Vexcel", "fire_zone": "CAL FIRE"}})
+    s = schedule.schedule(7)
+    assert [(b["id"], b["exposure_rank"]) for b in s["buildings"]] == [("A", 1), ("B", 2)]                                    # exposure's order, not vegetation alone
+    assert all(b["in_fire_zone"] is True and b["fire_zone"] == "High" and b["tree_cover_over_roof_percent"] == 12.0 for b in s["buildings"])
+    assert sum(b["homes_assumed"] for b in s["buildings"]) == s["property"]["homes"] == 10 and s["buildings"][0]["units"]     # the homes still add up and the scanned home is still under roof A
+    assert s["exposure"] == {"how": "Ordered by zone, then walls, then roof.", "sources": {"vegetation": "Vexcel", "fire_zone": "CAL FIRE"}} and s["assumptions"][-1] == "Ordered by zone, then walls, then roof."
+
+
+def test_a_property_exposure_cannot_read_keeps_the_order_by_vegetation_and_leaves_the_zone_unknown(hill_court):
+    s = schedule.schedule(7)
+    assert [b["id"] for b in s["buildings"]] == ["B", "A"] and all(b["in_fire_zone"] is None and b["fire_zone"] is None for b in s["buildings"])
 
 
 def test_a_scan_nobody_has_read_has_no_schedule(run):

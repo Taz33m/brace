@@ -20,7 +20,7 @@ import json
 import math
 import re
 
-from . import flood, insurer_file, inventory_agent, matterport, openings, portfolio
+from . import exposure, flood, insurer_file, inventory_agent, matterport, openings, portfolio
 from .config import CACHE_DIR
 
 PRICES = CACHE_DIR / "inventory" / "prices.json"
@@ -180,12 +180,22 @@ def schedule(property_id: int, scan_id: str | None = None) -> dict:
     total = {"low": sum(k["low"] for k in priced) if priced else None, "high": sum(k["high"] for k in priced) if priced else None}
     each = {"low": total["low"] / homes if total["low"] is not None and homes else None, "high": total["high"] / homes if total["high"] is not None and homes else None}
     sizes = {st["id"]: st.get("footprint_sqft") or 0 for st in bundle["structures"]}
-    rows = sorted(s["buildings"], key=lambda b: -(b.get("trees_within_5ft_percent") or 0))
+    here = {b["id"]: b for b in s["buildings"]}
+    try:
+        ranked = exposure.exposure(property_id)
+        facts = {r["id"]: r for r in ranked["buildings"]}
+        rows = [here[r["id"]] for r in ranked["buildings"] if r["id"] in here]
+        ranking = {"how": ranked["how"], "sources": ranked["sources"]}
+    except exposure.ExposureError:      # no saved building file to read the facts from: the order rests on vegetation at the walls alone
+        facts, rows = {}, sorted(s["buildings"], key=lambda b: -(b.get("trees_within_5ft_percent") or 0))
+        ranking = {"how": "Buildings are ranked by the share of their walls with vegetation within 5 ft, from Vexcel. It is a ranking, not a chance of fire.", "sources": {"vegetation": "Vexcel"}}
     shares = dict(zip([b["id"] for b in rows], _share([sizes.get(b["id"], 0) for b in rows], homes)))
     buildings = []
     for rank, b in enumerate(rows, 1):
         n = shares[b["id"]]
-        buildings.append({"id": b["id"], "exposure_rank": rank, "brush_within_5ft_percent": b.get("trees_within_5ft_percent"), "in_fire_zone": None, "homes_assumed": n,
+        f = facts.get(b["id"]) or {}
+        buildings.append({"id": b["id"], "exposure_rank": rank, "brush_within_5ft_percent": f.get("brush_within_5ft_percent", b.get("trees_within_5ft_percent")),
+                          "tree_cover_over_roof_percent": f.get("tree_cover_over_roof_percent"), "fire_zone": f.get("fire_zone"), "in_fire_zone": f.get("in_fire_zone"), "homes_assumed": n,
                           "polygon": b["polygon"], "total": {"low": round(each["low"] * n) if each["low"] is not None else None, "high": round(each["high"] * n) if each["high"] is not None else None},
                           "units": [{**unit, "multiplied_by": next((k["homes"] for k in kinds if k["scanned"]), n), "extrapolated": True}] if b["id"] == unit["under_roof"] else []})
     rented = [k for k in kinds if k["rent_low"] and k["rent_high"]]
@@ -209,6 +219,7 @@ def schedule(property_id: int, scan_id: str | None = None) -> dict:
         "numbers": {"scans_read": 1, "rooms_read": unit["numbers"]["rooms_read"], "views_looked_at": unit["numbers"]["views_looked_at"], "items_named": unit["numbers"]["items_named"],
                     "prices_confirmed": confirmed, "minutes": round(seconds / 60, 1) if seconds else None, "model_cost_usd": None},
         "buildings": buildings,
+        "exposure": ranking,
         "assumptions": [
             "The scenario is stated, not forecast: fire reaches the building and the fit-out of its homes is a total loss.",
             (f"The kinds of home and how many of each are from the community's Apartments.com listing: {homes:,} homes. The kind that was scanned takes the scanned home's figure; a kind that was not is scaled by floor area. Both are extrapolations."
@@ -219,7 +230,7 @@ def schedule(property_id: int, scan_id: str | None = None) -> dict:
             "Fit-out was named and counted by an agent looking at the scan's own pictures. Each line says where it was seen.",
             "Floor, wall and door quantities are Matterport's measurements of the scan. Doorways are taken out of the walls. Ceilings are not counted.",
             "A line is priced only when a fetch of the page confirmed the price. Where a page gives a range, both ends are carried through.",
-            "Buildings are ranked by the share of their walls with vegetation within 5 ft, from Vexcel. It is a ranking, not a chance of fire.",
+            ranking["how"],
         ],
         "not_counted": ["Furniture and anything a tenant owns", "The structure itself: frame, roof, wiring, plumbing", "Ceilings", "Common areas and anything outside the homes"],
     }

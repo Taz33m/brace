@@ -15,7 +15,7 @@ interface Line { what: string; quantity: number; unit: string; from: string; pri
                  source_url: string | null; seen: string | null; at: { standpoint: string; direction: string } | null }
 interface Room { name: string; area_sqft: number | null; read: boolean; items: Line[]; total: Money }
 interface Unit { scan_id: string; name: string; scan_date: string | null; rooms: Room[]; total: Money; multiplied_by: number; statement: string | null }
-interface Building { id: string; exposure_rank: number; brush_within_5ft_percent: number | null; in_fire_zone: boolean | null; homes_assumed: number; polygon: [number, number][]; total: Money; units: Unit[] }
+interface Building { id: string; exposure_rank: number; brush_within_5ft_percent: number | null; tree_cover_over_roof_percent: number | null; fire_zone: string | null; in_fire_zone: boolean | null; homes_assumed: number; polygon: [number, number][]; total: Money; units: Unit[] }
 interface Schedule {
   property: { id: number; name: string; address: string | null; homes: number; homes_on_record: number; scenario: string; scan_date: string | null; bounds: [number, number, number, number]; aerial: { width: number; height: number } };
   total: Money; home: { name: string; total: Money; multiplied_by: number };
@@ -194,7 +194,7 @@ export function ScheduleTree({ site, controller = false }: { site: number; contr
               <li key={b.id} className={b.id === open ? "is-open" : ""}>
                 <button type="button" onClick={() => { setOpen(b.id === open ? null : b.id); setRoom(null); }}>
                   <b>{b.exposure_rank}</b><span>Building {b.id}{unit ? <small>scanned home here</small> : null}</span>
-                  <span>{b.brush_within_5ft_percent != null ? `${Math.round(b.brush_within_5ft_percent)}% of walls` : ""}</span>
+                  <span title={b.fire_zone ? `${b.fire_zone} fire hazard severity zone (CAL FIRE)` : b.in_fire_zone === false ? "Outside the mapped fire hazard severity zones (CAL FIRE)" : undefined}>{[b.brush_within_5ft_percent != null ? `${Math.round(b.brush_within_5ft_percent)}% of walls` : null, b.tree_cover_over_roof_percent != null ? `${Math.round(b.tree_cover_over_roof_percent)}% of roof` : null].filter(Boolean).join(", ")}</span>
                   <span>{b.homes_assumed} {b.homes_assumed === 1 ? "home" : "homes"}</span><strong>{range(b.total)}</strong>
                 </button>
                 {b.id === open && unit && (
