@@ -20,6 +20,32 @@ const TAG_STAGGER_S = 0.7; // tags appear one after another on arrival
 const FACE_M = 40;         // the panorama box; far enough that the two eyes see it alike
 const TAG_M = 4.5;         // tags float this far away
 const EYES_M = 0.064;
+/**
+ * Fitting the picture to the viewer's lenses. Each eye's picture must sit under its lens, or the eyes cannot
+ * merge the two into one scene. Phones and viewers differ, so the spacing is set by eye on a fit screen and
+ * remembered on the phone. iPhones show about 6.3 CSS pixels per millimetre (roughly 160 per inch).
+ */
+const PX_PER_MM = 6.3;
+const SPACING_DEFAULT_MM = 60;
+const SPACING_KEY = "brace.headset.spacingMm";
+const readSpacing = (): number => {
+  try {
+    const v = Number(window.localStorage.getItem(SPACING_KEY));
+    return v >= 40 && v <= 80 ? v : SPACING_DEFAULT_MM;
+  } catch {
+    return SPACING_DEFAULT_MM;
+  }
+};
+const saveSpacing = (mm: number) => {
+  try { window.localStorage.setItem(SPACING_KEY, String(mm)); } catch { /* private mode: keep it for this visit only */ }
+};
+
+/** Where each eye's picture goes: centred under its lens, as wide as fits without crossing the middle. */
+export function eyeViewports(W: number, H: number, spacingMm: number): { x: number; w: number }[] {
+  const sep = Math.min(W * 0.95, spacingMm * PX_PER_MM);
+  const w = Math.max(1, Math.min(sep, W - sep, H * 1.15));
+  return [-1, 1].map((side) => ({ x: Math.round(W / 2 + (side * sep) / 2 - w / 2), w: Math.round(w) }));
+}
 
 const rad = (d: number) => (d * Math.PI) / 180;
 const clamp = (x: number) => Math.min(1, Math.max(0, x));
@@ -30,6 +56,7 @@ type Phase =
   | { kind: "signin"; error: string | null; busy: boolean }
   | { kind: "error"; message: string }
   | { kind: "ready"; schedule: Schedule; stops: Stop[] }
+  | { kind: "fit"; schedule: Schedule; stops: Stop[] }
   | { kind: "running"; schedule: Schedule; stops: Stop[] };
 
 async function loadSchedule(site: number, scan: string): Promise<{ schedule: Schedule; stops: Stop[] } | "signin"> {
@@ -138,9 +165,16 @@ export function HeadsetView({ site, scan }: { site: number; scan: string }) {
   const [motion, setMotion] = useState<MotionState>(() => motionSupport());
   const [stereo, setStereo] = useState(() => window.matchMedia("(pointer: coarse)").matches);
   const [secret, setSecret] = useState("");
+  const [spacing, setSpacingState] = useState(readSpacing);
   const mount = useRef<HTMLDivElement>(null);
-  const live = useRef({ stereo, next: 0 });
+  const live = useRef({ stereo, next: 0, spacing });
   live.current.stereo = stereo;
+  live.current.spacing = spacing;
+  const setSpacing = (mm: number) => {
+    const v = Math.max(40, Math.min(80, Math.round(mm)));
+    setSpacingState(v);
+    saveSpacing(v);
+  };
 
   const load = useCallback(() => {
     setPhase({ kind: "loading" });
@@ -178,7 +212,8 @@ export function HeadsetView({ site, scan }: { site: number; scan: string }) {
     if (motion === "needs-tap") setMotion(await askForMotion()); // must run inside this tap on iPhone
     (navigator as Navigator & { wakeLock?: { request(kind: string): Promise<unknown> } }).wakeLock?.request("screen").catch(() => {});
     document.documentElement.requestFullscreen?.().catch(() => {});
-    setPhase({ kind: "running", schedule: phase.schedule, stops: phase.stops });
+    // In the viewer, fit the two pictures to the lenses first; on a laptop, go straight in.
+    setPhase({ kind: stereo ? "fit" : "running", schedule: phase.schedule, stops: phase.stops });
   };
 
   useEffect(() => {
@@ -348,18 +383,22 @@ export function HeadsetView({ site, scan }: { site: number; scan: string }) {
         camera.updateProjectionMatrix();
         renderer.render(scene, camera);
       } else {
+        // Each eye's picture is centred under its lens at the fitted spacing; the rest of the screen stays black.
         const off = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion).multiplyScalar(EYES_M / 2);
+        const ports = eyeViewports(W, H, live.current.spacing);
         [left, right].forEach((eye, i) => {
-          eye.fov = 84;
-          eye.aspect = W / 2 / H;
+          const { x, w } = ports[i], aspect = w / H;
+          // About 90 degrees across each eye, which is what a phone viewer's lens shows.
+          eye.fov = Math.min(100, Math.max(70, (2 * Math.atan(Math.tan(Math.PI / 4) / aspect) * 180) / Math.PI));
+          eye.aspect = aspect;
           eye.near = 0.05;
           eye.far = 300;
           eye.updateProjectionMatrix();
           eye.quaternion.copy(camera.quaternion);
           eye.position.copy(off).multiplyScalar(i ? 1 : -1);
           eye.updateMatrixWorld();
-          renderer.setViewport((i * W) / 2, 0, W / 2, H);
-          renderer.setScissor((i * W) / 2, 0, W / 2, H);
+          renderer.setViewport(x, 0, w, H);
+          renderer.setScissor(x, 0, w, H);
           renderer.render(scene, eye);
         });
       }
@@ -415,14 +454,31 @@ export function HeadsetView({ site, scan }: { site: number; scan: string }) {
           <li>Put the phone in the viewer and look around.</li>
         </ol>
         <button type="button" className="hs-btn hs-start" onClick={start}>Start</button>
-        <p className="hs-quiet">Each place changes by itself every {DWELL_S} seconds; tap to skip. Scan dated {phase.schedule.property.scan_date ?? "unknown"}. Multiplying this home by the {h.multiplied_by} like it is an extrapolation.</p>
+        <p className="hs-quiet">No browser bars: Share → Add to Home Screen, then open it from the home screen. Each place changes by itself every {DWELL_S} seconds; tap to skip. Scan dated {phase.schedule.property.scan_date ?? "unknown"}. Multiplying this home by the {h.multiplied_by} like it is an extrapolation.</p>
+      </div>
+    );
+  }
+  if (phase.kind === "fit") {
+    // Two crosses, one per eye, at the current spacing. Merge them into one through the lenses.
+    const W = window.innerWidth, H = window.innerHeight, ports = eyeViewports(W, H, spacing);
+    const go = () => setPhase({ kind: "running", schedule: phase.schedule, stops: phase.stops });
+    return (
+      <div className="hs-fit">
+        {ports.map((p, i) => (
+          <i key={i} className="hs-cross" style={{ left: p.x + p.w / 2 }} aria-hidden="true" />
+        ))}
+        <p className="hs-fit-text">Hold the viewer to your eyes. Press − or + until the two crosses become one.</p>
+        <div className="hs-fit-bar">
+          <button type="button" className="hs-btn hs-fit-btn" aria-label="Move the pictures closer" onClick={() => setSpacing(spacing - 1)}>−</button>
+          <button type="button" className="hs-btn" onClick={go}>Done · {spacing} mm</button>
+          <button type="button" className="hs-btn hs-fit-btn" aria-label="Move the pictures apart" onClick={() => setSpacing(spacing + 1)}>+</button>
+        </div>
       </div>
     );
   }
   return (
     <div className={`hs-stage${stereo ? " is-stereo" : ""}`} onClick={() => { live.current.next++; }}>
       <div ref={mount} className="hs-canvas" />
-      {stereo ? <i className="hs-split" aria-hidden="true" /> : null}
       {motion === "denied" ? <p className="hs-note">Motion is off, so drag to look round. To turn it on, reload and allow motion.</p> : null}
     </div>
   );
