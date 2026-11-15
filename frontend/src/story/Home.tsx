@@ -26,7 +26,7 @@ export function QuietHero() {
       const { motion } = context.conditions as { motion: boolean };
       const timeline = gsap.timeline({
         defaults: { ease: "none" },
-        scrollTrigger: { trigger: el, start: "top top", end: () => `+=${Math.round(window.innerHeight * 2)}`, scrub: 1, pin: pinned, anticipatePin: 1, invalidateOnRefresh: true, refreshPriority: 10 },
+        scrollTrigger: { trigger: el, start: "top top", end: () => `+=${Math.round(window.innerHeight * 1.1)}`, scrub: 1, pin: pinned, anticipatePin: 1, invalidateOnRefresh: true, refreshPriority: 10 },
       });
       if (motion) {
         timeline

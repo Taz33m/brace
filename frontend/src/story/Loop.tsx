@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { api } from "../api";
 import type { SiteScene } from "../types";
-import { ScrollTrigger } from "./gsap";
+import { ScrollTrigger, smooth } from "./gsap";
 import "./story.css";
 
 /**
@@ -12,7 +12,8 @@ import "./story.css";
  *   inside      the scanned home's floor plan slides under its roof, then the view goes in: the scan turns, and
  *               each thing the agent named gets a tag and a line;
  *   multiplied  that home times the homes like it, the property's figure, and what it is for.
- * Nothing is clicked and no model runs while it plays: every figure is read from the saved schedule.
+ * The scroll stops once, over the site: a home is chosen there, and the choice carries the view inside it.
+ * No model runs while it plays: every figure is read from the saved schedule.
  */
 const SITE = 9519837;
 
@@ -28,7 +29,7 @@ interface Schedule {
   buildings: { id: string; exposure_rank: number; brush_within_5ft_percent: number | null; polygon: [number, number][]; units: { scan_id: string; decisions?: { left_out: number; merged: number; doubts: number };
                                                                                               rooms: { name: string; items: Line[]; left_out?: { saw: string; why: string }[] }[] }[] }[];
 }
-interface Descent { levels: { level: number; url: string }[] }
+interface Descent { levels: { level: number; url: string; bounds: [number, number, number, number] }[] }
 interface Stand { scan: string; room: string; sweep: string; heading: number; items: (Line & { at: At })[]; from: number; to: number; left: { saw: string; why: string } | null }
 
 const short = (n: number) => (n >= 1e6 ? `$${(n / 1e6).toFixed(1)}M` : n >= 1e4 ? `$${Math.round(n / 1e3)}K` : `$${Math.round(n).toLocaleString("en-US")}`);
@@ -44,7 +45,13 @@ const window_ = (p: number, a0: number, a1: number, b0: number, b1: number) => s
 const held = (): number | null => { const v = (window as unknown as { __loopAt?: number }).__loopAt; return typeof v === "number" ? v : null; };
 
 // Where each beat sits on the scroll.
-const T = { wide: [0.0, 0.13], site: [0.12, 0.34], fit: [0.34, 0.46], inside: [0.46, 0.76], tree: [0.77, 0.9], close: [0.91, 1] } as const;
+const T = { wide: [0.0, 0.07], site: [0.07, 0.27], fit: [0.27, 0.39], inside: [0.39, 0.76], tree: [0.77, 0.9], close: [0.91, 1] } as const;
+/** The scroll goes no further than this until a home has been chosen. */
+const GATE = 0.25;
+/** How far the wide aerials have been scaled up when the standing site takes over: the last one fills a little over half the view. */
+const Z_END = 1.6;
+/** The site seen at an angle, a little turned: the pose it settles in. Distance in metres, tilt from straight down, turn from north-up. */
+const SETTLED = { r: 300, tilt: 38, turn: -0.38 }, CLOSE = { r: 183, tilt: 35, turn: -0.62 };
 
 /** A tag hung in the scan where the agent saw the thing: its name and what it costs. */
 function tag(line: Line): THREE.Sprite {
@@ -71,6 +78,9 @@ export function LoopGround() {
   const wide = useRef<HTMLDivElement>(null), mount = useRef<HTMLDivElement>(null), roomMount = useRef<HTMLDivElement>(null);
   const cap = useRef<(HTMLElement | null)[]>([]), list = useRef<HTMLOListElement>(null), sub = useRef<HTMLElement>(null);
   const progress = useRef(0);
+  const trig = useRef<ScrollTrigger | null>(null), picked = useRef(false), picks = useRef<HTMLDivElement>(null);
+  const pickAt = useRef(new Map<string, THREE.Vector3>());
+  const [chosen, setChosen] = useState<string | null>(null);       // a building picked that has no scan under its roof
   const [site, setSite] = useState<SiteScene | null>(null);
   const [sched, setSched] = useState<Schedule | null>(null);
   const [descent, setDescent] = useState<Descent | null>(null);
@@ -87,9 +97,41 @@ export function LoopGround() {
   useEffect(() => {
     const el = section.current, pinned = stage.current;
     if (!el || !pinned) return;
-    const trigger = ScrollTrigger.create({ trigger: el, start: "top top", end: "bottom bottom", pin: pinned, pinSpacing: false, scrub: true, invalidateOnRefresh: true, onUpdate: (self) => { progress.current = self.progress; } });
-    return () => trigger.kill();
+    const trigger = ScrollTrigger.create({ trigger: el, start: "top top", end: "bottom bottom", pin: pinned, pinSpacing: false, scrub: true, invalidateOnRefresh: true, onUpdate: (self) => {
+      // Until a home is chosen the page is held at the site: scrolling further is put back.
+      if (!picked.current && self.progress > GATE) {
+        progress.current = GATE;
+        const y = self.start + GATE * (self.end - self.start);
+        if (smooth.lenis) smooth.lenis.scrollTo(y, { immediate: true, force: true }); else if (window.scrollY > y + 1) window.scrollTo({ top: y, behavior: "instant" as ScrollBehavior });
+        return;
+      }
+      progress.current = self.progress;
+    } });
+    trig.current = trigger;
+    return () => { trig.current = null; trigger.kill(); };
   }, []);
+
+  /** A home is chosen: the hold is let go and the page carries itself down to the inside of the scan. */
+  const enter = () => {
+    picked.current = true;
+    setChosen(null);
+    const t = trig.current;
+    if (!t) return;
+    const y = t.start + (T.inside[0] + 0.04) * (t.end - t.start), inOut = (k: number) => (k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2);
+    if (smooth.lenis) { smooth.lenis.scrollTo(y, { duration: 5, easing: inOut, force: true }); return; }
+    const from = window.scrollY, began = performance.now();
+    let stopped = false;
+    const stop = () => { stopped = true; };
+    window.addEventListener("wheel", stop, { once: true, passive: true });
+    window.addEventListener("touchstart", stop, { once: true, passive: true });
+    const step = (now: number) => {
+      if (stopped) return;
+      const k = Math.min(1, (now - began) / 5000);
+      window.scrollTo({ top: from + (y - from) * inOut(k), behavior: "instant" as ScrollBehavior });
+      if (k < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  };
 
   const decided = sched?.buildings.find((b) => b.units.length)?.units[0].decisions ?? null;
   // The two standpoints that saw the most, in the order the view visits them, each with its share of the inside beat.
@@ -141,6 +183,19 @@ export function LoopGround() {
     const beyond = new THREE.Mesh(new THREE.PlaneGeometry(6000, 6000).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x0e131a }));
     beyond.position.y = -0.4;
     scene.add(beyond);
+    // The last two wide aerials lie on the ground under the site, exactly where they are on the map. Seen from straight
+    // above at the right height this is the same picture the flat aerials end on, so the change from flat to standing has no seam.
+    let across: number | null = null;      // metres the flat view shows across its square when it hands over
+    (descent?.levels ?? []).filter((l) => l.level === 2 || l.level === 3).forEach((l) => {
+      const [lw, ls, le, ln] = l.bounds, [x0, z0] = xz(lw, ln), [x1, z1] = xz(le, ls);
+      if (l.level === 3) across = Math.min(x1 - x0, z1 - z0) / Math.pow(4, Z_END - 2);
+      new THREE.TextureLoader().load(l.url, (tex) => {
+        tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+        const ground = new THREE.Mesh(new THREE.PlaneGeometry(x1 - x0, z1 - z0).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ map: tex, roughness: 1, metalness: 0 }));
+        ground.position.set((x0 + x1) / 2, l.level === 3 ? -0.15 : -0.3, (z0 + z1) / 2);
+        scene.add(ground);
+      });
+    });
 
     let terrain: THREE.Mesh | null = null;
     const grid = new Image();
@@ -172,6 +227,7 @@ export function LoopGround() {
       const pts = b.polygon.map(([lon, lat]) => xz(lon, lat));
       const cx = pts.reduce((a, q) => a + q[0], 0) / pts.length, cz = pts.reduce((a, q) => a + q[1], 0) / pts.length;
       if (b.units.length) { homeAt = new THREE.Vector3(cx, 0, cz); homeTop = roof.get(b.id) ?? 8; }
+      pickAt.current.set(b.id, new THREE.Vector3(cx, (roof.get(b.id) ?? 8) + 3, cz));
       const mat = new THREE.MeshBasicMaterial({ color: 0xff7a3c, transparent: true, opacity: 0, depthTest: false });
       const mesh = new THREE.Mesh(new THREE.ShapeGeometry(new THREE.Shape(pts.map(([x, z]) => new THREE.Vector2(x, -z)))).rotateX(-Math.PI / 2), mat);
       mesh.position.y = (roof.get(b.id) ?? 8) + 1.5;
@@ -212,20 +268,37 @@ export function LoopGround() {
     size();
     const watch = new ResizeObserver(size);
     watch.observe(el);
-    const above = new THREE.Vector3(0, 560, 0.01), reach = Math.max(width, depth);
+    const fog = scene.fog as THREE.Fog, lerp = (a: number, b: number, k: number) => a + (b - a) * k, look = new THREE.Vector3(), spot = new THREE.Vector3();
     let raf = 0;
     const tick = () => {
       raf = requestAnimationFrame(tick);
       const p = held() ?? progress.current;
-      const stand = ease(span(p, T.site[0], T.site[0] + 0.12)), near = ease(span(p, T.fit[0], T.fit[0] + 0.05)) * (1 - ease(span(p, T.tree[0] - 0.01, T.tree[0] + 0.05)));
+      // The flat aerials hand over to this scene while both show the same picture; only then does the view tilt and the ground stand up.
+      const stand = ease(span(p, T.wide[1] + 0.008, T.site[0] + 0.1)), near = ease(span(p, T.fit[0], T.fit[0] + 0.05)) * (1 - ease(span(p, T.tree[0] - 0.01, T.tree[0] + 0.05)));
       const snap = ease(span(p, T.fit[0] + 0.05, T.fit[1] - 0.03));
-      el.style.opacity = String(span(p, T.wide[1] - 0.02, T.wide[1] + 0.02));
+      el.style.opacity = String(span(p, T.wide[1], T.wide[1] + 0.006));
       if (terrain) terrain.scale.y = Math.max(0.001, stand);
-      const turn = -0.5 + p * 1.0, r = reach * 0.92, settled = new THREE.Vector3(Math.sin(turn) * r, 235, Math.cos(turn) * r);
-      const close = new THREE.Vector3(homeAt.x + Math.sin(turn) * 105, 150, homeAt.z + Math.cos(turn) * 105);
-      camera.position.lerpVectors(above, settled, stand).lerp(close, near);
-      camera.lookAt(new THREE.Vector3(0, 6 * stand, 0).lerp(new THREE.Vector3(homeAt.x, 6, homeAt.z), near));
-      const shade = ease(span(p, T.site[0] + 0.1, T.site[0] + 0.17)) * (1 - near * 0.7);
+      // Straight above, at the height from which this camera sees what the flat view showed. Then one move about the site's
+      // centre: closer, tilted, a little turned. The view never slides sideways.
+      const high = across != null ? (el.clientHeight / Math.max(el.clientWidth, el.clientHeight)) * across / (2 * Math.tan(rad(camera.fov / 2))) : 520;
+      const r = lerp(high * Math.pow(SETTLED.r / high, stand), CLOSE.r, near), tilt = rad(lerp(Math.max(0.03, SETTLED.tilt * stand), CLOSE.tilt, near)), turn = lerp(SETTLED.turn * stand, CLOSE.turn, near);
+      look.set(homeAt.x * near, 6 * stand, homeAt.z * near);
+      camera.position.set(look.x + r * Math.sin(tilt) * Math.sin(turn), look.y + r * Math.cos(tilt), look.z + r * Math.sin(tilt) * Math.cos(turn));
+      camera.lookAt(look);
+      fog.near = lerp(2400, 520, stand); fog.far = lerp(5200, 1400, stand);
+      // The homes that can be chosen: a ring over each, kept on its roof as the view moves.
+      const offer = ease(span(p, T.site[0] + 0.105, T.site[0] + 0.13)) * (1 - span(p, GATE + 0.004, GATE + 0.02));
+      if (picks.current) {
+        picks.current.style.opacity = String(offer);
+        picks.current.style.visibility = offer > 0.02 ? "visible" : "hidden";
+        picks.current.querySelectorAll<HTMLElement>("[data-id]").forEach((node) => {
+          const at = pickAt.current.get(node.dataset.id ?? "");
+          if (!at) return;
+          spot.copy(at).project(camera);
+          node.style.transform = `translate(${((spot.x + 1) / 2) * el.clientWidth}px, ${((1 - spot.y) / 2) * el.clientHeight}px)`;
+        });
+      }
+      const shade = ease(span(p, T.site[0] + 0.08, T.site[0] + 0.12)) * (1 - near * 0.7);
       for (const c of caps) c.mat.opacity = shade * c.strength;
       if (outline && raw && fitted) {
         const pos = outline.geometry.attributes.position as THREE.BufferAttribute;
@@ -245,7 +318,7 @@ export function LoopGround() {
     };
     tick();
     return () => { cancelAnimationFrame(raf); watch.disconnect(); renderer.dispose(); el.removeChild(renderer.domElement); };
-  }, [site, sched]);
+  }, [site, sched, descent]);
 
   // ---- inside: the scan from the standpoints that saw the most, turning, with a tag on each thing as the view reaches it ----
   useEffect(() => {
@@ -336,16 +409,16 @@ export function LoopGround() {
       raf = requestAnimationFrame(tick);
       const p = held() ?? progress.current;
       // Three aerials on one centre, each a quarter of the last: falling is scaling them up.
-      const z = span(p, 0.015, T.wide[1]) * 2;
+      const z = span(p, 0.004, T.wide[1]) * Z_END;
       wide.current?.querySelectorAll<HTMLImageElement>("img").forEach((img, i) => {
         const k = Math.pow(4, z - i);
         img.style.transform = `scale(${k})`;
         img.style.opacity = String(k < 0.2 ? 0 : 1);
       });
-      if (wide.current) wide.current.style.opacity = String(span(p, 0, 0.02) * (1 - span(p, T.wide[1] - 0.005, T.wide[1] + 0.025)));
+      if (wide.current) wide.current.style.opacity = String(span(p, 0, 0.008) * (1 - span(p, T.wide[1] + 0.006, T.wide[1] + 0.012)));
       const shows = [
-        window_(p, 0.02, 0.04, T.wide[1] - 0.03, T.wide[1]),
-        window_(p, T.site[0] + 0.08, T.site[0] + 0.11, T.site[1] - 0.02, T.site[1]),
+        window_(p, 0.008, 0.02, T.wide[1] - 0.012, T.wide[1]),
+        window_(p, T.site[0] + 0.1, T.site[0] + 0.125, GATE + 0.004, GATE + 0.02),
         window_(p, T.fit[0] + 0.03, T.fit[0] + 0.05, T.fit[1] - 0.02, T.fit[1]),
         window_(p, T.inside[0] + 0.02, T.inside[0] + 0.04, T.inside[1] - 0.03, T.inside[1]),
         window_(p, T.tree[0], T.tree[0] + 0.03, T.tree[1], T.tree[1] + 0.02),
@@ -357,7 +430,9 @@ export function LoopGround() {
     return () => cancelAnimationFrame(raf);
   }, []);
 
-  const ranked = sched?.buildings.length ?? 0, first = sched?.buildings[0];
+  // Four homes are offered: the one that has been scanned, and the three buildings with the most fuel at their walls.
+  const offered = sched ? [...sched.buildings.filter((b) => b.units.length).slice(0, 1), ...sched.buildings.filter((b) => !b.units.length).slice(0, 3)] : [];
+  const other = offered.find((b) => b.id === chosen && !b.units.length) ?? null;
   const levels = (descent?.levels ?? []).filter((l) => l.level >= 1).slice(0, 3);
   return (
     <section ref={section} className="lp-section" aria-label="What a fire would cost to put back">
@@ -370,10 +445,25 @@ export function LoopGround() {
           <h2>Los Angeles</h2>
           {count && <p>{count.communities_scanned.toLocaleString("en-US")} apartment communities, each one scanned inside.</p>}
         </div>
+        <div ref={picks} className="lp-picks">
+          {offered.map((b) => (
+            <button key={b.id} type="button" data-id={b.id} className={`lp-pick${b.units.length ? " is-scanned" : ""}${b.id === chosen ? " is-on" : ""}`}
+                    onClick={() => { if (b.units.length) enter(); else setChosen(b.id); }}>
+              <i /><span>{b.units.length ? "Scanned home" : `Building ${b.id}`}</span>
+            </button>
+          ))}
+        </div>
         <div ref={(n) => { cap.current[1] = n; }} className="lp-cap">
           <h2>{sched?.property.name}</h2>
-          <p>{ranked} buildings, shaded by the fuel at their walls.{first?.brush_within_5ft_percent != null ? ` Building ${first.id}: ${Math.round(first.brush_within_5ft_percent)}% of its walls.` : ""}</p>
-          <small>Vexcel</small>
+          <p>Choose a home. Brace opens its leasing scan and reads what is inside.</p>
+          <small>Roofs shaded by the fuel at their walls · Vexcel</small>
+          {other && (
+            <div className="lp-chosen">
+              <b>Building {other.id}</b>
+              <span>{other.brush_within_5ft_percent != null ? `${Math.round(other.brush_within_5ft_percent)}% of its walls have fuel within 5 ft. ` : ""}No home under this roof has been scanned, so its figure is the scanned home, multiplied.</span>
+              <button type="button" onClick={enter}>Open the scanned home</button>
+            </div>
+          )}
         </div>
         <div ref={(n) => { cap.current[2] = n; }} className="lp-cap">
           <h2>One home, scanned for leasing</h2>

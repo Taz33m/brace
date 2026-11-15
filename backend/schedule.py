@@ -20,7 +20,7 @@ import json
 import math
 import re
 
-from . import flood, insurer_file, inventory_agent, matterport, openings, portfolio
+from . import flood, insurer_file, inventory_agent, matterport, openings, portfolio, product_match
 from .config import CACHE_DIR
 
 PRICES = CACHE_DIR / "inventory" / "prices.json"
@@ -58,12 +58,16 @@ def _prices() -> dict[str, dict]:
     return by
 
 
-def _line(price_id: str, what: str, quantity: float, unit: str, how: str, prices: dict, **more) -> dict:
+def _line(price_id: str, what: str, quantity: float, unit: str, how: str, prices: dict, key: str | None = None, match: dict | None = None, **more) -> dict:
+    """One line: a quantity times a price for one. The price is the cost guide's, unless a product was matched to the item in the scan:
+    then it is the range of that product's listed prices. The guide's price is carried either way."""
     row, quantity = prices.get(price_id), round(quantity)
-    low = round(quantity * row["price"]) if row else None
-    high = round(quantity * (row.get("price_high") or row["price"])) if row else None
-    return {"what": what, "quantity": quantity, "unit": unit, "from": how, "price_low": row["price"] if row else None, "price_high": (row.get("price_high") or row["price"]) if row else None,
-            "low": low, "high": high, "source_url": row["source"]["url"] if row else None, "source_title": row["source"]["title"] if row else None, **more}
+    guide_low, guide_high = (row["price"], row.get("price_high") or row["price"]) if row else (None, None)
+    each_low, each_high = (match["low"], match["high"]) if match else (guide_low, guide_high)
+    return {"what": what, "quantity": quantity, "unit": unit, "from": how, "price_low": each_low, "price_high": each_high,
+            "low": round(quantity * each_low) if each_low is not None else None, "high": round(quantity * each_high) if each_high is not None else None,
+            "source_url": row["source"]["url"] if row else None, "source_title": row["source"]["title"] if row else None,
+            "key": key, "match": match, "guide_low": guide_low, "guide_high": guide_high, **more}
 
 
 def _sum(lines: list[dict]) -> dict:
@@ -132,6 +136,7 @@ def home(property_id: int, scan_id: str) -> dict:
     except (insurer_file.FileError, OSError, StopIteration):
         raise ScheduleError("this scan's rooms have not been measured")
     prices = _prices()
+    matches = product_match.saved(scan_id)      # a product matched to one item in the scan, under '<room_id>:<kind>'
     walls = {r["id"]: sum(math.dist(a, b) for a, b in r["walls"]) * M_TO_FT for r in plan["rooms"]}
     net = measured["wall_less_doorways_ft"] / measured["wall_ft"] if measured["wall_ft"] else 1.0      # doorways come out of every room alike
     names = inventory_agent.InventoryRun(property_id, scan_id).rooms       # the agent's room ids against Matterport's
@@ -157,7 +162,8 @@ def home(property_id: int, scan_id: str) -> dict:
             continue
         count[kind] = count.get(kind, 0) + 1
         ceiling, wall = r["height_m"] * M_TO_FT, walls.get(r["id"], 0.0) * net
-        lines = [_line(f"fit:{i['kind']}", inventory_agent.KINDS.get(i["kind"], i["what"]), i["quantity"], "each", "read from the scan", prices, seen=i["seen"], at=i["at"])
+        lines = [_line(f"fit:{i['kind']}", inventory_agent.KINDS.get(i["kind"], i["what"]), i["quantity"], "each", "read from the scan", prices, seen=i["seen"], at=i["at"],
+                       key=product_match.key_of(i["room"], i["kind"]), match=product_match.for_schedule(matches.get(product_match.key_of(i["room"], i["kind"]))))
                  for i in by_room.get(read_as.get(r["id"], ""), [])]
         lines += [_line("flooring", "Flooring", r["area_sqft"], "sq ft", "measured from the scan", prices, seen=None, at=None),
                   _line("drywall", "Drywall", wall * ceiling, "sq ft", "measured from the scan", prices, seen=None, at=None),
@@ -232,6 +238,7 @@ def schedule(property_id: int, scan_id: str | None = None) -> dict:
             "Fit-out was named and counted by an agent looking at the scan's own pictures. Each line says where it was seen.",
             "Floor, wall and door quantities are Matterport's measurements of the scan. Doorways are taken out of the walls. Ceilings are not counted.",
             "A line is priced only when a fetch of the page confirmed the price. Where a page gives a range, both ends are carried through.",
+            "Where a product was matched to an item in the scan by its appearance, the line uses that product's listed price, which leaves out delivery and fitting.",
             "Buildings are ranked by the share of their walls with vegetation within 5 ft, from Vexcel. It is a ranking, not a chance of fire.",
         ],
         "not_counted": ["Furniture and anything a tenant owns", "The structure itself: frame, roof, wiring, plumbing", "Ceilings", "Common areas and anything outside the homes"],

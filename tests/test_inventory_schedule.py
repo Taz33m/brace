@@ -130,10 +130,10 @@ def test_the_voice_is_told_only_what_the_schedule_holds_and_can_only_open_things
     assert "3.3 million to 8.3 million dollars" in told and "extrapolation" in told and "never 'when' or 'will'" in told and "Rooms of the scanned home: Kitchen, Bathroom." in told
     assert "building S10, rank 1, 82 percent of walls, 6 homes" in told and "Never estimate a price" in told
     assert "Kitchen: grey sofa (furniture or a tenant's own)" in told and "Kitchen: There may be a fourth wall cabinet." in told and "nothing is sent" in told
-    assert [t["name"] for t in voice.schedule_tools()] == ["open_building", "open_room", "explain_line", "show_working", "look_again", "check_cover"]      # nothing that sends or books
+    assert [t["name"] for t in voice.schedule_tools()] == ["open_building", "open_room", "explain_line", "show_working", "look_again", "find_model", "check_cover"]      # nothing that sends or books
     assert voice._spoken({"low": None, "high": None}) == "no confirmed price" and voice._spoken({"low": 600, "high": 600}) == "600 dollars"
     body = voice.schedule_session(sched)["session"]
-    assert body["type"] == "realtime" and len(body["tools"]) == 6
+    assert body["type"] == "realtime" and len(body["tools"]) == 7
 
 
 def test_the_big_screen_follows_what_the_phone_opens():
