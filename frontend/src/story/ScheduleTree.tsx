@@ -14,7 +14,10 @@ import { ScheduleReview } from "./ScheduleReview";
 interface Money { low: number | null; high: number | null; lines?: number; lines_priced?: number }
 interface Line { what: string; quantity: number; unit: string; from: string; price_low: number | null; price_high: number | null; low: number | null; high: number | null;
                  source_url: string | null; seen: string | null; at: { standpoint: string; direction: string } | null;
-                 key?: string | null; match?: Match | null; guide_low?: number | null; guide_high?: number | null }
+                 key?: string | null; match?: Match | null; guide_low?: number | null; guide_high?: number | null;
+                 price_basis?: string | null; fitting_low?: number | null; fitting_high?: number | null }
+/** Whether the line's price is the matched products' (two or more were found), not the cost guide's. */
+const matched = (l: Line) => !!l.match && (l.price_basis == null || l.price_basis.startsWith("matched product"));
 /** The products one item most likely is: found by looking at it in the scan, each price confirmed on its page. Never an identification. */
 interface Match { label: string; make: string; model: string | null; name: string; low: number; high: number; seen: string[]; brand_read: string | null;
                   candidates: { make: string; model: string | null; name: string; price: number; url: string; store: string; why: string }[] }
@@ -108,7 +111,10 @@ export function ScheduleTree({ site, controller = false, inline = false, onRepla
   useEffect(() => {
     const like = (a: string, b: string) => a.toLowerCase().replace(/[^a-z0-9]/g, "").includes(b.toLowerCase().replace(/[^a-z0-9]/g, ""));
     const money = (m: { low: number | null; high: number | null }) => range(m);      // rounded as on the screen, so what is said matches what is shown
-    const told = (m: Match) => ({ label: m.label, make: m.make, model: m.model, name: m.name, price_each: dollars(m), product_pages: m.candidates.map((c) => c.store),
+    const told = (m: Match, l?: Line) => ({ label: m.label, make: m.make, model: m.model, name: m.name, products_each: dollars(m),
+                                  line_price_each: l ? dollars({ low: l.price_low, high: l.price_high }) : undefined,
+                                  line_price_rests_on: l ? (matched(l) ? (l.fitting_low != null ? "these products plus the labour to fit one" : "these products, fitting not priced") : "the cost guide: one lookalike is not a range") : undefined,
+                                  product_pages: m.candidates.map((c) => c.store),
                                   seen_in_the_scan: m.seen, note: "A match by appearance, not an identification, unless a brand was read in the scan." });
     const run = (name: string, args: Record<string, unknown>) => {
       const d = review?.data ?? latest.current;
@@ -155,7 +161,7 @@ export function ScheduleTree({ site, controller = false, inline = false, onRepla
         if (!l) return { ok: false, say: "That line is not in this room." };
         setPointed(`${r.name}:${l.what}`);
         setCard(l.key ? { room: r.name, what: l.what } : null);
-        return { ok: true, room: r.name, line: l.what, closest_match: l.match ? told(l.match) : "not looked for yet; find_model can look", quantity: l.quantity, unit: l.unit, quantity_from: l.from, what_the_agent_saw: l.seen,
+        return { ok: true, room: r.name, line: l.what, closest_match: l.match ? told(l.match, l) : "not looked for yet; find_model can look", quantity: l.quantity, unit: l.unit, quantity_from: l.from, what_the_agent_saw: l.seen,
                  price_each: l.price_low == null ? "no confirmed price" : money({ low: l.price_low, high: l.price_high }), amount: money(l),
                  price_from: l.source_url ? `a page on ${new URL(l.source_url).hostname.replace(/^www\./, "")}, fetched and found to state this price` : "no page" };
       }
@@ -168,7 +174,7 @@ export function ScheduleTree({ site, controller = false, inline = false, onRepla
         const l = r?.items.find((x) => like(x.what, String(args.item ?? ""))) ?? r?.items.find((x) => like(String(args.item ?? ""), x.what.split(" ")[0]));
         if (!scanned || !r || !l || !l.key) return { ok: false, say: "That is not something the camera saw in that room, so it cannot be looked at." };
         setHow(false); setOpen(scanned.id); setRoom(r.name); setPointed(`${r.name}:${l.what}`); setCard({ room: r.name, what: l.what });
-        if (l.match) return { ok: true, already_found: true, ...told(l.match) };
+        if (l.match) return { ok: true, already_found: true, ...told(l.match, l) };
         act.current.findModel(r.name, l.what);
         return { ok: true, started: true, line: l.what, room: r.name, price_now: money({ low: l.price_low, high: l.price_high }),
                  say: "The agent is looking at it in the scan and searching for products that match. It takes about a minute. Say so, and that you will tell them what it finds." };
@@ -289,8 +295,8 @@ export function ScheduleTree({ site, controller = false, inline = false, onRepla
             <button type="button" className="sc-card-x" aria-label="Close" onClick={() => setCard(null)}>×</button>
             <img src={`/api/schedule/${site}/view.jpg?room=${encodeURIComponent(card.room)}&item=${encodeURIComponent(card.what)}`} alt="" onError={(e) => { e.currentTarget.style.display = "none"; }} />
             <span>{carded.what}, {card.room}</span>
-            {carded.match ? (<>
-              <strong>{dollars(carded.match)}</strong>
+            {carded.match && matched(carded) ? (<>
+              <strong>{dollars({ low: carded.price_low, high: carded.price_high })}</strong>
               <p className="sc-card-name"><em>{carded.match.label}</em>{carded.match.make} {carded.match.model ?? carded.match.name}</p>
               <ul>
                 {carded.match.candidates.map((c) => (
@@ -300,13 +306,24 @@ export function ScheduleTree({ site, controller = false, inline = false, onRepla
                   </a></li>
                 ))}
               </ul>
-              <small>{carded.guide_low != null && carded.guide_high != null ? `Was ${dollars({ low: carded.guide_low, high: carded.guide_high })} for any ${carded.what.toLowerCase()}. ` : ""}Matched by how it looks in the scan{carded.match.seen.length ? `: ${carded.match.seen.slice(0, 4).join(", ")}` : ""}. Not an identification.</small>
+              <small>{carded.fitting_low != null && carded.fitting_high != null ? `These products, plus ${dollars({ low: carded.fitting_low, high: carded.fitting_high })} to fit one. ` : "The products' prices; fitting is not priced. "}{carded.guide_low != null && carded.guide_high != null ? `Was ${dollars({ low: carded.guide_low, high: carded.guide_high })} for any ${carded.what.toLowerCase()}. ` : ""}Matched by how it looks in the scan{carded.match.seen.length ? `: ${carded.match.seen.slice(0, 4).join(", ")}` : ""}. Not an identification.</small>
             </>) : (<>
               <strong className="is-wide">{dollars({ low: carded.price_low, high: carded.price_high })}</strong>
-              <p className="sc-card-name"><em>Any {carded.what.toLowerCase()}</em>from a cost guide</p>
+              <p className="sc-card-name"><em>Any {carded.what.toLowerCase()}</em>{carded.price_basis === "cost guide for what was seen" ? "from a cost guide, for what the scan shows" : "from a cost guide"}</p>
+              {carded.match && (<>
+                <ul>
+                  {carded.match.candidates.map((c) => (
+                    <li key={c.url}><a href={c.url} target="_blank" rel="noreferrer" title={c.why}>
+                      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" /></svg>
+                      <b>{c.make} {c.model ?? c.name}</b><i>${Math.round(c.price).toLocaleString("en-US")}</i><small>{c.store}</small>
+                    </a></li>
+                  ))}
+                </ul>
+                <small>One lookalike was found. One is not a range, so the line keeps the cost guide's price.</small>
+              </>)}
               {looking === "none" && <small>No product's price could be confirmed on its page, so the line keeps this price.</small>}
               {looking === "failed" && <small>The search could not be finished. Nothing was changed.</small>}
-              <button type="button" disabled={finding?.state === "looking"} onClick={() => findModel(card.room, card.what)}>{looking === "looking" ? "Looking at it in the scan" : "Find the make and model"}</button>
+              <button type="button" disabled={finding?.state === "looking"} onClick={() => findModel(card.room, card.what)}>{looking === "looking" ? "Looking at it in the scan" : carded.match ? "Look for more products" : "Find the make and model"}</button>
             </>)}
           </aside>
         )}
@@ -358,9 +375,9 @@ export function ScheduleTree({ site, controller = false, inline = false, onRepla
                               <tr key={l.what + i} title={l.seen ?? undefined} className={`${pointed === `${r.name}:${l.what}` ? "is-pointed" : ""}${l.key ? " is-seen" : ""}`}
                                   onClick={l.key ? (e) => { if ((e.target as HTMLElement).closest("a")) return; setPointed(`${r.name}:${l.what}`); setCard({ room: r.name, what: l.what }); } : undefined}
                                   ref={pointed === `${r.name}:${l.what}` ? (el) => el?.scrollIntoView({ block: "center", behavior: "smooth" }) : undefined}>
-                                <th>{l.what}{l.match ? <small className="sc-matched">{l.match.make} {l.match.model ?? ""}</small> : l.seen && <small>{l.seen}</small>}</th>
+                                <th>{l.what}{matched(l) && l.match ? <small className="sc-matched">{l.match.make} {l.match.model ?? ""}</small> : l.seen && <small>{l.seen}</small>}</th>
                                 <td>{l.quantity.toLocaleString("en-US")} {l.unit}<small>{l.from.replace(" from the scan", "")}</small></td>
-                                <td>{l.match?.candidates[0] ? <a href={l.match.candidates[0].url} target="_blank" rel="noreferrer">{each(l)}</a> : l.source_url ? <a href={l.source_url} target="_blank" rel="noreferrer">{each(l)}</a> : ""}</td>
+                                <td>{matched(l) && l.match?.candidates[0] ? <a href={l.match.candidates[0].url} target="_blank" rel="noreferrer">{each(l)}</a> : l.source_url ? <a href={l.source_url} target="_blank" rel="noreferrer">{each(l)}</a> : ""}</td>
                                 <td className={l.low == null ? "is-none" : ""}>{range(l)}</td>
                               </tr>
                             ))}
