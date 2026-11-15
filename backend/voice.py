@@ -256,12 +256,18 @@ def schedule_instructions(schedule: dict) -> str:
 
 def _matched(unit: dict) -> str:
     """What the voice may do about a make or model, and the lines that already have a product matched to them."""
-    have = [f"{r['name']}, {l['what']}: closest is {' '.join(x for x in (m.get('make'), m.get('model')) if x)}; {len(m.get('candidates') or [])} lookalike product{'' if len(m.get('candidates') or []) == 1 else 's'} at {_spoken(m)} each "
-            f"({'the brand was read in the scan' if m.get('label') == 'Brand read from the scan' else 'closest match, no brand read'})"
-            for r in unit["rooms"] for l in r.get("items") or [] for m in [l.get("match")] if m]
+    def said(r: dict, l: dict, m: dict) -> str:
+        name, n = " ".join(x for x in (m.get("make"), m.get("model")) if x), len(m.get("candidates") or [])
+        if not str(l.get("price_basis") or "matched product").startswith("matched product"):
+            return f"{r['name']}, {l['what']}: one lookalike was found ({name}); one is not a range, so the line keeps the cost guide's price"
+        each = _spoken({"low": l.get("price_low"), "high": l.get("price_high")})
+        how = "products plus the labour to fit one" if l.get("fitting_low") is not None else "products only, fitting not priced"
+        return (f"{r['name']}, {l['what']}: closest is {name}; {n} lookalike product{'' if n == 1 else 's'} at {_spoken(m)} each; the line is {each} each ({how}; "
+                f"{'the brand was read in the scan' if m.get('label') == 'Brand read from the scan' else 'closest match, no brand read'})")
+    have = [said(r, l, m) for r in unit["rooms"] for l in r.get("items") or [] for m in [l.get("match")] if m]
     return ("If the owner asks what make or model something is, or wants a more exact price for one appliance or fixture, call find_model with the room and the item. "
             "It looks at the item in the scan and finds products sold today that look like it, which takes about a minute. "
-            "What comes back is the closest match by appearance, not an identification; say 'closest match', and say the brand was read only when the result says so. Its price leaves out delivery and fitting."
+            "What comes back is the closest match by appearance, not an identification; say 'closest match', and say the brand was read only when the result says so. A line is priced from its lookalikes only when two or more were found, and then it is their prices plus the labour to fit one."
             + (" Already matched; call find_model for these too, so the screen shows the picture and the products, and it answers at once: " + " | ".join(have) + "." if have else " No line has a product matched to it yet."))
 
 

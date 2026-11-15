@@ -203,7 +203,7 @@ def test_the_voice_can_ask_for_a_model_and_is_told_what_is_already_matched(home,
     model_says(monkeypatch, ("note_what_is_visible", SEEN), ("report_product", FRIDGE), ("report_product", GE))
     match()
     told = voice.schedule_instructions(schedule.schedule(7))
-    assert "call find_model" in told and "not an identification" in told and "Kitchen, Refrigerator: closest is Frigidaire FFTR1835VS; 2 lookalike products at 698 to 749 dollars each (closest match, no brand read)" in told
+    assert "call find_model" in told and "not an identification" in told and "Kitchen, Refrigerator: closest is Frigidaire FFTR1835VS; 2 lookalike products at 698 to 749 dollars each; the line is 698 to 749 dollars each (products only, fitting not priced; closest match, no brand read)" in told
     tool = next(t for t in voice.schedule_tools() if t["name"] == "find_model")
     assert tool["parameters"]["required"] == ["room", "item"] and "Takes about a minute" in tool["description"]
 
