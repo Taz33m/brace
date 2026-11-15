@@ -5,6 +5,8 @@ import { ConversationPanel } from "../components/ConversationPanel";
 import { conversation } from "../conversation";
 import "./story.css";
 import { ScheduleReview } from "./ScheduleReview";
+import { FireAftermath } from "./FireAftermath";
+import { smooth } from "./gsap";
 
 /**
  * The schedule as a tree. The property's total at the top; under it the buildings, ranked by how much fuel stands
@@ -243,9 +245,21 @@ export function ScheduleTree({ site, controller = false, inline = false }: { sit
     );
   }
 
-  return (
+  const returnHome = () => {
+    setReview(null);
+    requestAnimationFrame(() => {
+      const target = document.getElementById("home-after-fire");
+      if (target) {
+        if (smooth.lenis) smooth.lenis.scrollTo(target, { immediate: true, force: true });
+        else target.scrollIntoView({ behavior: "instant" as ScrollBehavior });
+        target.querySelector<HTMLElement>("[tabindex]")?.focus({ preventScroll: true });
+      }
+    });
+  };
+
+  return (<>
     <div className={`st sc${inline ? " is-inline" : ""}`}>
-      {review && <ScheduleReview data={review.data} captured={review.captured} onClose={() => setReview(null)} />}
+      {review && <ScheduleReview data={review.data} captured={review.captured} onClose={() => setReview(null)} onContinue={site === 9519837 ? returnHome : undefined} />}
       <div className="sc-map">
         <svg viewBox={`0 0 ${p.aerial.width} ${p.aerial.height}`} preserveAspectRatio="xMidYMid slice" aria-hidden="true">
           <image href={`/api/buildings/${site}/aerial.jpg`} width={p.aerial.width} height={p.aerial.height} />
@@ -299,7 +313,7 @@ export function ScheduleTree({ site, controller = false, inline = false }: { sit
         <table className="sc-kinds"><tbody>
           {data.kinds_of_home.map((k) => (
             <tr key={k.name} title={k.basis}>
-              <th>{k.homes} x {k.name}</th><td>{range(k.per_home)} each</td><td>{k.scanned ? "the scanned home" : "scaled from the scanned home"}</td><td>{range(k)}</td>
+              <th>{k.homes} x {k.name}</th><td>{range(k.per_home)} each</td><td>{k.scanned ? "this home" : "scaled from this home"}</td><td>{range(k)}</td>
             </tr>
           ))}
         </tbody></table>
@@ -310,13 +324,13 @@ export function ScheduleTree({ site, controller = false, inline = false }: { sit
             return (
               <li key={b.id} className={b.id === open ? "is-open" : ""}>
                 <button type="button" onClick={() => { setOpen(b.id === open ? null : b.id); setRoom(null); }}>
-                  <b>{b.exposure_rank}</b><span>Building {b.id}{unit ? <small>scanned home here</small> : null}</span>
+                  <b>{b.exposure_rank}</b><span>Building {b.id}{unit ? <small>this home</small> : null}</span>
                   <span>{b.brush_within_5ft_percent != null ? `${Math.round(b.brush_within_5ft_percent)}% of walls` : ""}</span>
                   <span>{b.homes_assumed} {b.homes_assumed === 1 ? "home" : "homes"}</span><strong>{range(b.total)}</strong>
                 </button>
                 {b.id === open && unit && (
                   <div className="sc-home-rows">
-                    <p>{unit.name}. Scanned by Matterport{unit.scan_date ? `, scan dated ${unit.scan_date}` : ""}. {range(unit.total)}.</p>
+                    <p>{unit.name}. Matterport{unit.scan_date ? `, scan dated ${unit.scan_date}` : ""}. {range(unit.total)}.</p>
                     {unit.rooms.map((r) => (
                       <div key={r.name} className={r.name === room ? "is-open" : ""}>
                         <button type="button" onClick={() => { setRoom(r.name === room ? null : r.name); setPointed(null); }}>
@@ -386,5 +400,6 @@ export function ScheduleTree({ site, controller = false, inline = false }: { sit
         )}
       </div>
     </div>
-  );
+    {site === 9519837 && <FireAftermath />}
+  </>);
 }

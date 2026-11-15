@@ -1,0 +1,10 @@
+{
+  "property_id": 9519837,
+  "model_id": "CaSLe7ZwnfF",
+  "sweep_id": "x9aueidhw980n197tiue89t3c",
+  "room": "Kitchen",
+  "projection": "equirectangular 2:1, derived from the six Matterport cube faces",
+  "before": {"file": "before.jpg", "basis": "Original Matterport panorama"},
+  "cleared": {"file": "cleared.jpg", "basis": "Matterport digitally defurnished view", "view_id": "r805nhnmbi09huxwu0yhgkfzb"},
+  "fire": {"file": "fire.png", "basis": "AI image edit of before.jpg", "scenario": "Fire extinguished; refrigerator, stove and loose contents removed; soot silhouettes remain", "observed_damage": false, "assessment_evidence": false, "geometry": "Visual approximation; not suitable for measurement"}
+}
