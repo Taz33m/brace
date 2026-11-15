@@ -1,0 +1,32 @@
+.sr-open { margin:18px 0; border:1px solid #ffc20e; background:transparent; color:#ffc20e; padding:12px 18px; font:600 16px var(--cond); border-radius:6px; cursor:pointer; }
+.sr-dialog { width:min(1100px,94vw); max-height:92vh; padding:0; border:0; border-radius:10px; background:#fff; color:#172331; overflow:auto; overscroll-behavior:contain; font:15px/1.5 Arial,sans-serif; }
+.sr-dialog::backdrop { background:#000b; }
+.sr-toolbar { position:sticky; top:0; padding:12px 20px; background:#0b1522; display:flex; gap:10px; align-items:center; z-index:1; color:#fff; }
+.sr-toolbar button { padding:9px 12px; background:#fff; color:#172331; border:0; border-radius:4px; cursor:pointer; font:600 14px Arial,sans-serif; }
+.sr-toolbar button:last-child { margin-left:auto; }
+.sr-toolbar span { font-size:12px; }
+.sr-document { padding:32px; }
+.sr-document h1 { font-size:30px; line-height:1.2; margin:12px 0; }
+.sr-document h2 { font-size:22px; margin:24px 0 12px; }
+.sr-document h3,.sr-document h4 { margin:20px 0 10px; }
+.sr-document p { margin:8px 0; }
+.sr-document ol,.sr-document ul { margin:12px 0; padding-left:24px; }
+.sr-document li { margin:8px 0; }
+.sr-document table { border-collapse:collapse; width:100%; margin:12px 0; font-size:12px; }
+.sr-document th,.sr-document td { padding:8px; border:1px solid #b8c1cc; vertical-align:top; text-align:left; overflow-wrap:anywhere; }
+.sr-document th { background:#eef2f5; }
+.sr-document a { color:#0054a6; }
+.sr-document .sr-amount { font-size:32px; font-weight:bold; }
+.sr-document footer { border-top:1px solid #b8c1cc; padding-top:16px; margin-top:24px; font-size:12px; }
+@media(max-width:600px) { .sr-document { padding:16px; } .sr-toolbar { flex-wrap:wrap; } .sr-document table { font-size:10px; } .sr-document th,.sr-document td { padding:4px; } }
+@media print {
+  @page { margin:14mm; }
+  body.printing-schedule { overflow:visible !important; height:auto !important; background:white !important; }
+  body.printing-schedule > :not(.sr-dialog) { display:none !important; }
+  body.printing-schedule .sr-dialog { display:block !important; position:static !important; width:auto; max-width:none; height:auto; max-height:none; overflow:visible; margin:0; border:0; box-shadow:none; }
+  .sr-dialog::backdrop,.sr-toolbar { display:none !important; }
+  .sr-document { padding:0; color:black; }
+  .sr-document thead { display:table-header-group; }
+  .sr-document tr { break-inside:avoid; }
+  .sr-document h2,.sr-document h3,.sr-document h4 { break-after:avoid; }
+}
