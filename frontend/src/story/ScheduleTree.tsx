@@ -59,8 +59,6 @@ export function ScheduleTree({ site, controller = false, inline = false, onRepla
   const latest = useRef<Schedule | null>(null);
   latest.current = data;
   const [cover, setCover] = useState<Cover | null>(null);         // the owner's cover checked against the schedule
-  const [asking, setAsking] = useState(false);                    // the cover field is open
-  const [amount, setAmount] = useState("");
   const [again, setAgain] = useState<Again | null>(null);         // a second look at one room: under way, or what it found
   const [version, setVersion] = useState(0);                      // goes up when the schedule is rebuilt, so the voice is told again
   const [card, setCard] = useState<{ room: string; what: string } | null>(null);     // the line whose likely make and model is shown
@@ -72,7 +70,7 @@ export function ScheduleTree({ site, controller = false, inline = false, onRepla
     const r = await fetch(`/api/schedule/${site}/cover?amount=${encodeURIComponent(dollars)}`, { method: "POST" });
     if (!r.ok) return null;
     const got = (await r.json()) as Cover;
-    setCover(got); setAsking(false); setHow(false);
+    setCover(got); setHow(false);
     return got;
   };
   const lookAgain = (roomName: string) => {
@@ -223,7 +221,8 @@ export function ScheduleTree({ site, controller = false, inline = false, onRepla
   const showPhone = async () => {
     if (phone) { setPhone(null); return; }
     const { ip, vr_port } = await fetch("/api/lan").then((r) => r.json()).catch(() => ({ ip: null, vr_port: 5185 }));
-    const url = `https://${ip ?? "this-computer"}:${vr_port ?? 5185}/#/ctl/${site}`;
+    const path = site === 9519837 ? `#/restore/${site}/kitchen` : `#/ctl/${site}`;
+    const url = `https://${ip ?? "this-computer"}:${vr_port ?? 5185}/${path}`;
     setPhone({ url, qr: await QRCode.toDataURL(url, { margin: 1, width: 240 }) });
   };
 
@@ -408,16 +407,9 @@ export function ScheduleTree({ site, controller = false, inline = false, onRepla
 
         <footer>
           <button type="button" className="ft-how sc-how" onClick={() => setHow(!how)}>How this is worked out</button>
-          <button type="button" className="ft-how sc-how" onClick={() => { setAsking(!asking); setCover(null); }}>Check my cover</button>
-          <button type="button" className="ft-how sc-how" onClick={() => void showPhone()}>Phone</button>
+          <button type="button" className="ft-how sc-how" onClick={() => void showPhone()}>{site === 9519837 ? "Enter the home" : "Phone"}</button>
           <span>{n.scans_read} scan, {n.rooms_read} rooms, {n.views_looked_at} views, {n.items_named} items named, {n.prices_confirmed} prices confirmed{n.minutes ? `, ${n.minutes} minutes` : ""}</span>
         </footer>
-        {asking && (
-          <form className="ft-panel sc-panel sc-cover" onSubmit={(e) => { e.preventDefault(); const n = Number(amount.replace(/[^0-9.]/g, "")); if (n > 0) void checkCover(n); }}>
-            <label htmlFor="sc-amount">Cover you carry for the fit-out, in dollars</label>
-            <div><input id="sc-amount" inputMode="numeric" autoFocus value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="4,000,000" /><button type="submit">Check</button></div>
-          </form>
-        )}
         {cover && (
           <aside className="ft-panel sc-panel sc-cover">
             <strong>{cover.check.verdict}</strong>
@@ -427,7 +419,7 @@ export function ScheduleTree({ site, controller = false, inline = false, onRepla
             <button type="button" onClick={() => setCover(null)}>Close</button>
           </aside>
         )}
-        {phone && <aside className="sc-phone"><img src={phone.qr} alt="" /><span>{phone.url}</span></aside>}
+        {phone && <aside className="sc-phone"><img src={phone.qr} alt={site === 9519837 ? "Scan to enter the home after the fire" : "Scan to open phone controls"} /><a href={phone.url}>{phone.url}</a>{site === 9519837 && <a href={`#/restore/${site}/kitchen`}>Open on this screen</a>}</aside>}
         {how && (
           <aside className="ft-panel sc-panel">
             {oneZone && <p>All {count} buildings are in a {oneZone} fire hazard severity zone (CAL FIRE). Vegetation at the walls and tree cover over the roof determine their order within that zone.</p>}

@@ -468,15 +468,10 @@ export function LoopGround({ replay = 0, onAftermath }: { replay?: number; onAft
       rooms.forEach(({ st, mats, fireMats, tags, yaws }, i) => {
         // One room at a time: each fades in at its start and out at its end, the first and last holding to the edges of the beat.
         const here = (i === 0 ? 1 : span(p, st.from - 0.012, st.from + 0.012)) * (i + 1 === rooms.length ? 1 : 1 - span(p, st.to - 0.012, st.to + 0.012));
-        // After the fire the room is first shown as it was scanned. The scenario comes over it as the scroll goes on, so the two are seen one after the other from the same place.
-        const turned = afterRef.current && fireMats.length > 0 ? ease(span(p, st.from + 0.075, st.from + 0.115)) : 0;
-        for (const m of mats) m.opacity = here;
-        for (const m of fireMats) m.opacity = here * turned;
-        if (afterRef.current && here >= 0.5 && fireLabel.current) {
-          const after = turned > 0.5, title = fireLabel.current.querySelector("h2"), note = fireLabel.current.querySelector("p");
-          if (title && title.textContent !== (after ? "After the fire" : "Before the fire")) title.textContent = after ? "After the fire" : "Before the fire";
-          if (note && note.textContent !== (after ? "AI-generated scenario · Not observed damage" : "As Matterport scanned it")) note.textContent = after ? "AI-generated scenario · Not observed damage" : "As Matterport scanned it";
-        }
+        // Returning from the wildfire starts in the aftermath immediately. Never
+        // flash the original room underneath a loading or fading fire texture.
+        for (const m of mats) m.opacity = afterRef.current ? 0 : here;
+        for (const m of fireMats) m.opacity = afterRef.current ? here : 0;
         if (here >= 0.5) {
           const at = span(p, st.from + 0.02, st.to - 0.03) * (yaws.length - 1), a = Math.floor(at), b = Math.min(yaws.length - 1, a + 1);
           const yaw = yaws[a] + (yaws[b] - yaws[a]) * (at - a), pitch = (st.items[a].at.pitch_deg + (st.items[b].at.pitch_deg - st.items[a].at.pitch_deg) * (at - a)) * 0.45;
@@ -598,7 +593,7 @@ export function LoopGround({ replay = 0, onAftermath }: { replay?: number; onAft
           <p>Its floor plan, placed under the roof it belongs to.</p>
           <small>Matterport</small>
         </div>
-        {aftermath && <div ref={fireLabel} className="lp-fire-label"><h2>Before the fire</h2><p>As Matterport scanned it</p></div>}
+        {aftermath && <div ref={fireLabel} className="lp-fire-label"><h2>After the fire</h2><p>AI-generated scenario · Not observed damage</p></div>}
         <div ref={(n) => { cap.current[3] = n; }} className="lp-lines">
           <span>{sched?.home.name}</span>
           <strong ref={sub} />

@@ -1,0 +1,18 @@
+.restore-room { position:fixed; inset:0; background:#0b0e12; color:#fff; font-family:Arial,sans-serif; }
+.restore-canvas { position:absolute; inset:0; touch-action:none; }
+.restore-canvas canvas { display:block; width:100%; height:100%; }
+.restore-top { position:absolute; top:0; left:0; right:0; display:flex; align-items:center; gap:24px; padding:25px 30px; background:linear-gradient(#0009,transparent); pointer-events:none; }
+.restore-top a { pointer-events:auto; color:#f8d376; font-size:16px; font-weight:700; letter-spacing:.15em; text-decoration:none; }
+.restore-top strong,.restore-top span { display:block; }.restore-top strong { font-size:23px; }.restore-top span { margin-top:5px; font-size:13px; color:#ded6c7; }
+.restore-top small { margin-left:auto; color:#ddd; font-size:10px; }
+.restore-controls { position:absolute; bottom:max(18px,env(safe-area-inset-bottom)); left:50%; transform:translateX(-50%); width:min(620px,calc(100% - 28px)); padding:15px; border:1px solid #ffffff25; border-radius:18px; background:#111820dc; backdrop-filter:blur(18px); box-sizing:border-box; }
+.restore-buttons { display:flex; flex-wrap:wrap; gap:7px; }
+.restore-controls button { border:1px solid #ffffff30; border-radius:9px; padding:9px 12px; background:#ffffff0e; color:#fff; cursor:pointer; font:500 12px Arial,sans-serif; }
+.restore-controls button.restore-primary { background:#efd08a; color:#1a1a1a; border-color:#efd08a; }
+.restore-controls button:disabled { opacity:.5; cursor:wait; }
+.restore-controls p { margin:12px 0; font-size:15px; line-height:1.4; max-height:85px; overflow:auto; }
+.restore-controls form { display:flex; gap:8px; margin-top:10px; }.restore-controls input { flex:1; width:0; border:1px solid #ffffff35; border-radius:9px; padding:11px; background:#0004; color:#fff; font-size:14px; }.restore-controls input::placeholder{color:#c7c8c9;}
+.restore-controls small { display:block; margin-top:10px; font-size:10px; line-height:1.35; color:#c4c8cc; }
+.restore-loading { position:absolute; top:40%; width:100%; text-align:center; }
+@media(max-width:600px) { .restore-top { padding:18px; gap:15px; }.restore-top strong { font-size:20px; }.restore-top small { max-width:95px; text-align:right; }.restore-controls { padding:12px; }.restore-controls button { padding:9px; } }
+@media(max-height:500px) { .restore-controls { left:auto; right:12px; bottom:12px; transform:none; width:340px; }.restore-top { padding:16px; }.restore-controls small { display:none; }.restore-controls p { font-size:12px; max-height:48px; margin:7px 0; } }

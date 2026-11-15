@@ -21,6 +21,7 @@ const InsidePov = lazy(() => import("./story/InsidePov").then(module => ({ defau
 const InsurerFile = lazy(() => import("./story/InsurerFile").then(module => ({ default: module.InsurerFile })));
 const FloodTest = lazy(() => import("./story/FloodTest").then(module => ({ default: module.FloodTest })));
 const WalkPage = lazy(() => import("./components/WalkPage").then(module => ({ default: module.WalkPage })));
+const RestorationRoom = lazy(() => import("./components/restoration/RestorationRoom").then(module => ({ default: module.RestorationRoom })));
 
 /** Read and scrub invitations before any child can issue a network request. */
 export function captureBrowserRoute(): AppRoute {
@@ -58,6 +59,7 @@ export function App() {
     invitation_token={route.invitation_token} on_invitation_consumed={consumed} />;
   if (route.kind === "recovery") return <RecoveryEntry case_id={route.case_id} />;
   if (route.kind === "invalid") return <div className="fatal" role="alert">{route.message}</div>;
+  if (route.kind === "restore") return <Suspense fallback={<div className="st-wait" />}><RestorationRoom key={route.room} room={route.room} /></Suspense>;
   if (route.kind === "schedule") return <Suspense fallback={<div className="st-wait" />}><ScheduleTree key={route.controller ? "ctl" : "screen"} site={route.site} controller={route.controller} /></Suspense>;
   if (route.kind === "inside") return <Suspense fallback={<div className="st-wait" />}><InsidePov site={route.site} scan={route.scan} stereo={route.stereo} /></Suspense>;
   if (route.kind === "file") return <Suspense fallback={<div className="st-wait" />}><InsurerFile site={route.site} scan={route.scan} /></Suspense>;

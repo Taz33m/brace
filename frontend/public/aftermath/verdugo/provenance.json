@@ -16,7 +16,7 @@
   "fire": {
     "file": "fire.png",
     "basis": "AI image edit of before.jpg",
-    "scenario": "Fire extinguished; refrigerator, stove and loose contents removed; soot silhouettes remain",
+    "scenario": "Fire extinguished; refrigerator, stove, interior door leaves and one burned wall cabinet removed; soot silhouettes, hinges and scorched frames remain",
     "observed_damage": false,
     "assessment_evidence": false,
     "geometry": "Visual approximation; not suitable for measurement"
@@ -29,7 +29,24 @@
       "fire": "bathroom-fire.png",
       "basis": "AI edit of original Matterport panorama",
       "observed_damage": false,
-      "assessment_evidence": false
+      "assessment_evidence": false,
+      "scenario": "Fire aftermath with interior door leaf removed; original tub, vanity and toilet remain until cleanup"
     }
-  ]
+  ],
+  "restoration": {
+    "basis": "AI image edits of the corresponding kitchen and bathroom panoramas; pre-fire source imagery unchanged",
+    "observed_damage": false,
+    "assessment_evidence": false,
+    "geometry": "Illustrative 360-degree views; approximate geometry, not measured construction evidence",
+    "phases": {
+      "cleared-burned": "Contents and fixtures removed; soot and damage remain; interior door leaves absent",
+      "restored-empty": "Empty restored surfaces; interior door leaves remain absent"
+    },
+    "assets": [
+      "kitchen-cleared-burned.png",
+      "kitchen-restored-empty.png",
+      "bathroom-cleared-burned.png",
+      "bathroom-restored-empty.png"
+    ]
+  }
 }
