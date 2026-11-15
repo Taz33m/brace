@@ -9,10 +9,14 @@
 | CoStar | [costar.md](costar.md) | Interior evidence + property scale + aerial exposure context |
 | LangChain | [langchain.md](langchain.md) | Room delegation, tool use, reconciliation and uncertainty |
 | Business & Enterprise | [business-enterprise.md](business-enterprise.md) | Owner workflow, usable output and customer validation |
+| General judges | [general-pitch.md](general-pitch.md) | Introduce the data in everyday language, then prove the owner outcome |
+| Technical follow-up | [technical-paper.md](technical-paper.md) | Method, evidence controls, limitations and proposed evaluation |
 
 These are pitch targets, not confirmation of enrollment. Older notes mention Amazon practical AI, Photon and ChatOverflow; verify current award requirements and participation before preparing claims for them. Photon belongs to an earlier workflow excluded from the current pitch.
 
 ## Answers everyone should agree on
+
+**What is this data?** Imagine an online apartment tour, its property listing, and a detailed aerial view of the building. Matterport provides interior images and room measurements. CoStar provides property and listing records, including apartment counts and floor plans. Vexcel provides aerial imagery and exterior measurements. Introduce those roles before using the company names as shorthand with general judges.
 
 **What are you calculating?** The replacement cost of inventoried owner-owned interior fixtures, appliances and finishes. It is not the whole building's reconstruction cost, market value, an insurance quote or a promised payout.
 

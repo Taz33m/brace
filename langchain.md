@@ -1,6 +1,8 @@
 # Brace — LangChain sponsor pitch
 
-If an apartment burns, what would its owner have to pay to replace everything built into it? Brace turns an existing Matterport walkthrough into an itemized replacement-cost estimate, then uses CoStar’s floor plans and apartment counts to extend that estimate across the property.
+If an apartment burns, what would its owner have to pay to replace its built-in interior? Think of the online apartment tour you use before renting: you can look around the kitchen, bathroom and bedrooms. Matterport supplies those interior images and room measurements. CoStar, the real-estate information company behind Apartments.com, supplies property records such as floor plans and apartment counts. Vexcel supplies aerial imagery and exterior measurements for building exposure context.
+
+Brace turns the interior tour into an itemized replacement-cost estimate and uses the property records to extend it across similar homes in the community.
 
 LangChain Deep Agents powers our inspection team. A lead agent discovers the rooms and delegates each one to a reader with its own context. Readers inspect different viewpoints and record appliances, cabinets, and fixtures with visual evidence. Our tools reject records without a previously inspected view. The lead reconciles duplicate sightings, flags uncertainty, and writes inventory notes.
 

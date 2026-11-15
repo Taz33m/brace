@@ -2,6 +2,8 @@
 
 An apartment owner can have a polished virtual tour of a home and still lack an itemized estimate of what its built-in interior would cost to replace.
 
+Think of an online apartment tour: it shows the kitchen, bathroom and bedrooms before you visit. Our starting data pairs those interior images and measurements from Matterport with property records from CoStar, the company behind Apartments.com, and aerial imagery from Vexcel. The records tell us the apartment counts and floor plans; the aerial data adds building footprints and nearby vegetation. These are existing building records we can put to another use.
+
 **Brace turns that existing walkthrough into a priced inventory the owner can examine.** AI room inspectors identify fixtures and appliances, geometry supplies measurements, and researched prices feed a replacement-cost schedule. Property records extend the estimate across similar floor plans, with assumptions visible.
 
 The owner can move from the property total to the exact room, item and source behind a number, request a recheck, and export the evidence. That provides a starting point for replacement budgeting and conversations with estimators or insurance professionals.
