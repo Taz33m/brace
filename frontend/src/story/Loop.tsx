@@ -524,6 +524,9 @@ export function LoopGround({ replay = 0, onAftermath }: { replay?: number; onAft
         img.style.opacity = String(k < 0.2 ? 0 : 1);
       });
       if (wide.current) wide.current.style.opacity = String(span(p, 0, 0.008) * (1 - span(p, T.wide[1] + 0.006, T.wide[1] + 0.012)));
+      // The stage enters while the clouds are still whitening. Keep its dark
+      // caption shade out of that handoff; blend it in only over the aerial.
+      stage.current?.style.setProperty("--scene-shade", String(ease(span(p, 0.008, 0.025))));
       const shows = [
         window_(p, 0.008, 0.02, T.wide[1] - 0.012, T.wide[1]),
         window_(p, T.site[0] + 0.1, T.site[0] + 0.125, GATE + 0.004, GATE + 0.02),
