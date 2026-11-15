@@ -4,11 +4,10 @@
 
 ## Main flow
 
-**Plane → clouds → Los Angeles → community → home → wildfire → burned home → costs/PDFs → QR → cleanup/refurnishing.**
+**Home inventory → sourced replacement costs → property total → evidence/recovery papers → burned-room illustration → cleanup/refurnishing.**
 
 | Feature | What it does |
 |---|---|
-| Cinematic walkthrough | Scroll-driven flight, aerial descent, terrain, building selection and interior tour; immediate aftermath on return, without a pre-fire flash. |
 | Three data layers | Matterport: interiors/measurements. Vexcel: aerials/elevation/roofs/vegetation. CoStar / Apartments.com: property records/home counts/floor plans/asking rents. |
 | Spatial alignment | Fits the interior footprint under its aerial roof; distinguishes candidate associations from verified locations. |
 | Inventory agent | Room helpers inspect panoramas, identify owner-owned fixtures/appliances, merge duplicates, and retain uncertainties and exclusions. |
@@ -28,21 +27,16 @@
 | Room voice | Separate companion executes cleanup/furnishing; “look left/right/up/down” turns the view; “take me there” faces the object in its room. |
 | Phone controls | Drag, optional orientation permission and split-screen headset view. Microphone/motion need browser permission; physical handset verification remains. |
 
-## Additional workflows in the repository
+## Two terms clarified
 
-Separate from the main flow; configuration and prepared data may be required.
+**Recovery valuation — older backend capability, separate from the current cost schedule.** Screens comparable sales and accepts reviewed property values, repair costs and downtime assumptions. When the required inputs exist, it can calculate a conditional current value: **reviewed restored value − remaining repairs − disruption costs**. Missing inputs leave the value unavailable. It does not infer a market-value drop from the burned-room illustration. The current product's headline is **interior replacement cost**.
 
-- **Weather preparation:** Beryl/LA replays, live-feed support, portfolio screening, located plans, work orders and notices; deadline rules defer work beyond the crew cutoff.
-- **Crew coordination:** Allocates trades across plans; does not book contractors.
-- **Flood / 2.5D planner:** Hypothetical water levels; place barriers/shutters/equipment lifts/tree-removal proposals; compare views and edit costs/crew-hours. No water-flow simulation.
-- **Resident loop:** Household onboarding, private invitations, approved Photon iMessages, reports/help requests, owner review, assessment updates and follow-ups.
-- **Recovery valuation:** Comparable screening, repair/disruption assumptions, conditional valuation and agent-proposed tasks; code calculates financial amounts.
-- **Spatial tools:** Interior search, wayfinding, geolocation, reconstruction and reimagining. Optional Meshy integration is unconfigured; instant furniture uses a fixed 3D catalog.
+**Spatial tools — working with where things are.** The current experience uses room measurements, scan-to-roof alignment, and aerial elevation to connect the interior to the building. Additional modules can search descriptions of panorama contents, turn toward a matching object, and navigate connected viewpoints. “Reconstruction” uses existing Vexcel elevation and Matterport geometry; it does not generate Gaussian splats from photographs. Cleanup edits panorama imagery; the furniture is editable concept geometry from a fixed catalog. Optional Meshy generation is unconfigured.
 
 ## Access and boundaries
 
 Run `uv run python -m scripts.start`. Current desktop: **http://localhost:5184/**; API **8011**; HTTPS phone **5185**. Defaults: 5174 / 8001 / 5175.
 
-Routes: `/` · `#/schedule` · `#/restore/9519837/kitchen` · `#/flood` · `#/recovery` · `#/resident`.
+Routes: `/` · `#/schedule` · `#/restore/9519837/kitchen`.
 
-Replacement cost ≠ market value or insurance payout. One home does not verify every home; asking rents are not leases. Resident reports need verification. Generated damage/restoration and furniture placement are illustrative, not measured damage or safe-re-entry findings.
+Replacement cost ≠ market value or insurance payout. One home does not verify every home; asking rents are not leases. Generated damage/restoration and furniture placement are illustrative, not measured damage or safe-re-entry findings.
