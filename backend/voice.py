@@ -245,10 +245,22 @@ def schedule_instructions(schedule: dict) -> str:
         ("Rooms of the scanned home: " + ", ".join(r["name"] for r in unit["rooms"]) + ".") if unit else "",
         _decided(unit) if unit else "",
         "If the owner asks whether you are sure, name the doubts. If they ask you to check a room again, call look_again: the agent reads that room again, which takes about a minute, and you tell them what changed when it is back.",
+        _matched(unit) if unit else "",
         "If the owner says how much cover they carry for the fit-out, call check_cover with that amount. It compares the cover with the schedule under the usual coinsurance clause at 80 percent and drafts a note to their broker. Say what it returns and that the note is a draft; nothing is sent. This is arithmetic, not advice.",
         "Not counted: furniture and anything a tenant owns, the structure itself, ceilings, common areas.",
     ]
     return "\n".join(l for l in lines if l)
+
+
+def _matched(unit: dict) -> str:
+    """What the voice may do about a make or model, and the lines that already have a product matched to them."""
+    have = [f"{r['name']}, {l['what']}: closest is {' '.join(x for x in (m.get('make'), m.get('model')) if x)}; {len(m.get('candidates') or [])} lookalike product{'' if len(m.get('candidates') or []) == 1 else 's'} at {_spoken(m)} each "
+            f"({'the brand was read in the scan' if m.get('label') == 'Brand read from the scan' else 'closest match, no brand read'})"
+            for r in unit["rooms"] for l in r.get("items") or [] for m in [l.get("match")] if m]
+    return ("If the owner asks what make or model something is, or wants a more exact price for one appliance or fixture, call find_model with the room and the item. "
+            "It looks at the item in the scan and finds products sold today that look like it, which takes about a minute. "
+            "What comes back is the closest match by appearance, not an identification; say 'closest match', and say the brand was read only when the result says so. Its price leaves out delivery and fitting."
+            + (" Already matched, so answer these without the tool: " + " | ".join(have) + "." if have else " No line has a product matched to it yet."))
 
 
 def _decided(unit: dict) -> str:
@@ -279,6 +291,10 @@ def schedule_tools() -> list[dict]:
          "description": "Open the list of how the schedule is worked out and what is not counted, and return it."},
         {"type": "function", "name": "look_again", "parameters": text("room", "A room of the scanned home the camera stood in, such as Kitchen."),
          "description": "Have the agent read one room of the scan again, more carefully. Use when the owner doubts a count or asks to check. It takes about a minute; the result is told to you when it is back."},
+        {"type": "function", "name": "find_model",
+         "parameters": {"type": "object", "properties": {"room": {"type": "string", "description": "The room the item is in, such as Kitchen."},
+                                                         "item": {"type": "string", "description": "The line, such as Refrigerator or Range."}}, "required": ["room", "item"]},
+         "description": "Look at one appliance or fixture in the scan and find the products it most likely is, with a tighter price. Takes about a minute."},
         {"type": "function", "name": "check_cover",
          "parameters": {"type": "object", "properties": {"amount": {"type": "number", "description": "The cover the owner carries for the fit-out, in US dollars."}}, "required": ["amount"]},
          "description": "Compare the cover the owner says they carry for the fit-out with the schedule, and draft a note to their broker. Nothing is sent."},

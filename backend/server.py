@@ -593,6 +593,51 @@ def schedule_recheck(property_id: int, room: str) -> dict:
             "home_before": before["home"]["total"], "home_after": after["home"]["total"], "total_before": before["total"], "total_after": after["total"]}
 
 
+def _schedule_line(property_id: int, room: str, item: str) -> tuple[dict, dict, dict, dict]:
+    """One fit-out line of the scanned home, found by its room (name or id) and by what it is (the line's name or its kind)."""
+    from . import schedule
+    try:
+        sched = schedule.schedule(property_id)
+    except schedule.ScheduleError as e:
+        raise HTTPException(404, str(e))
+    unit = next((u for b in sched["buildings"] for u in b["units"]), None)
+    if not unit:
+        raise HTTPException(404, "no scanned home is on this schedule")
+    found = next((r for r in unit["rooms"] if r.get("room_id") and room.strip().lower() in (r["name"].lower(), r["room_id"])), None)
+    if not found:
+        raise HTTPException(404, "that room is not one the camera stood in")
+    line = next((l for l in found["items"] if l.get("key") and item.strip().lower() in (l["what"].lower(), l["key"].split(":", 1)[1])), None)
+    if not line:
+        raise HTTPException(404, "no such item was read from the scan in that room")
+    return sched, unit, found, line
+
+
+@app.post("/api/schedule/{property_id}/match")
+def schedule_match(property_id: int, room: str, item: str) -> dict:
+    """Look at one item in the scan and find the products it most likely is. A product is kept only when its page bears out its price; with none kept the match is null."""
+    from . import product_match, schedule
+    before, unit, found, line = _schedule_line(property_id, room, item)
+    try:
+        entry = product_match.match(property_id, unit["scan_id"], found["room_id"], line["key"].split(":", 1)[1])
+        after = schedule.schedule(property_id)
+    except (ValueError, schedule.ScheduleError) as e:
+        raise HTTPException(404, str(e))
+    return {"ok": True, "key": entry["key"], "match": product_match.for_schedule(entry), "statement": entry["statement"], "seconds": entry["seconds"],
+            "home_before": before["home"]["total"], "home_after": after["home"]["total"], "total_before": before["total"], "total_after": after["total"]}
+
+
+@app.get("/api/schedule/{property_id}/view.jpg")
+def schedule_view(property_id: int, room: str, item: str) -> Response:
+    """The picture one item was recorded in, cut round where it sits."""
+    from . import product_match
+    _, unit, found, line = _schedule_line(property_id, room, item)
+    try:
+        jpeg = product_match.view_jpeg(property_id, unit["scan_id"], found["room_id"], line["key"].split(":", 1)[1])
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+    return Response(jpeg, media_type="image/jpeg", headers={"Cache-Control": "max-age=300"})
+
+
 SCHEDULE_LIVE: dict[int, dict] = {}     # what the phone last opened on the schedule, for the big screen to follow
 
 
