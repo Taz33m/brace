@@ -111,8 +111,28 @@ export function ScheduleTree({ site, controller = false, inline = false, onRepla
     const told = (m: Match) => ({ label: m.label, make: m.make, model: m.model, name: m.name, price_each: dollars(m), product_pages: m.candidates.map((c) => c.store),
                                   seen_in_the_scan: m.seen, note: "A match by appearance, not an identification, unless a brand was read in the scan." });
     const run = (name: string, args: Record<string, unknown>) => {
-      const d = latest.current;
+      const d = review?.data ?? latest.current;
       if (!d) return { ok: false, say: "The schedule is still loading." };
+      if (name === "explain_report") {
+        const wanted = String(args.report ?? "current");
+        if (!["current", "before", "after"].includes(wanted)) return { ok: false, say: "Choose the before-fire evidence or after-fire recovery paper." };
+        const after = wanted === "current" ? (review?.aftermath ?? aftermath) : wanted === "after";
+        if (after && site !== 9519837) return { ok: false, say: "This property has a before-fire evidence paper, but no after-fire recovery paper has been prepared." };
+        const captured = review?.captured ?? new Date().toISOString();
+        const snapshot = review?.data ?? structuredClone(d);
+        setReview({ data: snapshot, captured, aftermath: after });
+        return { ok: true, title: after ? "After-fire recovery file" : "Interior replacement-cost schedule", captured,
+          purpose: after ? "Explain the hypothetical fire aftermath, the interior replacement allowance and the information needed to plan recovery." : "Explain the original interior inventory and the evidence behind the replacement-cost schedule.",
+          property: snapshot.property, total: snapshot.total, home: snapshot.home, floor_plans: snapshot.kinds_of_home,
+          asking_rent_exposure_per_month: snapshot.lost_rent_per_month, evidence_counts: snapshot.numbers,
+          assumptions: snapshot.assumptions, exclusions: snapshot.not_counted,
+          sources: { interior: "Matterport observations and measurements", housing: "CoStar / Apartments.com home counts, floor-plan mix and asking rents", exterior: "Vexcel aerial context; CAL FIRE zoning", prices: "The item-level source pages listed in the paper" },
+          aftermath: after ? { scenario: "All illustrated buildings affected; assumed total loss of the inventoried owner-owned interior scope.",
+            images: "AI-generated kitchen and bathroom illustrations, not observed damage. They do not change quantities or prices. The allowance is the same original schedule under the stated loss assumption.",
+            next_steps: ["On-site damage assessment and qualified re-entry clearance", "Confirm damaged items and salvage against the original inventory", "Obtain contractor labor, materials, debris-removal and smoke-remediation quotes", "Confirm unavailable units, leases and recovery duration; plan resident relocation and return"],
+            unknown: ["Actual damage extent", "Structural condition", "Remediation costs", "Actual lost rent", "Contractor schedule", "Insurance determination"] } : null,
+          note: "This is the captured paper, not a live valuation or a confirmed claim. Use open_room or explain_line for its detailed quantities and price evidence." };
+      }
       const scanned = d.buildings.find((b) => b.units.length);
       const findRoom = (words: string) => scanned?.units[0].rooms.find((r) => like(r.name, words)) ?? scanned?.units[0].rooms.find((r) => like(words, r.name));
       if (name === "open_building") {
@@ -168,9 +188,9 @@ export function ScheduleTree({ site, controller = false, inline = false, onRepla
       }
       return { ok: false, say: "That cannot be done on this screen." };
     };
-    conversation.setStage({ key: `schedule:${site}:${version}`, sessionUrl: `/api/schedule/${site}/voice`, notesUrl: `/api/schedule/${site}/voice/notes`,
-                            greeting: "Greet the owner in one short sentence and give the property's figure, saying it is an extrapolation from one scanned home.", run, nods: false, hint: "Ask what a room would cost to put back, or whether your cover is enough." });
-  }, [site, version]);
+    conversation.setStage({ key: `schedule:${site}:${version}:${review?.captured ?? "closed"}:${review?.aftermath ?? aftermath}`, sessionUrl: `/api/schedule/${site}/voice`, notesUrl: `/api/schedule/${site}/voice/notes`,
+                            greeting: "Call explain_report with report=current. Then introduce the paper in two short sentences: what it is for and what its headline figure represents. Do not read the whole paper aloud.", run, nods: false, hint: "Ask: ‘Explain this PDF,’ ‘Where does this number come from?’ or ‘What changes in the aftermath report?’" });
+  }, [site, version, review, aftermath]);
   useEffect(() => () => { conversation.setStage(null); conversation.stop(); }, []);
 
   // Two devices, one schedule. The phone tells the server what it has opened; the big screen follows.
@@ -235,10 +255,11 @@ export function ScheduleTree({ site, controller = false, inline = false, onRepla
   if (controller) {
     return (
       <div className="st ctl">
-        <ConversationPanel ready={voiceReady} />
+        {review && <ScheduleReview data={review.data} captured={review.captured} aftermath={review.aftermath} voiceReady={voiceReady} onClose={() => setReview(null)} />}
+        {!review && <ConversationPanel ready={voiceReady} />}
         <h1>{p.name}</h1>
         <strong>{range(data.total)}</strong>
-        <p>{pointed ? pointed.replace(":", ", ") : room ? room : open ? `Building ${open}` : how ? "How this is worked out" : "Ask about a building, a room or a line."}</p>
+        <p>{pointed ? pointed.replace(":", ", ") : room ? room : open ? `Building ${open}` : how ? "How this is worked out" : "Ask Brace to explain the evidence paper."}</p>
         <small>The big screen follows.</small>
       </div>
     );
@@ -251,7 +272,7 @@ export function ScheduleTree({ site, controller = false, inline = false, onRepla
 
   return (<>
     <div className={`st sc${inline ? " is-inline" : ""}`}>
-      {review && <ScheduleReview data={review.data} captured={review.captured} aftermath={review.aftermath} onClose={() => setReview(null)} />}
+      {review && <ScheduleReview data={review.data} captured={review.captured} aftermath={review.aftermath} voiceReady={voiceReady} onClose={() => setReview(null)} />}
       <div className="sc-map">
         <svg viewBox={`0 0 ${p.aerial.width} ${p.aerial.height}`} preserveAspectRatio="xMidYMid slice" role="group" aria-label="Property buildings">
           <image href={`/api/buildings/${site}/aerial.jpg`} width={p.aerial.width} height={p.aerial.height} />
@@ -293,7 +314,7 @@ export function ScheduleTree({ site, controller = false, inline = false, onRepla
 
       <div className="sc-tree">
         {!inline && <a className="st-home sc-home" href="#/">Brace</a>}
-        <ConversationPanel ready={voiceReady} compact />
+        {!review && <ConversationPanel ready={voiceReady} compact />}
         <header>
           <h1>{p.name}</h1>
           <p>If fire reaches it. {p.homes.toLocaleString("en-US")} homes.</p>

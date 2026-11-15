@@ -1,10 +1,11 @@
+import { ConversationPanel } from "../components/ConversationPanel";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Schedule } from "./ScheduleTree";
 import { reviewMoney, reviewQuestions, sourceLink } from "./schedule-review";
 import "./schedule-review.css";
 
-export function ScheduleReview({ data, captured, onClose, aftermath = false }: { data: Schedule; captured: string; onClose: () => void; aftermath?: boolean }) {
+export function ScheduleReview({ data, captured, onClose, aftermath = false, voiceReady = false }: { data: Schedule; captured: string; onClose: () => void; aftermath?: boolean; voiceReady?: boolean }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const document = useRef<HTMLElement>(null);
   const [status, setStatus] = useState("");
@@ -22,6 +23,7 @@ export function ScheduleReview({ data, captured, onClose, aftermath = false }: {
   }
   return createPortal(<dialog data-lenis-prevent ref={dialog} className="sr-dialog" aria-labelledby="sr-title" onCancel={onClose}>
     <nav className="sr-toolbar" aria-label="Review document actions"><button onClick={() => window.print()}>Print / Save PDF</button><button onClick={copy}>Copy document</button><span role="status">{status}</span><button onClick={onClose}>Close</button></nav>
+    <div className="sr-conversation"><ConversationPanel ready={voiceReady} compact /></div>
     <article ref={document} className="sr-document">
       <header><p>BRACE · OWNER REVIEW DOCUMENT</p><h1 id="sr-title">{aftermath ? "After-fire recovery file" : "Interior replacement-cost schedule"}</h1><h2>{data.property.name}</h2><p>{data.property.address}</p><p>Property {data.property.id} · Snapshot {captured} · Scan date: {data.property.scan_date ?? "unavailable"}</p></header>
       {aftermath && <section className="sr-aftermath">
