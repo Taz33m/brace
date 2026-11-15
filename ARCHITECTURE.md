@@ -1,6 +1,6 @@
 # Brace: architecture
 
-As built on Saturday 14 November 2026, 18:00. The product is in `PRD.md`; the two-minute loop is in
+As built on Saturday 14 November 2026, 19:30. The product is in `PRD.md`; the two-minute loop is in
 `DEMO_LOOP.md`. Anything not built yet is under "Not built yet" at the end and nowhere else.
 
 **What the system does:** it turns the leasing scan of one apartment home into a priced list of what the owner
@@ -41,7 +41,8 @@ flowchart LR
   API --> POV
 ```
 
-Models run only in the middle column, ahead of time. Nothing on a screen waits on a model.
+Models run only in the middle column, ahead of time. Nothing on a screen waits on a model, with one exception the
+owner asks for: "Look again" has the agent read one room a second time, which takes about a minute.
 
 ## Where each number comes from
 
@@ -73,9 +74,9 @@ location. What an owner has to replace is a rebuilding cost, which is why the it
 There is no trained classifier. The step that names things is a vision-language model working inside the
 inventory agent, held to a fixed list:
 
-1. **Name.** A reader looks at one panorama face at a time and may record only the 22 kinds in
+1. **Name.** A reader looks at one panorama face at a time and may record only the 23 kinds in
    `inventory_agent.KINDS` (refrigerator, base cabinet, toilet, ceiling fan and so on). Anything else, including
-   all furniture, is refused by the tool.
+   all furniture, is refused by the tool. What it saw and chose to leave out, it notes with a reason.
 2. **Count and place.** It records how many and where in the picture, which the tool turns into a direction from
    the standpoint, so the item can be pointed at later.
 3. **Price the kind.** The price research is given the kinds that were named and finds a stated installed price
@@ -91,18 +92,18 @@ Built on LangChain's `deepagents` (`create_deep_agent`).
 
 ```mermaid
 flowchart TD
-  LEAD[Lead<br/>tools: rooms, recorded, merge, write_file, task]
+  LEAD[Lead<br/>tools: rooms, recorded, merge, flag_doubt, write_file, task]
   R1[Reader: kitchen]
   R2[Reader: bathroom]
   R3[Reader: each other room]
   LEAD -- task --> R1
   LEAD -- task --> R2
   LEAD -- task --> R3
-  R1 -- "standpoints, look, record_item" --> SCAN[(the scan's panoramas)]
+  R1 -- "standpoints, look, record_item, skip" --> SCAN[(the scan's panoramas)]
   R2 --> SCAN
   R3 --> SCAN
   R1 & R2 & R3 -- a short report --> LEAD
-  LEAD --> OUT[(data/cache/inventory/SCAN.json<br/>items, merges, notes, events)]
+  LEAD --> OUT[(data/cache/inventory/SCAN.json<br/>items, merges, left out, doubts, events)]
 ```
 
 - The lead lists the rooms the camera stood in and sends them all out at once.
@@ -116,7 +117,31 @@ Held in code, not in the prompt:
 - `record_item` refuses a view nobody has looked at (no sighting, no item).
 - `record_item` refuses any kind not in `KINDS`.
 - `merge` refuses to merge two different kinds.
+- `skip` takes one of four reasons and nothing else: furniture or a tenant's own, belongs to another room, could
+  not see it well enough, already recorded from another standpoint.
 - No tool measures, prices or totals.
+
+## What the agent decides, and what the owner can ask it to do
+
+A list of things with prices is a lookup. What makes this an agent is the judgement around the list, and that
+judgement is saved with the run and shown under each room on `#/schedule` and beside the room in the loop.
+
+| Decision | Tool | On the lead home |
+| --- | --- | --- |
+| This is not the owner's, or is another room's, or cannot be seen well enough: leave it out and say why | `skip` (reader) | 15 left out |
+| These two records are the same thing seen from two rooms: keep one | `merge` (lead) | 2 merged |
+| This count may be wrong, and here is why | `flag_doubt` (lead) | 11 doubts |
+
+Two things the owner can ask for, by a button or by voice:
+
+- **Look again** (`POST /api/schedule/{id}/recheck?room=`, `inventory_agent.recheck`). The agent reads one room a
+  second time with its own doubts in front of it. That room's lines are replaced by what it finds, the schedule is
+  rebuilt and the screen says what changed. Run on the lead home's kitchen: it recorded the pantry cabinet it had
+  left out and took the base cabinets from 2 to 1.
+- **Check my cover** (`POST /api/schedule/{id}/cover?amount=`, `backend/cover.py`). The cover the owner carries
+  for the fit-out is compared with the schedule under the usual coinsurance clause at 80%, with a worked example
+  of what a claim would pay, and a note to the broker is drafted on the screen. Nothing is sent. It is arithmetic,
+  not advice, and it compares fit-out with fit-out: a figure for the whole building would flatter the owner.
 
 ## The schedule
 
@@ -158,16 +183,18 @@ flowchart LR
   PHONE["Phone: #/ctl<br/>microphone, the voice"] -- "what it opened" --> LIVE[("POST /api/schedule/{id}/live")]
   LIVE -- "polled every 0.6 s" --> SCREEN["Big screen: #/schedule<br/>the tree"]
   PHONE <-- "speech, tool calls" --> RT[Realtime voice session]
-  SERVER["POST /api/schedule/{id}/voice<br/>short-lived key, the brief, four tools"] --> PHONE
+  SERVER["POST /api/schedule/{id}/voice<br/>short-lived key, the brief, six tools"] --> PHONE
 ```
 
 - The voice layer already existed for the preparation product (`frontend/src/voice.ts`, `conversation.ts`,
-  `backend/voice.py`). The schedule registers itself with it as a stage: a brief and four tools.
+  `backend/voice.py`). The schedule registers itself with it as a stage: a brief and six tools.
 - The brief (`voice.schedule_instructions`) is built from the schedule and nothing else: the total, how it was
-  multiplied, the ranking, the rooms. The voice is told to say only that and what a tool returns.
+  multiplied, the ranking, the rooms, what the agent left out and what it is unsure of. The voice is told to say
+  only that and what a tool returns.
 - The tools run in the browser against the schedule already loaded: `open_building`, `open_room`,
-  `explain_line`, `show_working`. Each moves the screen and returns the figures it is now showing. None changes a
-  figure, sends anything or books anything.
+  `explain_line`, `show_working`. Each moves the screen and returns the figures it is now showing. Two more ask
+  the server to act: `look_again` (the second look at a room, the only thing that can change a figure) and
+  `check_cover`. None sends anything or books anything.
 - `#/ctl` is the same schedule on a phone. It shows the name, the figure and the conversation; whatever a tool
   opens is posted to the server, and `#/schedule` on the big screen follows. The "Phone" button on the big screen
   shows a QR code for it. The phone needs the HTTPS server on the local network for its microphone.
@@ -179,6 +206,7 @@ flowchart LR
 backend/
   inventory_agent.py   the deep agent: lead, readers, tools, rules                     (new, 14 Nov)
   schedule.py          the tree and its arithmetic                                      (new, 14 Nov)
+  cover.py             the owner's cover against the schedule; the draft note           (new, 14 Nov)
   flood_agent.py       price research with web search and page fetch; confirm()
   insurer_file.py      quantities from a scan; the one-home schedule under a flood depth
   openings.py          Matterport's wall and opening measurements
@@ -192,11 +220,12 @@ scripts/
   flood_research.py    price the building work
 frontend/src/story/
   ScheduleTree.tsx     #/schedule: the tree
-  Home.tsx             / : the scroll-played 2.5D site
+  Loop.tsx             / : the loop, from Los Angeles down to the items in one home
+  Home.tsx             / : the window and the cloud above the loop
   InsurerFile.tsx      #/file: one home's schedule under a flood depth
   InsidePov.tsx        #/inside, #/inside/vr: the room from where a person stands
 tests/
-  test_inventory_schedule.py, test_insurer_file.py, test_flood_agent.py
+  test_inventory_schedule.py, test_inventory_decisions.py, test_cover.py, test_insurer_file.py, test_flood_agent.py
 ```
 
 Saved runs, never committed: `data/cache/inventory/<scan>.json` (the inventory),
@@ -206,23 +235,22 @@ Saved runs, never committed: `data/cache/inventory/<scan>.json` (the inventory),
 
 ```
 python -m scripts.flood_research --prices <property> <scan>   # building work, once
-python -m scripts.inventory <property> <scan>                  # read the scan (about 80 seconds for one home)
-python -m scripts.inventory <property> <scan> --prices         # price what it named (about 3 minutes)
+python -m scripts.inventory <property> <scan>                  # read the scan (about 100 seconds for one home)
+python -m scripts.inventory <property> <scan> --prices         # price what has no price yet (about 3 minutes from nothing)
 python -m scripts.start                                         # API and web servers
 ```
 
 Then `http://localhost:5184/#/schedule` (the lead property) or `#/schedule/<property>`.
 
-The lead home's run: 6 rooms, 60 views, 32 items named, 20 kinds of line priced and confirmed; 2 merges, 15 things
-left out with a reason, 11 doubts flagged.
+The lead home's run: 6 rooms, 60 views, 32 items named, 21 kinds of line priced and confirmed; 2 merges, 15 things
+left out with a reason, 11 doubts flagged; the kitchen read a second time.
 
 ## Not built yet
 
 | What | Who | Note |
 | --- | --- | --- |
 | Exposure rank from brush, trees over the roof and fire zone | Ryan | Today the rank is vegetation at the walls only, and `in_fire_zone` is null |
-| The loop on the home page for Los Angeles | Tazeem | `/` still plays the Houston flood |
-| Tags drawn on the panorama from each item's direction | Jimmy | The directions are in the schedule (`at`) |
+| Every community ranked (the loop's portfolio beat) | Ryan | One community is read; the loop ends on the property figure |
 | The run's own cost | Ryan | `numbers.model_cost_usd` is null |
 | A grade for each item (basic, mid, high) to narrow its price range | nobody yet | Would cut the width of the total |
 | More than one scanned home per property | nobody yet | The lead property has one scan |

@@ -41,7 +41,7 @@ SKIP_REASONS = ("furniture or a tenant's own", "belongs to another room", "could
 # What an owner's building cover takes in inside a home, and nothing else. Each is counted, one line per kind.
 KINDS = {
     "refrigerator": "Refrigerator", "range": "Range or stove with oven", "range hood": "Range hood", "built-in microwave": "Built-in microwave",
-    "dishwasher": "Dishwasher", "kitchen sink": "Kitchen sink with faucet", "base cabinet": "Base cabinet", "wall cabinet": "Wall cabinet", "tall cabinet": "Tall pantry or linen cabinet",
+    "dishwasher": "Dishwasher", "kitchen sink": "Kitchen sink with faucet", "base cabinet": "Base cabinet", "wall cabinet": "Wall cabinet", "tall cabinet": "Tall cabinet",
     "kitchen countertop": "Kitchen countertop, one run", "toilet": "Toilet", "bathtub or shower": "Bathtub or shower", "bathroom vanity": "Bathroom vanity with sink",
     "bathroom mirror": "Bathroom mirror or medicine cabinet", "light fixture": "Ceiling or wall light fixture", "ceiling fan": "Ceiling fan",
     "window blind": "Window blind", "closet door": "Closet door, sliding or folding", "air conditioner": "Wall or window air conditioner",

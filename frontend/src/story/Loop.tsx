@@ -25,10 +25,11 @@ interface Schedule {
   kinds_of_home: { name: string; homes: number; per_home: { low: number | null; high: number | null }; low: number | null; high: number | null; scanned: boolean }[];
   lost_rent_per_month: { low: number; high: number } | null;
   numbers: { rooms_read: number; views_looked_at: number; items_named: number; prices_confirmed: number };
-  buildings: { id: string; exposure_rank: number; brush_within_5ft_percent: number | null; polygon: [number, number][]; units: { scan_id: string; rooms: { name: string; items: Line[] }[] }[] }[];
+  buildings: { id: string; exposure_rank: number; brush_within_5ft_percent: number | null; polygon: [number, number][]; units: { scan_id: string; decisions?: { left_out: number; merged: number; doubts: number };
+                                                                                              rooms: { name: string; items: Line[]; left_out?: { saw: string; why: string }[] }[] }[] }[];
 }
 interface Descent { levels: { level: number; url: string }[] }
-interface Stand { scan: string; room: string; sweep: string; heading: number; items: (Line & { at: At })[]; from: number; to: number }
+interface Stand { scan: string; room: string; sweep: string; heading: number; items: (Line & { at: At })[]; from: number; to: number; left: { saw: string; why: string } | null }
 
 const short = (n: number) => (n >= 1e6 ? `$${(n / 1e6).toFixed(1)}M` : n >= 1e4 ? `$${Math.round(n / 1e3)}K` : `$${Math.round(n).toLocaleString("en-US")}`);
 const range = (m: { low: number | null; high: number | null }) => (m.low == null || m.high == null ? "no price confirmed" : m.low === m.high ? short(m.low) : `${short(m.low)} to ${short(m.high)}`);
@@ -90,6 +91,7 @@ export function LoopGround() {
     return () => trigger.kill();
   }, []);
 
+  const decided = sched?.buildings.find((b) => b.units.length)?.units[0].decisions ?? null;
   // The two standpoints that saw the most, in the order the view visits them, each with its share of the inside beat.
   const stands = useMemo<Stand[]>(() => {
     const unit = sched?.buildings.find((b) => b.units.length)?.units[0];
@@ -97,7 +99,10 @@ export function LoopGround() {
     const by = new Map<string, Stand>();
     for (const r of unit.rooms) for (const l of r.items) {
       if (!l.at || l.at.heading_deg == null) continue;
-      const s = by.get(l.at.sweep_id) ?? { scan: unit.scan_id, room: r.name, sweep: l.at.sweep_id, heading: l.at.heading_deg, items: [], from: 0, to: 0 };
+      // One thing the agent saw in this room and chose to leave out: its own judgement first, a thing that is another room's last.
+      const out = r.left_out ?? [];
+      const s = by.get(l.at.sweep_id) ?? { scan: unit.scan_id, room: r.name, sweep: l.at.sweep_id, heading: l.at.heading_deg, items: [], from: 0, to: 0,
+                                           left: out.find((x) => x.why !== "belongs to another room") ?? out[0] ?? null };
       s.items.push(l as Line & { at: At });
       by.set(l.at.sweep_id, s);
     }
@@ -312,7 +317,8 @@ export function LoopGround() {
       if (seen !== shown && list.current) {
         shown = seen;
         let nth = 0;      // a room's name comes on with its first line
-        [...list.current.children].forEach((li) => { const on = li.classList.contains("is-room") ? nth < seen : nth++ < seen; li.classList.toggle("is-on", on); });
+        // What was left out comes on once everything in its room has been reached.
+        [...list.current.children].forEach((li) => { const on = li.classList.contains("is-room") ? nth < seen : li.classList.contains("is-out") ? nth > 0 && nth <= seen : nth++ < seen; li.classList.toggle("is-on", on); });
         const got = lines.slice(0, seen).filter((l) => l.low != null);
         const hundreds = (v: number) => `$${(Math.round(v / 100) * 100).toLocaleString("en-US")}`;      // the tally in one style all the way up
         if (sub.current) sub.current.textContent = got.length ? `${hundreds(got.reduce((nn, l) => nn + (l.low ?? 0), 0))} to ${hundreds(got.reduce((nn, l) => nn + (l.high ?? 0), 0))}` : "";
@@ -379,9 +385,10 @@ export function LoopGround() {
           <strong ref={sub} />
           <ol ref={list}>
             {stands.flatMap((s) => [<li key={s.sweep} className="is-room">{s.room}</li>,
-              ...s.items.map((l, i) => <li key={`${s.sweep}:${i}`}><b>{l.quantity > 1 ? `${l.quantity} x ` : ""}{l.what}</b><i>{range(l)}</i></li>)])}
+              ...s.items.map((l, i) => <li key={`${s.sweep}:${i}`}><b>{l.quantity > 1 ? `${l.quantity} x ` : ""}{l.what}</b><i>{range(l)}</i></li>),
+              ...(s.left ? [<li key={`${s.sweep}:out`} className="is-out"><b>{s.left.saw.replace(/\s*\(.*\)$/, "")}</b><i>left out: {s.left.why.replace("furniture or a tenant's own", "not the owner's")}</i></li>] : [])])}
           </ol>
-          <small>Named by an agent looking at the scan. Priced from a page it opened.</small>
+          <small>{decided ? `The agent named these from the scan. It left ${decided.left_out} things out and is unsure of ${decided.doubts} counts. Each price is from a page it opened.` : "Named by an agent looking at the scan. Priced from a page it opened."}</small>
         </div>
         {sched && (
           <div ref={(n) => { cap.current[4] = n; }} className="lp-tree">

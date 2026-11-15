@@ -272,6 +272,7 @@ export function ScheduleTree({ site, controller = false, inline = false }: { sit
                             {r.doubts.map((x) => <p key={x.id} className="is-doubt"><b>Unsure</b>{x.doubt}</p>)}
                             {r.left_out.length > 0 && <p><b>Left out</b>{r.left_out.map((x) => `${x.saw} (${x.why})`).join("; ")}</p>}
                             {again?.room === r.name && again.state === "done" && <p className="is-new"><b>Looked again</b>{again.changed.length ? again.changed.join(". ") : "Nothing changed"}.{again.before && again.after ? ` The home: ${range(again.before)} before, ${range(again.after)} now.` : ""}</p>}
+                            {again?.room !== r.name && (() => { const c = [...unit.rechecks].reverse().find((x) => x.room_name === r.name); return c ? <p className="is-new"><b>Looked again</b>{c.changed.length ? c.changed.join(". ") : "Nothing changed"}.</p> : null; })()}
                             {again?.room === r.name && again.state === "failed" && <p><b>Looked again</b>The second look could not be finished. Nothing was changed.</p>}
                             {r.room_id && <button type="button" disabled={again?.state === "looking"} onClick={() => lookAgain(r.name)}>{again?.room === r.name && again.state === "looking" ? "Reading the room again" : "Look again"}</button>}
                           </div>
