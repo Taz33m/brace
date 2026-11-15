@@ -243,9 +243,25 @@ def schedule_instructions(schedule: dict) -> str:
         "Buildings are ranked by how much of their walls has vegetation within 5 feet, from Vexcel's aerials. It is a ranking, not a chance of fire. The first five: "
         + "; ".join(f"building {b['id']}, rank {b['exposure_rank']}, {round(b['brush_within_5ft_percent'] or 0)} percent of walls, {b['homes_assumed']} homes" for b in schedule["buildings"][:5]) + ".",
         ("Rooms of the scanned home: " + ", ".join(r["name"] for r in unit["rooms"]) + ".") if unit else "",
+        _decided(unit) if unit else "",
+        "If the owner asks whether you are sure, name the doubts. If they ask you to check a room again, call look_again: the agent reads that room again, which takes about a minute, and you tell them what changed when it is back.",
+        "If the owner says how much cover they carry for the fit-out, call check_cover with that amount. It compares the cover with the schedule under the usual coinsurance clause at 80 percent and drafts a note to their broker. Say what it returns and that the note is a draft; nothing is sent. This is arithmetic, not advice.",
         "Not counted: furniture and anything a tenant owns, the structure itself, ceilings, common areas.",
     ]
     return "\n".join(l for l in lines if l)
+
+
+def _decided(unit: dict) -> str:
+    """What the agent decided when it read the home, beyond its list: what it left out and what it is unsure of."""
+    out = [f"{r['name']}: " + "; ".join(f"{x['saw']} ({x['why']})" for x in r["left_out"][:4]) for r in unit["rooms"] if r.get("left_out")]
+    unsure = [f"{r['name']}: {d['doubt']}" for r in unit["rooms"] for d in r.get("doubts") or []]
+    parts = []
+    if out:
+        parts.append("Things the agent saw and left out of the schedule, with its reason: " + " | ".join(out) + ".")
+    parts.append(("What the agent is still unsure of: " + " | ".join(unsure) + ".") if unsure else "The agent flagged no doubt about this home.")
+    for c in (unit.get("rechecks") or [])[-3:]:
+        parts.append(f"A second look at {c.get('room_name')} found: " + ("; ".join(c.get("changed") or []) or "nothing changed") + ".")
+    return " ".join(parts)
 
 
 def schedule_tools() -> list[dict]:
@@ -261,6 +277,11 @@ def schedule_tools() -> list[dict]:
          "description": "Point at one line on the screen and return where its quantity and its price came from."},
         {"type": "function", "name": "show_working", "parameters": {"type": "object", "properties": {}},
          "description": "Open the list of how the schedule is worked out and what is not counted, and return it."},
+        {"type": "function", "name": "look_again", "parameters": text("room", "A room of the scanned home the camera stood in, such as Kitchen."),
+         "description": "Have the agent read one room of the scan again, more carefully. Use when the owner doubts a count or asks to check. It takes about a minute; the result is told to you when it is back."},
+        {"type": "function", "name": "check_cover",
+         "parameters": {"type": "object", "properties": {"amount": {"type": "number", "description": "The cover the owner carries for the fit-out, in US dollars."}}, "required": ["amount"]},
+         "description": "Compare the cover the owner says they carry for the fit-out with the schedule, and draft a note to their broker. Nothing is sent."},
     ]
 
 

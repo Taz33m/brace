@@ -213,7 +213,8 @@ python -m scripts.start                                         # API and web se
 
 Then `http://localhost:5184/#/schedule` (the lead property) or `#/schedule/<property>`.
 
-The lead home's run: 6 rooms, 60 views, 34 items named, 20 kinds of line priced and confirmed.
+The lead home's run: 6 rooms, 60 views, 32 items named, 20 kinds of line priced and confirmed; 2 merges, 15 things
+left out with a reason, 11 doubts flagged.
 
 ## Not built yet
 

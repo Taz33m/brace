@@ -559,6 +559,40 @@ def schedule_tree(property_id: int, scan: str | None = None) -> dict:
         raise HTTPException(404, str(e))
 
 
+@app.post("/api/schedule/{property_id}/cover")
+def schedule_cover(property_id: int, amount: float = Query(..., gt=0), share: float = Query(0.8, gt=0, le=1)) -> dict:
+    """Check the cover an owner carries for the fit-out against the schedule, and draft the note to their broker. Nothing is sent."""
+    from . import cover, schedule
+    try:
+        sched = schedule.schedule(property_id)
+        result = cover.check(sched["total"], amount, share)
+    except schedule.ScheduleError as e:
+        raise HTTPException(404, str(e))
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    return {"check": result, "note": cover.note(sched, result)}
+
+
+@app.post("/api/schedule/{property_id}/recheck")
+def schedule_recheck(property_id: int, room: str) -> dict:
+    """Have the agent take a second look at one room of the scanned home. It reads the room again and the schedule is rebuilt from what it finds."""
+    from . import inventory_agent, schedule
+    try:
+        before = schedule.schedule(property_id)
+        unit = next(u for b in before["buildings"] for u in b["units"])
+        found = next((r for r in unit["rooms"] if r.get("room_id") and room.strip().lower() in (r["name"].lower(), r["room_id"])), None)
+        if not found:
+            raise HTTPException(404, "that room is not one the camera stood in")
+        entry = inventory_agent.recheck(property_id, unit["scan_id"], found["room_id"])
+        after = schedule.schedule(property_id)
+    except schedule.ScheduleError as e:
+        raise HTTPException(404, str(e))
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+    return {"room": found["name"], "stop": entry.get("stop"), "changed": entry.get("changed") or [], "statement": entry.get("statement"), "seconds": entry.get("seconds"),
+            "home_before": before["home"]["total"], "home_after": after["home"]["total"], "total_before": before["total"], "total_after": after["total"]}
+
+
 SCHEDULE_LIVE: dict[int, dict] = {}     # what the phone last opened on the schedule, for the big screen to follow
 
 

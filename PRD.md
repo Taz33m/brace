@@ -123,8 +123,9 @@ The LangChain track requires a deep agent used in a useful way. Ours is the inve
 - **Prices are a second agent's run.** For each kind of item the inventory named, the price research searches the
   web, opens the page, and keeps a price only when the page confirms it. It runs after the inventory, on its list.
 
-Built and run on the lead home on 14 November: 6 rooms, 60 views looked at, 34 items named in 79 seconds; 20 kinds
-of line priced, every one confirmed against its page.
+Built and run on the lead home on 14 November: 6 rooms, 60 views looked at, 32 items named in 99 seconds; 20 kinds
+of line priced, every one confirmed against its page. In that run the agent merged 2 things it had seen twice, noted 15
+things it saw and left out with a reason for each, and flagged 11 doubts about its own counts.
 
 Rules, enforced in code and not left to the prompt:
 
