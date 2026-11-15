@@ -20,7 +20,7 @@ import json
 import math
 import re
 
-from . import exposure, flood, insurer_file, inventory_agent, matterport, openings, portfolio
+from . import exposure, flood, insurer_file, inventory_agent, matterport, openings, portfolio, run_cost
 from .config import CACHE_DIR
 
 PRICES = CACHE_DIR / "inventory" / "prices.json"
@@ -203,6 +203,11 @@ def schedule(property_id: int, scan_id: str | None = None) -> dict:
         price_run = json.loads(PRICES.read_text())
     except (OSError, ValueError):
         price_run = {}
+    try:
+        work_run = json.loads(insurer_file.PRICES.read_text())
+    except (OSError, ValueError):
+        work_run = {}
+    cost = run_cost.total([inventory_agent.saved(scan_id), price_run, work_run])       # the reading of the scan, and the two price runs
     used = {l["what"] for room in unit["rooms"] for l in room["items"] if l["low"] is not None}
     confirmed = len(used)      # the kinds of line on this schedule that carry a confirmed price
     seconds = (unit.get("seconds") or 0) + (price_run.get("seconds") or 0)
@@ -217,7 +222,7 @@ def schedule(property_id: int, scan_id: str | None = None) -> dict:
                                  "how": "; ".join(f"{k['homes']} x ${k['rent_low']:,.0f}" + (f" to ${k['rent_high']:,.0f}" if k["rent_high"] != k["rent_low"] else "") for k in rented) + " a month, asking rents"}
                                 if rented else None),
         "numbers": {"scans_read": 1, "rooms_read": unit["numbers"]["rooms_read"], "views_looked_at": unit["numbers"]["views_looked_at"], "items_named": unit["numbers"]["items_named"],
-                    "prices_confirmed": confirmed, "minutes": round(seconds / 60, 1) if seconds else None, "model_cost_usd": None},
+                    "prices_confirmed": confirmed, "minutes": round(seconds / 60, 1) if seconds else None, "model_cost_usd": cost, "cost_how": run_cost.HOW},
         "buildings": buildings,
         "exposure": ranking,
         "assumptions": [

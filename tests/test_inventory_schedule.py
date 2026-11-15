@@ -118,6 +118,25 @@ def test_a_property_exposure_cannot_read_keeps_the_order_by_vegetation_and_leave
     assert [b["id"] for b in s["buildings"]] == ["B", "A"] and all(b["in_fire_zone"] is None and b["fire_zone"] is None for b in s["buildings"])
 
 
+def test_a_run_counts_every_model_call_the_readers_included_and_falls_back_to_the_leads_own_messages():
+    class M:
+        def __init__(self, u): self.usage_metadata = u
+    lead_only = [M({"input_tokens": 10, "output_tokens": 2}), M(None), M({"input_tokens": 5, "output_tokens": 1})]
+    assert inventory_agent.tokens({}, lead_only) == {"input_tokens": 15, "output_tokens": 3}                                   # nothing was counted on the way: the lead's messages are all there is
+    every_call = {"claude-opus-5-5": {"input_tokens": 900, "output_tokens": 40, "total_tokens": 940}, "another": {"input_tokens": 100, "output_tokens": 10}}
+    assert inventory_agent.tokens(every_call, lead_only) == {"input_tokens": 1000, "output_tokens": 50}                        # lead and readers together
+
+
+def test_the_schedule_says_what_its_runs_cost_from_their_own_tokens(hill_court, tmp_path):
+    assert schedule.schedule(7)["numbers"]["model_cost_usd"] is None                                                           # no run recorded its tokens: not known, and not zero
+    inv = json.loads((tmp_path / "inv" / "u1.json").read_text())
+    (tmp_path / "inv" / "u1.json").write_text(json.dumps({**inv, "model": "claude-opus-5-5", "usage": {"input_tokens": 1_000_000, "output_tokens": 0}}))
+    run = json.loads((tmp_path / "prices.json").read_text())
+    (tmp_path / "prices.json").write_text(json.dumps({**run, "model": "claude-opus-5-5", "usage": {"input_tokens": 0, "output_tokens": 100_000}}))
+    n = schedule.schedule(7)["numbers"]
+    assert n["model_cost_usd"] == 6.0 and "web search fees are not counted" in n["cost_how"]
+
+
 def test_a_scan_nobody_has_read_has_no_schedule(run):
     with pytest.raises(schedule.ScheduleError):
         schedule.home(7, "u1")

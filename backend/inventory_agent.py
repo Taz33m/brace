@@ -224,24 +224,31 @@ def saved(scan_id: str) -> dict | None:
         return None
 
 
+def tokens(counted: dict, messages: list) -> dict:
+    """The tokens a run used. `counted` is what was counted at every model call, lead and readers alike, by model;
+    when nothing was counted on the way, the lead's own messages are all there is to add up."""
+    rows = list(counted.values()) if counted else [getattr(m, "usage_metadata", None) or {} for m in messages]
+    return {k: sum(r.get(k, 0) or 0 for r in rows) for k in ("input_tokens", "output_tokens")}
+
+
 def run_inventory(property_id: int, scan_id: str, only: list[str] | None = None, model: Any = None, save: bool = True) -> dict:
     """Read one scan and save what the owner would have to replace in it."""
     run = InventoryRun(property_id, scan_id, only)
     agent = build(run, model)
     stop, statement, files, usage = "finished", "", {}, {"input_tokens": 0, "output_tokens": 0}
+    from langchain_core.callbacks import UsageMetadataCallbackHandler
+    counter = UsageMetadataCallbackHandler()       # hears every model call, the readers' as well as the lead's
     try:
         out = agent.invoke({"messages": [{"role": "user", "content": f"Make the inventory of this home: {run.scan.get('name')}. It has {len(run.rooms)} rooms the camera stood in."}]},
-                           config={"recursion_limit": MAX_STEPS})
+                           config={"recursion_limit": MAX_STEPS, "callbacks": [counter]})
         statement = next((_text(m.content) for m in reversed(out["messages"]) if getattr(m, "type", "") == "ai" and _text(m.content)), "")
         for path, data in (out.get("files") or {}).items():
             content = data.get("content") if isinstance(data, dict) else data
             files[path] = "\n".join(content) if isinstance(content, list) else str(content or "")
-        for m in out["messages"]:
-            meta = getattr(m, "usage_metadata", None) or {}
-            for k in usage:
-                usage[k] += meta.get(k, 0) or 0
+        usage = tokens(counter.usage_metadata, out["messages"])
     except Exception as e:      # a failed run is recorded as failed, with what it had recorded so far
         stop, statement = "error", f"The inventory stopped: {e}"
+        usage = tokens(counter.usage_metadata, [])
     record = run.record(statement, files, usage, stop)
     if save and stop == "finished" and record["items"]:
         OUT.mkdir(parents=True, exist_ok=True)
