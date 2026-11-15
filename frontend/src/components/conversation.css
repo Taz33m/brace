@@ -35,15 +35,16 @@
 
 /* The name and the buttons share the top row; the status has the row below to itself, so a longer line fits. */
 .talk header {
-  display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; align-items: center; column-gap: 10px; row-gap: 1px;
+  display: grid; grid-template-columns: 30px auto minmax(0, 1fr); align-items: center; column-gap: 10px; row-gap: 1px;
   padding: 10px 12px 9px 14px; border-bottom: 0.5px solid rgba(60, 60, 67, 0.14);
 }
 .talk header .talk-orb { grid-row: 1 / span 2; }
 .talk-name-of { font-size: 14px; font-weight: 600; letter-spacing: -0.01em; }
-.talk-acts { display: flex; align-items: center; gap: 6px; }
+/* The buttons take what the name leaves and keep to the right; if there are too many for one row they wrap, not spill. */
+.talk-acts { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 4px 5px; }
 .talk-status { grid-column: 2 / -1; font-size: 12px; line-height: 1.25; color: var(--talk-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .talk-quiet {
-  padding: 5px 11px; border: 0; border-radius: 999px;
+  padding: 5px 9px; border: 0; border-radius: 999px; white-space: nowrap;
   font: 500 12px/1 inherit; font-family: inherit; color: var(--talk-ink);
   background: rgba(120, 120, 128, 0.14); cursor: pointer;
 }
@@ -93,6 +94,16 @@
 .talk-line.you .talk-name::before { background: var(--talk-you); }
 .talk-hint { font-size: 14px; line-height: 1.4; color: var(--talk-soft); }
 
+/* Hold to talk on a phone: one round button, big enough for a thumb, that turns blue while it is held. */
+.talk-hold {
+  align-self: center; flex: none; width: 92px; height: 92px; margin: 6px 0 4px; padding: 0 10px; border: 0; border-radius: 50%;
+  font-family: inherit; font-size: 12px; font-weight: 500; line-height: 1.2; color: var(--talk-ink); background: rgba(120, 120, 128, 0.14);
+  cursor: pointer; touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent;
+  transition: transform 120ms ease, background 120ms ease;
+}
+.talk-hold[aria-pressed="true"] { color: #fff; background: var(--talk-you); transform: scale(1.06); }
+.talk-hold:disabled { color: var(--talk-soft); cursor: default; }
+
 .talk-foot { margin: 0; padding: 6px 16px 12px; font-size: 11.5px; color: rgba(60, 60, 67, 0.5); }
 .talk-type { padding: 6px 12px 12px; }
 .talk-type input {
@@ -102,7 +113,7 @@
 }
 .talk-type input:focus { background: rgba(120, 120, 128, 0.2); box-shadow: 0 0 0 3px rgba(10, 108, 255, 0.28); }
 
-@media (prefers-reduced-motion: reduce) { .talk-orb i { animation: none !important; } .talk-start { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .talk-orb i { animation: none !important; } .talk-start, .talk-hold { transition: none; } }
 
 /* Compact: who is speaking and the sentence being said, nothing more. The history is one press away. */
 .talk-compact .talk-lines { min-height: 0; padding-top: 10px; -webkit-mask-image: none; mask-image: none; }

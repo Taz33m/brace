@@ -169,7 +169,7 @@ export function ScheduleTree({ site, controller = false, inline = false }: { sit
       return { ok: false, say: "That cannot be done on this screen." };
     };
     conversation.setStage({ key: `schedule:${site}:${version}`, sessionUrl: `/api/schedule/${site}/voice`, notesUrl: `/api/schedule/${site}/voice/notes`,
-                            greeting: "Greet the owner in one short sentence and give the property's figure, saying it is an extrapolation from one scanned home.", run });
+                            greeting: "Greet the owner in one short sentence and give the property's figure, saying it is an extrapolation from one scanned home.", run, nods: false, hint: "Ask what a room would cost to put back, or whether your cover is enough." });
   }, [site, version]);
   useEffect(() => () => { conversation.setStage(null); conversation.stop(); }, []);
 
@@ -316,7 +316,7 @@ export function ScheduleTree({ site, controller = false, inline = false }: { sit
                 </button>
                 {b.id === open && unit && (
                   <div className="sc-home-rows">
-                    <p>{unit.name}. Scanned by Matterport{unit.scan_date ? `, model dated ${unit.scan_date}` : ""}. {range(unit.total)}.</p>
+                    <p>{unit.name}. Scanned by Matterport{unit.scan_date ? `, scan dated ${unit.scan_date}` : ""}. {range(unit.total)}.</p>
                     {unit.rooms.map((r) => (
                       <div key={r.name} className={r.name === room ? "is-open" : ""}>
                         <button type="button" onClick={() => { setRoom(r.name === room ? null : r.name); setPointed(null); }}>
@@ -339,7 +339,7 @@ export function ScheduleTree({ site, controller = false, inline = false }: { sit
                         {r.name === room && (r.doubts.length > 0 || r.left_out.length > 0 || r.room_id) && (
                           <div className="sc-decided">
                             {r.doubts.map((x) => <p key={x.id} className="is-doubt"><b>Unsure</b>{x.doubt}</p>)}
-                            {r.left_out.length > 0 && <p><b>Left out</b>{r.left_out.map((x) => `${x.saw} (${x.why})`).join("; ")}</p>}
+                            {r.left_out.length > 0 && <p><b>Left out</b>{r.left_out.map((x) => `${x.saw} (${x.why.replace("already recorded from another standpoint", "already counted")})`).join("; ")}</p>}
                             {again?.room === r.name && again.state === "done" && <p className="is-new"><b>Looked again</b>{again.changed.length ? again.changed.join(". ") : "Nothing changed"}.{again.before && again.after ? ` The home: ${range(again.before)} before, ${range(again.after)} now.` : ""}</p>}
                             {again?.room !== r.name && (() => { const c = [...unit.rechecks].reverse().find((x) => x.room_name === r.name); return c ? <p className="is-new"><b>Looked again</b>{c.changed.length ? c.changed.join(". ") : "Nothing changed"}.</p> : null; })()}
                             {again?.room === r.name && again.state === "failed" && <p><b>Looked again</b>The second look could not be finished. Nothing was changed.</p>}
@@ -350,7 +350,7 @@ export function ScheduleTree({ site, controller = false, inline = false }: { sit
                     ))}
                   </div>
                 )}
-                {b.id === open && !unit && <div className="sc-home-rows"><p>No home under this roof has been scanned. Its figure is the scanned home times {b.homes_assumed}.</p></div>}
+                {b.id === open && !unit && <div className="sc-home-rows"><p>No home under this roof has been scanned. Its figure is {b.homes_assumed} {b.homes_assumed === 1 ? "home" : "homes"} at the average home's figure.</p></div>}
               </li>
             );
           })}

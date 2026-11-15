@@ -41,8 +41,9 @@ flowchart LR
   API --> POV
 ```
 
-Models run only in the middle column, ahead of time. Nothing on a screen waits on a model, with one exception the
-owner asks for: "Look again" has the agent read one room a second time, which takes about a minute.
+Models run only in the middle column, ahead of time. Nothing on a screen waits on a model, with two exceptions the
+owner asks for: "Look again" (the agent reads one room a second time) and "Find the make and model" (one item is
+matched to products). Each takes a minute or two.
 
 ## Where each number comes from
 
@@ -84,7 +85,8 @@ inventory agent, held to a fixed list:
 4. **Multiply.** `schedule.py` multiplies count by price range. A kind with no confirmed price has null money.
 
 So the value is a range for the kind of thing, not an appraisal of that particular refrigerator. The ranges are
-national cost-guide figures and some are wide.
+national cost-guide figures and some are wide. Where an item has been matched to products (see "Find the model"),
+its line uses those products' listed prices instead.
 
 ## The inventory agent
 
@@ -250,7 +252,7 @@ python -m scripts.inventory <property> <scan> --prices         # price what has 
 python -m scripts.start                                         # API and web servers
 ```
 
-Then `http://localhost:5184/#/schedule` (the lead property) or `#/schedule/<property>`.
+Then `http://localhost:5174/#/schedule` (or the port it prints; the lead property) or `#/schedule/<property>`.
 
 The lead home's run: 6 rooms, 60 views, 32 items named, 21 kinds of line priced and confirmed; 2 merges, 15 things
 left out with a reason, 11 doubts flagged; the kitchen read a second time.
