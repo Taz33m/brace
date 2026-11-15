@@ -232,7 +232,7 @@ def schedule(property_id: int, scan_id: str | None = None) -> dict:
     seconds = (unit.get("seconds") or 0) + (price_run.get("seconds") or 0)
     listed = bool(portfolio.floor_plans(property_id))
     return {
-        "property": {"id": property_id, "name": s["name"], "address": s["address"], "homes": homes, "homes_on_record": record_homes, "scenario": "fire reaches the building",
+        "property": {"id": property_id, "name": s["name"], "address": s["address"], "homes": homes, "homes_on_record": record_homes, "scenario": "fire reaches the community",
                      "scan_date": unit["scan_date"], "bounds": s["bounds"], "aerial": s["aerial"]},
         "total": {**total, "lines": unit["total"]["lines"], "lines_priced": unit["total"]["lines_priced"]},
         "home": {"name": unit["name"], "total": unit["total"], "multiplied_by": homes},
@@ -245,7 +245,7 @@ def schedule(property_id: int, scan_id: str | None = None) -> dict:
         "buildings": buildings,
         "exposure": ranking,
         "assumptions": [
-            "The scenario is stated, not forecast: fire reaches the building and the fit-out of its homes is a total loss.",
+            "The scenario is stated, not forecast: fire reaches the community and the fit-out of its homes is a total loss.",
             (f"The kinds of home and how many of each are from the community's Apartments.com listing: {homes:,} homes. The kind that was scanned takes the scanned home's figure; a kind that was not is scaled by floor area. Both are extrapolations."
              + (f" CoStar's property record gives {record_homes:,}; the schedule counts only the homes the listing describes." if record_homes and record_homes != homes else "")
              if listed else f"The record does not say what kinds of home there are, so all {homes:,} are taken to be like the scanned one. That is an extrapolation."),

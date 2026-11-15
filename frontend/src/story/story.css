@@ -385,7 +385,8 @@ html.st-on, html.st-on body, html.st-on #root { height: auto; min-height: 100%; 
 .lp-cap, .lp-lines, .lp-tree, .lp-close { position: absolute; z-index: 2; opacity: 0; visibility: hidden; color: var(--ivory); text-shadow: 0 2px 24px rgba(0, 0, 0, 0.85); }
 .lp-cap { left: 6vw; top: 8vh; max-width: 46vw; }
 .lp-cap h2 { margin: 0; font: 400 clamp(2.2rem, 4.2vw, 4.6rem)/0.98 var(--heading); letter-spacing: -0.01em; }
-.lp-cap p { margin: 12px 0 0; font: 300 clamp(1.1rem, 1.7vw, 1.8rem)/1.25 var(--heading); color: rgba(243, 236, 224, 0.92); }
+.lp-cap p { margin: 12px 0 0; font: 400 clamp(1.1rem, 1.7vw, 1.8rem)/1.25 var(--heading); color: var(--ivory); text-shadow: 0 1px 3px rgba(0, 0, 0, 0.95), 0 2px 26px rgba(0, 0, 0, 0.9); }
+.lp-cap p + p { margin-top: 6px; }
 .lp-cap small, .lp-lines small, .lp-tree small { display: block; margin-top: 12px; font: 500 10.5px/1.5 var(--sans); letter-spacing: 0.2em; text-transform: uppercase; color: var(--champagne); }
 .lp-cap-mid { left: 0; right: 0; top: 34vh; max-width: none; text-align: center; }
 .lp-cap-mid h2 { font-size: clamp(4rem, 10vw, 11rem); }

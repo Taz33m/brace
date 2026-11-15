@@ -63,7 +63,7 @@ not written in this file because sponsor records are never committed.
 
 | Question | Answer |
 | --- | --- |
-| If fire takes everything, why itemise? | The schedule is for renewal (is the cover enough for what is there) and for the claim (a dated record). And most losses are partial: open `#/file`, where the same kind of schedule changes with two feet of water |
+| If fire takes everything, why itemise? | The schedule is for renewal (is the cover enough for what is there) and for the claim: after a loss the owner has to hand over an inventory with quantities and values, and this is that list with a date on it. And a loss need not be total: the schedule is by building and by room, so it can be read for part of a property |
 | One scan for a whole community? | Yes, and the screen says so. The multiplication is shown and labelled |
 | These are staged homes, not real tenants' things | Right. The owner insures the fit-out: floors, cabinets, appliances, doors. Under the standard commercial form those are part of the building. Tenants' belongings are the tenants' own cover, and we leave them out |
 | The scan is old by the time of a loss | Values are set at the time of loss. The scan proves what was there; the price is read today. Every schedule shows its scan date |
