@@ -325,6 +325,8 @@ html.st-on, html.st-on body, html.st-on #root { height: auto; min-height: 100%; 
 .sc-total strong { display: block; font: 400 clamp(2.8rem, 5.6vw, 5.8rem)/0.95 var(--heading); letter-spacing: -0.02em; color: #ff5a3c; font-variant-numeric: lining-nums tabular-nums; }
 .sc-total span { display: block; margin-top: 10px; font: 300 clamp(1.05rem, 1.5vw, 1.5rem)/1.25 var(--heading); }
 .sc-total em { display: block; margin-top: 8px; font: 400 13px/1.35 var(--sans); font-style: normal; color: rgba(243, 236, 224, 0.6); }
+.sc-zone { margin: 2.2vh 0 0; font: 400 13px/1.4 var(--sans); color: rgba(243, 236, 224, 0.7); }
+.sc-zone + .sc-list { margin-top: 1vh; }
 .sc-list { flex: 1; min-height: 0; overflow: auto; margin: 2.2vh 0 0; padding: 0; list-style: none; font: 400 14px/1.3 var(--sans); font-variant-numeric: tabular-nums; }
 .sc-list > li { border-bottom: 1px solid rgba(243, 236, 224, 0.09); }
 .sc-list button { display: grid; align-items: baseline; width: 100%; padding: 8px 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }

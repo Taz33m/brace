@@ -53,7 +53,10 @@ matched to products). Each takes a minute or two.
 | What fit-out is in each room, and how many | The inventory agent, looking at the scan's panoramas | `backend/inventory_agent.py` |
 | A price range for each kind of line | A web page, kept only when a fetch of the page finds the price and the sentence | `backend/flood_agent.py` (`price`, `confirm`) |
 | Kinds of home, how many of each, asking rents | The community's Apartments.com listing, as it stands in the kit | `backend/portfolio.py` (`floor_plans`, `rent`) |
-| Vegetation within 5 ft of each building's walls | Vexcel | the height files, read in `backend/flood.py` (`site`) |
+| Vegetation within 5 ft of each building's walls, tree cover over its roof | Vexcel | the saved building file, read in `backend/exposure.py` |
+| The fire hazard severity zone at each building | CAL FIRE's map, saved on disk | `backend/exposure.py` (`zone_at`) |
+| The order of the buildings | Zone, then vegetation at the walls, then tree cover over the roof. An ordering, not a score | `backend/exposure.py` |
+| What the runs cost | Tokens each saved run recorded, times the published price for its model. Web search fees are not counted | `backend/run_cost.py` |
 | Every total | Arithmetic in code | `backend/schedule.py` |
 
 ## Listings: what Apartments.com and Homes.com are used for
@@ -185,6 +188,13 @@ Rules that hold everywhere:
 - Every extrapolation is marked as one, in the data and on the screen.
 - The scenario is stated ("fire reaches the building"), never forecast.
 
+## Other endpoints
+
+- `GET /api/exposure/{property_id}`: each building with its three facts, its place in the order, and the sources.
+- `GET /api/schedule`: the scanned Los Angeles apartment communities inside a mapped fire zone. A community whose
+  scan has been read ranks first, by its total; the rest rank by asking rent per month from the listing. A community
+  with no listing has null homes and rent and comes last.
+
 ## Talking to it, and the phone
 
 The schedule is not driven by a chat box. It is spoken to, and it answers by opening things on the screen.
@@ -216,7 +226,9 @@ flowchart LR
 ```
 backend/
   inventory_agent.py   the deep agent: lead, readers, tools, rules                     (new, 14 Nov)
-  schedule.py          the tree and its arithmetic                                      (new, 14 Nov)
+  schedule.py          the tree and its arithmetic; communities(), the portfolio list   (new, 14 Nov)
+  exposure.py          each building's three facts and the order they put it in         (new, 14 Nov)
+  run_cost.py          what the saved runs cost, from their own token counts            (new, 14 Nov)
   cover.py             the owner's cover against the schedule; the draft note           (new, 14 Nov)
   product_match.py     a likely make and model for one item, with a tighter price       (new, 14 Nov, prototype)
   flood_agent.py       price research with web search and page fetch; confirm()
@@ -237,7 +249,8 @@ frontend/src/story/
   InsurerFile.tsx      #/file: one home's schedule under a flood depth
   InsidePov.tsx        #/inside, #/inside/vr: the room from where a person stands
 tests/
-  test_inventory_schedule.py, test_inventory_decisions.py, test_product_match.py, test_cover.py, test_insurer_file.py, test_flood_agent.py
+  test_inventory_schedule.py, test_inventory_decisions.py, test_product_match.py, test_cover.py, test_insurer_file.py, test_flood_agent.py,
+  test_exposure.py, test_schedule_portfolio.py, test_run_cost.py
 ```
 
 Saved runs, never committed: `data/cache/inventory/<scan>.json` (the inventory),
@@ -261,9 +274,7 @@ left out with a reason, 11 doubts flagged; the kitchen read a second time.
 
 | What | Who | Note |
 | --- | --- | --- |
-| Exposure rank from brush, trees over the roof and fire zone | Ryan | Today the rank is vegetation at the walls only, and `in_fire_zone` is null |
-| Every community ranked (the loop's portfolio beat) | Ryan | One community is read; the loop ends on the property figure |
-| The run's own cost | Ryan | `numbers.model_cost_usd` is null |
+| The portfolio list on a screen (the loop's last beat) | nobody yet | The data is served: `GET /api/schedule` lists the scanned Los Angeles communities inside a zone, ranked. The loop ends on the property figure |
 | A grade for each item (basic, mid, high) to narrow its price range | nobody yet | Would cut the width of the total |
 | More than one scanned home per property | nobody yet | The lead property has one scan |
 
