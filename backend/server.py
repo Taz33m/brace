@@ -541,10 +541,13 @@ def place_find(model_id: str, q: str, start: str | None = None, mover: str = "wa
 
 
 @app.get("/api/schedule")
-def schedule_portfolio(city: str = "Los Angeles") -> dict:
-    """The scanned apartment communities inside a mapped fire zone, ranked."""
-    from . import schedule
-    return schedule.communities(city)
+def schedule_portfolio(state: str = "CA", city: str = "Los Angeles") -> dict:
+    """The scanned apartment communities: how many a state has and which have been read, and the ones in a city
+    that stand inside a mapped fire zone, ranked."""
+    from . import inventory_agent, schedule
+    rows = [b for b in portfolio_data.buildings() if b.get("state") == state and b.get("type") == "Multifamily" and b.get("model_ids")]
+    read = [{"id": b["id"], "name": b.get("name")} for b in rows if any(inventory_agent.saved(m) for m in b["model_ids"])]
+    return {"state": state, "communities_scanned": len(rows), "scans": sum(len(b["model_ids"]) for b in rows), "read": read, **schedule.communities(city)}
 
 
 @app.get("/api/schedule/{property_id}")
@@ -565,6 +568,40 @@ def exposure_rank(property_id: int) -> dict:
         return exposure.exposure(property_id)
     except exposure.ExposureError as e:
         raise HTTPException(404, str(e))
+
+
+@app.post("/api/schedule/{property_id}/cover")
+def schedule_cover(property_id: int, amount: float = Query(..., gt=0), share: float = Query(0.8, gt=0, le=1)) -> dict:
+    """Check the cover an owner carries for the fit-out against the schedule, and draft the note to their broker. Nothing is sent."""
+    from . import cover, schedule
+    try:
+        sched = schedule.schedule(property_id)
+        result = cover.check(sched["total"], amount, share)
+    except schedule.ScheduleError as e:
+        raise HTTPException(404, str(e))
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    return {"check": result, "note": cover.note(sched, result)}
+
+
+@app.post("/api/schedule/{property_id}/recheck")
+def schedule_recheck(property_id: int, room: str) -> dict:
+    """Have the agent take a second look at one room of the scanned home. It reads the room again and the schedule is rebuilt from what it finds."""
+    from . import inventory_agent, schedule
+    try:
+        before = schedule.schedule(property_id)
+        unit = next(u for b in before["buildings"] for u in b["units"])
+        found = next((r for r in unit["rooms"] if r.get("room_id") and room.strip().lower() in (r["name"].lower(), r["room_id"])), None)
+        if not found:
+            raise HTTPException(404, "that room is not one the camera stood in")
+        entry = inventory_agent.recheck(property_id, unit["scan_id"], found["room_id"])
+        after = schedule.schedule(property_id)
+    except schedule.ScheduleError as e:
+        raise HTTPException(404, str(e))
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+    return {"room": found["name"], "stop": entry.get("stop"), "changed": entry.get("changed") or [], "statement": entry.get("statement"), "seconds": entry.get("seconds"),
+            "home_before": before["home"]["total"], "home_after": after["home"]["total"], "total_before": before["total"], "total_after": after["total"]}
 
 
 SCHEDULE_LIVE: dict[int, dict] = {}     # what the phone last opened on the schedule, for the big screen to follow

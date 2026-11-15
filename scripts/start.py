@@ -78,7 +78,9 @@ def main() -> int:
     env = {**os.environ, "BRACE_API_PORT": str(api), "BRACE_WEB_PORT": str(web), "BRACE_VR_PORT": str(vr)}
     quiet = {"stdout": subprocess.DEVNULL}   # errors still reach the terminal
     running = [
-        subprocess.Popen([sys.executable, "-m", "uvicorn", "backend.server:app", "--port", str(api), "--log-level", "warning"], cwd=ROOT, env=env),
+        # BRACE_RELOAD=1: the API restarts itself when a file under backend/ changes, for a server that is left running.
+        subprocess.Popen([sys.executable, "-m", "uvicorn", "backend.server:app", "--port", str(api), "--log-level", "warning",
+                          *(["--reload", "--reload-dir", "backend"] if os.environ.get("BRACE_RELOAD") == "1" else [])], cwd=ROOT, env=env),
         subprocess.Popen(["npx", "vite"], cwd=FRONTEND, env=env, **quiet),
         subprocess.Popen(["npx", "vite", "--config", "vite.vr.config.ts"], cwd=FRONTEND, env=env, **quiet),
     ]

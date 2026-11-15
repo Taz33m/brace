@@ -136,9 +136,19 @@ def home(property_id: int, scan_id: str) -> dict:
     net = measured["wall_less_doorways_ft"] / measured["wall_ft"] if measured["wall_ft"] else 1.0      # doorways come out of every room alike
     names = inventory_agent.InventoryRun(property_id, scan_id).rooms       # the agent's room ids against Matterport's
     read_as = {r["matterport_id"]: rid for rid, r in names.items()}
+    headings = {sw["id"]: sw.get("heading") for sw in scan.get("sweeps") or []}      # which way the camera faced at each standpoint, to turn a picture the right way
     by_room: dict[str, list[dict]] = {}
     for i in inv["items"]:
-        by_room.setdefault(i["room"], []).append(i)
+        by_room.setdefault(i["room"], []).append({**i, "at": {**i["at"], "heading_deg": headings.get(i["at"]["sweep_id"])}})
+
+    # What the agent decided beyond its list: what it would not record, what it left out and why, and what it is still unsure of.
+    doubts: dict[str, list[dict]] = {}
+    for d in inv.get("doubts") or []:
+        doubts.setdefault(d["room"], []).append({"id": d["id"], "about": inventory_agent.KINDS.get(d.get("kind") or "", None), "doubt": d["doubt"]})
+    left: dict[str, list[dict]] = {}
+    for k in inv.get("skipped") or []:
+        left.setdefault(k["room"], []).append({"saw": k["saw"], "why": k["why"]})
+    # Refusals are not shown as things left out: most are a reader trying a name the list does not use and then finding the right one.
 
     rooms, count = [], {}
     for r in scan.get("rooms") or []:
@@ -154,12 +164,15 @@ def home(property_id: int, scan_id: str) -> dict:
                   _line("paint", "Painting", wall * ceiling, "sq ft", "measured from the scan", prices, seen=None, at=None),
                   _line("baseboard", "Baseboard", wall, "ft", "measured from the scan", prices, seen=None, at=None)]
         rooms.append({"name": kind if sum(1 for x in scan["rooms"] if x.get("type") == kind and x.get("area_sqft") and x.get("height_m")) == 1 else f"{kind} {count[kind]}",
-                      "area_sqft": r["area_sqft"], "read": r["id"] in read_as, "items": lines, "total": _sum(lines)})
+                      "area_sqft": r["area_sqft"], "read": r["id"] in read_as, "room_id": read_as.get(r["id"]), "items": lines, "total": _sum(lines),
+                      "doubts": doubts.get(read_as.get(r["id"], ""), []), "left_out": left.get(read_as.get(r["id"], ""), [])})
     doors = [_line("door", "Interior doors", measured["inner_doors"], "each", "measured from the scan", prices, seen=None, at=None)]
-    rooms.append({"name": "Throughout the home", "area_sqft": None, "read": True, "items": doors, "total": _sum(doors)})
+    rooms.append({"name": "Throughout the home", "area_sqft": None, "read": True, "room_id": None, "items": doors, "total": _sum(doors), "doubts": [], "left_out": []})
     every = [l for room in rooms for l in room["items"]]
     return {"scan_id": scan_id, "name": measured["name"], "under_roof": measured["under_roof"], "scan_date": measured["model_made"], "floor_sqft": measured["floor_sqft"],
-            "rooms": rooms, "total": _sum(every), "numbers": inv["numbers"], "statement": inv.get("statement"), "seconds": inv.get("seconds")}
+            "rooms": rooms, "total": _sum(every), "numbers": inv["numbers"], "statement": inv.get("statement"), "seconds": inv.get("seconds"),
+            "decisions": {"left_out": sum(len(v) for v in left.values()), "merged": len(inv.get("merged_away") or []), "doubts": sum(len(v) for v in doubts.values())},
+            "rechecks": [{k: c.get(k) for k in ("room", "room_name", "at", "seconds", "changed", "statement")} for c in inv.get("rechecks") or []]}
 
 
 def schedule(property_id: int, scan_id: str | None = None) -> dict:

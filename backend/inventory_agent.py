@@ -12,6 +12,10 @@ The agent names and counts. It does not measure, price or total:
 * floor area, wall length and door counts come from Matterport's measurements (`insurer_file`), not from the model;
 * prices and totals are worked out in `schedule.py`.
 
+What the agent decides is kept, not only what it found: each record the tools refused, each thing a reader saw and
+left out (and why), each record merged away, and each doubt the lead flagged. A room can be read a second time
+(`recheck`), which replaces that room's items and says what changed.
+
 Run it with `python -m scripts.inventory <property> <scan>`. The run is saved in the data folder.
 """
 from __future__ import annotations
@@ -29,10 +33,15 @@ OUT = CACHE_DIR / "inventory"
 MAX_STEPS = 200
 SIDES = {"ahead": 1, "right": 2, "behind": 3, "left": 4}
 
+MAX_SKIPS = 6          # the things a reader may say it left out of one room; the notable ones, not every chair
+
+# Why a reader may leave out a thing it saw. Nothing else is taken as a reason.
+SKIP_REASONS = ("furniture or a tenant's own", "belongs to another room", "could not see it well enough", "already recorded from another standpoint")
+
 # What an owner's building cover takes in inside a home, and nothing else. Each is counted, one line per kind.
 KINDS = {
     "refrigerator": "Refrigerator", "range": "Range or stove with oven", "range hood": "Range hood", "built-in microwave": "Built-in microwave",
-    "dishwasher": "Dishwasher", "kitchen sink": "Kitchen sink with faucet", "base cabinet": "Base cabinet", "wall cabinet": "Wall cabinet",
+    "dishwasher": "Dishwasher", "kitchen sink": "Kitchen sink with faucet", "base cabinet": "Base cabinet", "wall cabinet": "Wall cabinet", "tall cabinet": "Tall cabinet",
     "kitchen countertop": "Kitchen countertop, one run", "toilet": "Toilet", "bathtub or shower": "Bathtub or shower", "bathroom vanity": "Bathroom vanity with sink",
     "bathroom mirror": "Bathroom mirror or medicine cabinet", "light fixture": "Ceiling or wall light fixture", "ceiling fan": "Ceiling fan",
     "window blind": "Window blind", "closet door": "Closet door, sliding or folding", "air conditioner": "Wall or window air conditioner",
@@ -45,8 +54,9 @@ How to work
 1. Call rooms to see the rooms of the scan.
 2. Give every room to a reader with the task tool. Send them all in one turn. Tell each reader the room's id and name, and nothing else.
 3. When the readers are back, call recorded. The same thing is often seen from two standpoints, or from a neighbouring room through a doorway. Where two records are the same physical thing, call merge and say why. Where a count looks doubled, merge.
-4. Write /inventory.md with write_file: one line per room, what stands in it.
-5. Finish with a statement of five lines or fewer: how many rooms were read, how many items remain, and anything a reader could not see.
+4. After merging, flag what is still in doubt with flag_doubt, one call per doubt: a count a reader was not sure of, a thing a reader could not see well, a record that may be something else. Give the room's id, the record's id from recorded (or leave about empty when the doubt is about the room as a whole), and the doubt as one plain sentence. If nothing is in doubt, flag nothing.
+5. Write /inventory.md with write_file: one line per room, what stands in it.
+6. Finish with a statement of five lines or fewer: how many rooms were read, how many items remain, and each doubt you flagged.
 
 Rules
 - Say only what the tools returned. Do not add an item yourself; only a reader who looked can record one.
@@ -58,17 +68,18 @@ How to work
 1. Call standpoints for the room. Each standpoint is a place the camera stood.
 2. From each standpoint, call look in all four directions: ahead, right, behind, left. Look before you record.
 3. For each piece of fit-out you can see in this room, call record_item once, against the view you saw it best in. Count carefully: for cabinets count the cabinet boxes (a pair of doors on one box is one cabinet), base and wall cabinets separately.
-4. Finish with three lines or fewer: what you recorded, and anything you could not see well.
+4. For the notable things you saw and did not record, call skip and say why: the furniture you can see, a thing that belongs to another room, a thing you could not see well enough, a thing already recorded from another standpoint. A few per room at most; not every chair.
+5. Finish with three lines or fewer: what you recorded, and anything you could not see well.
 
 Rules
 - Record only the kinds the tool accepts. Furniture, rugs, pictures, lamps on tables, plants and anything a tenant would own are not recorded.
 - Record a thing once. If you saw it from two standpoints, record it against the better view only.
 - Record only what is in this room. Something seen through a doorway belongs to the other room.
-- If you are not sure a thing is there, do not record it; say so in your last lines."""
+- If you are not sure a thing is there, do not record it; call skip with "could not see it well enough" and say so in your last lines."""
 
 
 class InventoryRun:
-    """What one run looked at, recorded and merged."""
+    """What one run looked at, recorded and merged, and what it decided against: refused, left out, or flagged as in doubt."""
 
     def __init__(self, property_id: int, scan_id: str, only: list[str] | None = None):
         try:
@@ -97,6 +108,9 @@ class InventoryRun:
         self.looked: set[tuple[str, str, str]] = set()
         self.items: list[dict] = []
         self.merges: list[dict] = []
+        self.refused: list[dict] = []     # records the tools would not take, so the run shows a sofa was tried and turned away
+        self.skipped: list[dict] = []     # things a reader saw and chose not to record, with the reason
+        self.doubts: list[dict] = []      # what the lead is still unsure of after merging
         self.events: list[dict] = []
         self.t0 = time.time()
 
@@ -142,18 +156,26 @@ class InventoryRun:
             standpoint and direction are the view you saw it best in; across and down are where it is in that picture, each from 0 to 1.
             what_you_saw is a few plain words, for example 'white top-freezer refrigerator'."""
             room = run._room(room_id)
+
+            def refuse(why: str, said: str) -> str:
+                """Keep the refusal, so the run shows what the agent tried to record and was not allowed to."""
+                entry = {"room": room["id"] if room else str(room_id).strip(), "room_name": room["name"] if room else None, "wanted": str(kind), "seen": str(what_you_saw).strip()[:120], "why": why}
+                run.refused.append(entry)
+                run.note("refused", room=entry["room"], wanted=entry["wanted"], why=why)
+                return said
+
             if not room:
-                return "Not recorded: no such room."
+                return refuse("no such room", "Not recorded: no such room.")
             if kind not in KINDS:
-                return f"Not recorded: '{kind}' is not fit-out the owner insures. The kinds are: {', '.join(KINDS)}."
+                return refuse("not fit-out the owner insures", f"Not recorded: '{kind}' is not fit-out the owner insures. The kinds are: {', '.join(KINDS)}.")
             if (room["id"], str(standpoint).strip(), direction) not in run.looked:
-                return "Not recorded: nobody has looked that way from that standpoint. Call look first, then record what you saw."
+                return refuse("nobody had looked that way", "Not recorded: nobody has looked that way from that standpoint. Call look first, then record what you saw.")
             try:
                 n, x, y = int(quantity), float(across), float(down)
             except (TypeError, ValueError):
-                return "Not recorded: quantity must be a whole number and across and down numbers from 0 to 1."
+                return refuse("the quantity or the place in the picture was not a number", "Not recorded: quantity must be a whole number and across and down numbers from 0 to 1.")
             if not (1 <= n <= 40 and 0 <= x <= 1 and 0 <= y <= 1):
-                return "Not recorded: quantity must be from 1 to 40 and across and down from 0 to 1."
+                return refuse("the quantity or the place in the picture was out of range", "Not recorded: quantity must be from 1 to 40 and across and down from 0 to 1.")
             sw = room["standpoints"][str(standpoint).strip()]
             # Where it is, as a turn and a tilt from the standpoint: a cube face spans 90 degrees each way about its centre.
             dx, dy = 2 * x - 1, 1 - 2 * y
@@ -164,6 +186,25 @@ class InventoryRun:
             run.items.append(item)
             run.note("item", room=room["id"], item=kind, quantity=n)
             return f"Recorded as {item['id']}: {n} x {KINDS[kind]} in {room['name']}."
+
+        def skip(room_id: str, what_you_saw: str, why: str) -> str:
+            """Say that you saw a thing in this room and did not record it. what_you_saw is a few plain words, for example 'grey sofa'.
+            why must be one of: "furniture or a tenant's own", "belongs to another room", "could not see it well enough", "already recorded from another standpoint"."""
+            room = run._room(room_id)
+            if not room:
+                return "Not noted: no such room."
+            reason, what = str(why).strip().strip(".").lower(), str(what_you_saw).strip()[:120]
+            if reason not in SKIP_REASONS:
+                return "Not noted: why must be one of: " + "; ".join(SKIP_REASONS) + "."
+            if not what:
+                return "Not noted: say what you saw in a few plain words."
+            if not any(r == room["id"] for r, _, _ in run.looked):
+                return "Not noted: nobody has looked in this room yet. Call look first."
+            if sum(1 for s in run.skipped if s["room"] == room["id"]) >= MAX_SKIPS:
+                return f"Not noted: {MAX_SKIPS} things are already noted as left out of this room. That is enough."
+            run.skipped.append({"room": room["id"], "room_name": room["name"], "saw": what, "why": reason})
+            run.note("skipped", room=room["id"], saw=what, why=reason)
+            return f"Noted: {what} in {room['name']} was left out ({reason})."
 
         def recorded() -> str:
             """Everything the readers recorded, by room, less what has been merged away."""
@@ -185,7 +226,30 @@ class InventoryRun:
             run.note("merge", keep=keep_id, dropped=len(drops))
             return f"Merged {len(drops)} record(s) into {keep_id}."
 
-        return {f.__name__: f for f in (rooms, standpoints, look, record_item, recorded, merge)}
+        def flag_doubt(room_id: str, about: str, doubt: str) -> str:
+            """Flag one thing that is still in doubt after merging. about is the id of a record from recorded, or empty when the doubt is about the room as a whole.
+            doubt is one plain sentence, for example 'there may be a fourth wall cabinet beside the window'."""
+            room = run._room(room_id)
+            if not room:
+                return "Not flagged: no such room. Use a room id from rooms."
+            item, about = None, str(about or "").strip()
+            if about:
+                item = next((i for i in run.items if i["id"] == about), None)
+                if not item:
+                    return "Not flagged: no such record. Use an id from recorded, or leave about empty for a doubt about the room."
+                if item["merged_into"]:
+                    return f"Not flagged: that record was merged into {item['merged_into']}. Flag the doubt against that one."
+                if item["room"] != room["id"]:
+                    return f"Not flagged: that record is in {item['room']}, not in {room['id']}."
+            said = " ".join(str(doubt or "").split())[:240]
+            if not said:
+                return "Not flagged: say the doubt in one plain sentence."
+            entry = {"id": f"d{len(run.doubts) + 1}", "room": room["id"], "room_name": room["name"], "item_id": item["id"] if item else None, "kind": item["kind"] if item else None, "doubt": said}
+            run.doubts.append(entry)
+            run.note("doubt", room=room["id"], item=entry["item_id"], doubt=said)
+            return f"Flagged as {entry['id']}."
+
+        return {f.__name__: f for f in (rooms, standpoints, look, record_item, skip, recorded, merge, flag_doubt)}
 
     def record(self, statement: str, files: dict[str, str], usage: dict, stop: str) -> dict:
         live = [i for i in self.items if not i["merged_into"]]
@@ -194,6 +258,8 @@ class InventoryRun:
             "seconds": round(time.time() - self.t0, 1), "model": AGENT_MODEL, "stop": stop,
             "rooms": [{"id": r["id"], "name": r["name"], "area_sqft": r["area_sqft"], "standpoints": len(r["standpoints"])} for r in self.rooms.values()],
             "items": live, "merged_away": [i for i in self.items if i["merged_into"]], "merges": self.merges,
+            "refused": self.refused, "skipped": self.skipped, "doubts": self.doubts,
+            "decisions": {"refused": len(self.refused), "skipped": len(self.skipped), "merged": len(self.items) - len(live), "doubts": len(self.doubts)},
             "numbers": {"rooms_read": len({room for room, _, _ in self.looked}), "views_looked_at": len(self.looked), "items_named": sum(i["quantity"] for i in live), "lines": len(live)},
             "notes": files, "statement": statement, "events": self.events, "usage": usage,
         }
@@ -213,8 +279,8 @@ def build(run: InventoryRun, model: Any = None):
         model = ChatAnthropic(model=AGENT_MODEL, max_tokens=8000)
     t = run.tools()
     reader = {"name": "reader", "description": "Reads one room of the scan: looks from every standpoint in every direction and records the owner's fit-out it sees. Give it one room id and name.",
-              "system_prompt": READER_PROMPT, "tools": [t["standpoints"], t["look"], t["record_item"]]}
-    return create_deep_agent(model=model, system_prompt=LEAD_PROMPT, subagents=[reader], name="brace-inventory", tools=[t["rooms"], t["recorded"], t["merge"]])
+              "system_prompt": READER_PROMPT, "tools": [t["standpoints"], t["look"], t["record_item"], t["skip"]]}
+    return create_deep_agent(model=model, system_prompt=LEAD_PROMPT, subagents=[reader], name="brace-inventory", tools=[t["rooms"], t["recorded"], t["merge"], t["flag_doubt"]])
 
 
 def saved(scan_id: str) -> dict | None:
@@ -231,26 +297,106 @@ def tokens(counted: dict, messages: list) -> dict:
     return {k: sum(r.get(k, 0) or 0 for r in rows) for k in ("input_tokens", "output_tokens")}
 
 
-def run_inventory(property_id: int, scan_id: str, only: list[str] | None = None, model: Any = None, save: bool = True) -> dict:
-    """Read one scan and save what the owner would have to replace in it."""
-    run = InventoryRun(property_id, scan_id, only)
-    agent = build(run, model)
+def _ask(agent: Any, message: str, what: str = "The inventory") -> tuple[str, str, dict, dict]:
+    """Give the agent one message and collect what came back: how it stopped, its last words, the files it wrote, the tokens it used.
+
+    A run that fails comes back as "error" with the reason in its statement, so the caller can keep what was recorded so far.
+    """
     stop, statement, files, usage = "finished", "", {}, {"input_tokens": 0, "output_tokens": 0}
     from langchain_core.callbacks import UsageMetadataCallbackHandler
     counter = UsageMetadataCallbackHandler()       # hears every model call, the readers' as well as the lead's
     try:
-        out = agent.invoke({"messages": [{"role": "user", "content": f"Make the inventory of this home: {run.scan.get('name')}. It has {len(run.rooms)} rooms the camera stood in."}]},
-                           config={"recursion_limit": MAX_STEPS, "callbacks": [counter]})
+        out = agent.invoke({"messages": [{"role": "user", "content": message}]}, config={"recursion_limit": MAX_STEPS, "callbacks": [counter]})
         statement = next((_text(m.content) for m in reversed(out["messages"]) if getattr(m, "type", "") == "ai" and _text(m.content)), "")
         for path, data in (out.get("files") or {}).items():
             content = data.get("content") if isinstance(data, dict) else data
             files[path] = "\n".join(content) if isinstance(content, list) else str(content or "")
         usage = tokens(counter.usage_metadata, out["messages"])
     except Exception as e:      # a failed run is recorded as failed, with what it had recorded so far
-        stop, statement = "error", f"The inventory stopped: {e}"
+        stop, statement = "error", f"{what} stopped: {e}"
         usage = tokens(counter.usage_metadata, [])
+    return stop, statement, files, usage
+
+
+def run_inventory(property_id: int, scan_id: str, only: list[str] | None = None, model: Any = None, save: bool = True) -> dict:
+    """Read one scan and save what the owner would have to replace in it."""
+    run = InventoryRun(property_id, scan_id, only)
+    agent = build(run, model)
+    stop, statement, files, usage = _ask(agent, f"Make the inventory of this home: {run.scan.get('name')}. It has {len(run.rooms)} rooms the camera stood in.")
     record = run.record(statement, files, usage, stop)
     if save and stop == "finished" and record["items"]:
         OUT.mkdir(parents=True, exist_ok=True)
         (OUT / f"{scan_id}.json").write_text(json.dumps(record, indent=1))
     return record
+
+
+def _counts(items: list[dict]) -> list[dict]:
+    """How many of each kind, in the order the kinds were first recorded."""
+    by: dict[str, int] = {}
+    for i in items:
+        by[i["kind"]] = by.get(i["kind"], 0) + i["quantity"]
+    return [{"kind": k, "quantity": n} for k, n in by.items()]
+
+
+def _changed(before: list[dict], after: list[dict]) -> list[str]:
+    """What a second look changed, one plain sentence for each kind: 'Wall cabinet: 3 became 4', 'Dishwasher: added', 'Range hood: removed'."""
+    was, now = {b["kind"]: b["quantity"] for b in before}, {a["kind"]: a["quantity"] for a in after}
+    name = lambda kind: kind[:1].upper() + kind[1:]
+    out = [f"{name(k)}: {was[k]} became {now[k]}" if k in now else f"{name(k)}: removed" if was[k] == 1 else f"{name(k)}: {was[k]} removed" for k in was if now.get(k) != was[k]]
+    return out + [f"{name(k)}: added" if now[k] == 1 else f"{name(k)}: {now[k]} added" for k in now if k not in was]
+
+
+def recheck(property_id: int, scan_id: str, room_id: str, model: Any = None, save: bool = True) -> dict:
+    """A second look at one room of a home that has been read: the room is read again and its items replaced.
+
+    This is the one thing the owner can ask the agent to do. The lead is told the doubts it flagged for the room the
+    first time. What the second look records takes the place of the room's items and doubts in the saved run, the other
+    rooms are left as they were, and what changed is said in plain sentences. If the second look fails, or looks at no
+    picture, the saved run is left as it was.
+    """
+    record = saved(scan_id)
+    if record is None:
+        raise ValueError("this scan has not been read yet, so there is nothing to look at again")
+    room_id = str(room_id).strip()
+    if room_id not in {r.get("id") for r in record.get("rooms", [])}:
+        raise ValueError("no such room in the saved inventory of this scan")
+    run = InventoryRun(property_id, scan_id, only=[room_id])
+    room = run.rooms.get(room_id)
+    if not room:
+        raise ValueError("the camera did not stand in that room, so it cannot be read")
+    old_doubts = [d for d in record.get("doubts", []) if d.get("room") == room_id]
+    doubts = ("When it was first read, these doubts were flagged for this room:\n" + "\n".join(f'- "{d.get("doubt")}"' + (f" (about the {d['kind']})" if d.get("kind") else "") for d in old_doubts)
+              if old_doubts else "When it was first read, no doubt was flagged for this room.")
+    stop, statement, _, usage = _ask(build(run, model), f"Take a second, more careful look at one room of this home: {run.scan.get('name')}. The room is {room['name']}, id {room_id}. "
+                                     f"Read this one room again from every standpoint, count again, and settle each doubt if the pictures allow it.\n\n{doubts}", what="The second look")
+    record = saved(scan_id) or record      # read again: the look took a while, and another room may have been looked at meanwhile
+    before = _counts([i for i in record.get("items", []) if i.get("room") == room_id])
+    entry = {"room": room_id, "room_name": room["name"], "at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "seconds": round(time.time() - run.t0, 1), "stop": stop,
+             "before": before, "after": before, "changed": [], "statement": statement, "views_looked_at": len(run.looked), "doubts": [], "usage": usage}
+    if stop == "finished" and not run.looked:      # no sighting, no change: a look that saw no picture replaces nothing
+        entry["stop"], entry["statement"] = "error", "The second look saw no picture of the room, so nothing was changed."
+    if entry["stop"] != "finished":
+        return entry
+
+    # Ids from the second look are given a prefix, so they cannot be taken for records in the other rooms.
+    pre = f"r{len(record.get('rechecks', [])) + 1}-"
+    new = [{**i, "id": pre + i["id"], "merged_into": pre + i["merged_into"] if i["merged_into"] else None} for i in run.items]
+    live = [i for i in new if not i["merged_into"]]
+    gone = {i["id"] for i in record.get("items", []) + record.get("merged_away", []) if i.get("room") == room_id}
+    others = lambda key: [x for x in record.get(key, []) if x.get("room") != room_id]
+    record["items"] = others("items") + live
+    record["merged_away"] = others("merged_away") + [i for i in new if i["merged_into"]]
+    record["merges"] = ([m for m in record.get("merges", []) if not {m.get("keep"), *m.get("drop", [])} <= gone]      # a merge wholly inside the room goes with the room's old records
+                        + [{**m, "keep": pre + m["keep"], "drop": [pre + d for d in m["drop"]]} for m in run.merges])
+    entry["doubts"] = [{**d, "id": pre + d["id"], "item_id": pre + d["item_id"] if d["item_id"] else None} for d in run.doubts]
+    record["doubts"] = others("doubts") + entry["doubts"]
+    record["refused"], record["skipped"] = others("refused") + run.refused, others("skipped") + run.skipped
+    record["decisions"] = {"refused": len(record["refused"]), "skipped": len(record["skipped"]), "merged": len(record["merged_away"]), "doubts": len(record["doubts"])}
+    record["numbers"] = {**record.get("numbers", {}), "items_named": sum(i["quantity"] for i in record["items"]), "lines": len(record["items"])}
+    entry["after"] = _counts(live)
+    entry["changed"] = _changed(before, entry["after"])
+    record["rechecks"] = record.get("rechecks", []) + [entry]
+    if save:
+        OUT.mkdir(parents=True, exist_ok=True)
+        (OUT / f"{scan_id}.json").write_text(json.dumps(record, indent=1))
+    return entry

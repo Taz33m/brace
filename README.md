@@ -61,7 +61,7 @@ flowchart LR
     SCHED --> TREE["The total, which opens down to every item"]
 ```
 
-- **Naming the items.** An AI agent built on LangChain's `deepagents` gives each room to its own helper. The helper looks at that room's photos and records what it sees. It may only record 22 kinds of item that an owner owns. The code refuses furniture, and refuses any item recorded from a photo the helper never looked at.
+- **Naming the items.** An AI agent built on LangChain's `deepagents` gives each room to its own helper. The helper looks at that room's photos and records what it sees. It may only record 23 kinds of item that an owner owns. The code refuses furniture, and refuses any item recorded from a photo the helper never looked at.
 - **Pricing.** A second agent searches the web for what each kind of item costs to install. The code then fetches the page itself and keeps the price only if the price is really on it.
 - **Adding up.** Plain code does all the arithmetic. No AI model touches a total.
 - **Ranking buildings.** Buildings are ordered by their official fire hazard zone (from CAL FIRE's map), then by how much vegetation grows within 5 feet of their walls, then by how much of the roof is under trees.

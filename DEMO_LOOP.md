@@ -69,6 +69,9 @@ not written in this file because sponsor records are never committed.
 | The scan is old by the time of a loss | Values are set at the time of loss. The scan proves what was there; the price is read today. Every schedule shows its scan date |
 | Doesn't Matterport already do this? | It sells sketches from scans into claims, after a loss, one property at a time. This is before the loss, from scans that already exist, across a portfolio |
 | Where does a number come from? | Click it |
+| Does the agent decide anything, or is this a lookup? | Open the kitchen on `#/schedule`. It left 15 things out and says why for each (a tenant's own, another room's, could not see it well enough), merged 2 things it had seen from two rooms, and flagged 11 counts it is unsure of. Press "Look again": it reads the room a second time and the figure moves. On the kitchen it found the pantry cabinet it had left out and took the base cabinets from 2 to 1 |
+| Its counts changed between two readings. Which is right? | We do not know, and the screen says so: the agent flags that the two readings disagree. That is why every doubt is shown and a person signs the schedule off |
+| Is the cover enough? | Say "I carry four million of cover for the fit-out". It checks that against the schedule under the usual 80% coinsurance clause, shows what a claim would pay, and drafts a note to the broker. Nothing is sent. It is arithmetic, not advice |
 
 ## The lead building
 

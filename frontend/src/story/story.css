@@ -371,3 +371,67 @@ html.st-on, html.st-on body, html.st-on #root { height: auto; min-height: 100%; 
 .ctl p { margin: 6px 0 0; font: 400 16px/1.35 var(--sans); color: var(--amber); }
 .ctl small { font: 500 10.5px/1 var(--sans); letter-spacing: 0.2em; text-transform: uppercase; color: var(--champagne); }
 .ctl .talk { top: 14px; left: 14px; right: 14px; width: auto; }
+
+/* ---- the loop: outside, inside, multiplied, played by the scroll ---- */
+.lp-section { position: relative; z-index: 10; height: 1250vh; }
+.lp-stage { position: relative; width: 100%; height: 100vh; overflow: hidden; }
+.lp-wide, .lp-scene, .lp-room { position: absolute; inset: 0; opacity: 0; }
+.lp-wide { left: 50%; top: 50%; right: auto; bottom: auto; width: max(100vw, 100vh); height: max(100vw, 100vh); margin: calc(max(100vw, 100vh) * -0.5) 0 0 calc(max(100vw, 100vh) * -0.5); background: #0b0f14; }
+.lp-wide img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; will-change: transform; }
+.lp-scene canvas, .lp-room canvas { display: block; width: 100%; height: 100%; }
+.lp-stage::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(to bottom, rgba(11, 11, 12, 0.55), rgba(11, 11, 12, 0) 32%); }
+.lp-cap, .lp-lines, .lp-tree, .lp-close { position: absolute; z-index: 2; opacity: 0; visibility: hidden; color: var(--ivory); text-shadow: 0 2px 24px rgba(0, 0, 0, 0.85); }
+.lp-cap { left: 6vw; top: 8vh; max-width: 46vw; }
+.lp-cap h2 { margin: 0; font: 400 clamp(2.2rem, 4.2vw, 4.6rem)/0.98 var(--heading); letter-spacing: -0.01em; }
+.lp-cap p { margin: 12px 0 0; font: 300 clamp(1.1rem, 1.7vw, 1.8rem)/1.25 var(--heading); color: rgba(243, 236, 224, 0.92); }
+.lp-cap small, .lp-lines small, .lp-tree small { display: block; margin-top: 12px; font: 500 10.5px/1.5 var(--sans); letter-spacing: 0.2em; text-transform: uppercase; color: var(--champagne); }
+.lp-cap-mid { left: 0; right: 0; top: 34vh; max-width: none; text-align: center; }
+.lp-cap-mid h2 { font-size: clamp(4rem, 10vw, 11rem); }
+.lp-lines { right: 4vw; top: 7vh; bottom: 7vh; width: min(30rem, 34vw); display: flex; flex-direction: column; padding: 22px 24px; border-radius: 14px; background: rgba(11, 11, 12, 0.82); backdrop-filter: blur(10px); text-shadow: none; }
+.lp-lines > span { font: 500 11px/1 var(--sans); letter-spacing: 0.2em; text-transform: uppercase; color: rgba(243, 236, 224, 0.75); }
+.lp-lines > strong { min-height: 1.1em; margin-top: 10px; font: 400 clamp(1.8rem, 2.8vw, 2.9rem)/1 var(--heading); color: #ff5a3c; font-variant-numeric: lining-nums tabular-nums; }
+.lp-lines ol { flex: 1; min-height: 0; overflow: hidden; margin: 16px 0 0; padding: 0; list-style: none; }
+.lp-lines li { display: flex; justify-content: space-between; gap: 14px; padding: 7px 0; border-top: 1px solid rgba(243, 236, 224, 0.1); font: 400 14px/1.3 var(--sans); opacity: 0; transform: translateY(6px); transition: opacity 300ms ease, transform 300ms ease; }
+.lp-lines li.is-on { opacity: 1; transform: none; }
+.lp-lines li b { font-weight: 500; }
+.lp-lines li i { font-style: normal; white-space: nowrap; color: rgba(243, 236, 224, 0.8); font-variant-numeric: tabular-nums; }
+.lp-lines small { letter-spacing: 0.04em; text-transform: none; font-size: 12px; color: rgba(243, 236, 224, 0.6); }
+.lp-tree { left: 6vw; right: 6vw; top: 12vh; }
+.lp-tree > span { font: 500 12px/1 var(--sans); letter-spacing: 0.24em; text-transform: uppercase; color: rgba(243, 236, 224, 0.85); }
+.lp-tree > strong { display: block; margin-top: 10px; font: 400 clamp(4.5rem, 10.5vw, 11.5rem)/0.86 var(--heading); letter-spacing: -0.03em; color: #ff5a3c; font-variant-numeric: lining-nums tabular-nums; }
+.lp-tree table { margin-top: 4vh; border-collapse: collapse; font: 400 clamp(15px, 1.25vw, 19px)/1.3 var(--sans); font-variant-numeric: tabular-nums; }
+.lp-tree th { text-align: left; font-weight: 500; padding: 9px 3vw 9px 0; }
+.lp-tree td { padding: 9px 3vw 9px 0; color: rgba(243, 236, 224, 0.85); }
+.lp-tree td:last-child { color: var(--ivory); padding-right: 0; }
+.lp-tree tr { border-top: 1px solid rgba(243, 236, 224, 0.2); }
+.lp-tree small { letter-spacing: 0.04em; text-transform: none; font-size: 13px; color: rgba(243, 236, 224, 0.75); }
+.lp-close { inset: 0; display: grid; place-content: center; justify-items: center; gap: 4vh; background: rgba(11, 11, 12, 0.72); text-align: center; }
+.lp-close ul { display: flex; gap: 4vw; margin: 0; padding: 0; list-style: none; font: 400 clamp(1.4rem, 2.4vw, 2.6rem)/1 var(--heading); color: var(--champagne); }
+.lp-close p { margin: 0; font: 400 clamp(2.6rem, 6vw, 6.4rem)/1 var(--heading); letter-spacing: -0.01em; }
+.sc.is-inline { position: relative; inset: auto; z-index: 10; height: 100vh; }
+.sc.is-inline .talk { position: absolute; }
+.lp-lines li.is-out { padding: 6px 0; font-size: 12.5px; color: rgba(243, 236, 224, 0.55); }
+.lp-lines li.is-out b { min-width: 0; font-weight: 400; text-decoration: line-through; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lp-lines li.is-out i { color: #ff8a70; }
+.lp-lines li.is-room { padding-top: 14px; border-top: 0; font: 500 10.5px/1 var(--sans); letter-spacing: 0.2em; text-transform: uppercase; color: var(--champagne); }
+.lp-tree { left: 0; right: 0; top: 0; bottom: 0; padding: 12vh 6vw 0; background: linear-gradient(to right, rgba(11, 11, 12, 0.9), rgba(11, 11, 12, 0.72) 50%, rgba(11, 11, 12, 0.2) 92%); }
+
+/* ---- what the agent decided, a second look, and the cover check ---- */
+.sc-list small.sc-unsure { color: #ff8a70; }
+.sc-decided { margin: 0 0 12px 14px; padding: 10px 14px; border-radius: 10px; background: rgba(243, 236, 224, 0.05); font: 400 12.5px/1.45 var(--sans); color: rgba(243, 236, 224, 0.78); }
+.sc-decided p { margin: 0 0 6px; }
+.sc-decided b { display: inline-block; min-width: 6.2em; margin-right: 8px; font: 500 10.5px/1 var(--sans); letter-spacing: 0.16em; text-transform: uppercase; color: var(--champagne); }
+.sc-decided p.is-doubt b { color: #ff8a70; }
+.sc-decided p.is-new { color: var(--ivory); }
+.sc-decided p.is-new b { color: var(--amber); }
+.sc-list .sc-decided button { display: inline-block; width: auto; margin-top: 4px; padding: 7px 14px; border-radius: 999px; background: var(--amber); color: #14110f; font: 600 12px/1 var(--sans); }
+.sc-list .sc-decided button:disabled { background: rgba(243, 236, 224, 0.16); color: rgba(243, 236, 224, 0.7); cursor: default; }
+.sc-cover { display: grid; gap: 10px; }
+.sc-cover label { font: 500 11px/1 var(--sans); letter-spacing: 0.18em; text-transform: uppercase; color: var(--champagne); }
+.sc-cover div { display: flex; gap: 10px; }
+.sc-cover input { flex: 1; padding: 11px 14px; border-radius: 10px; border: 1px solid rgba(215, 194, 158, 0.35); background: rgba(243, 236, 224, 0.06); color: var(--ivory); font: 400 18px/1 var(--sans); font-variant-numeric: tabular-nums; }
+.sc-cover button { padding: 10px 20px; border: 0; border-radius: 999px; background: var(--amber); color: #14110f; font: 600 13px/1 var(--sans); cursor: pointer; justify-self: start; }
+.sc-cover strong { font: 400 1.7rem/1.1 var(--heading); color: #ff8a70; }
+.sc-cover strong::first-letter { text-transform: uppercase; }
+.sc-cover p { margin: 0; font: 400 14px/1.45 var(--sans); }
+.sc-cover pre { margin: 4px 0 0; padding-top: 12px; border-top: 1px solid rgba(215, 194, 158, 0.2); max-height: 26vh; overflow: auto; white-space: pre-wrap; font: 400 12.5px/1.5 var(--sans); color: rgba(243, 236, 224, 0.8); }

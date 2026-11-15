@@ -162,14 +162,17 @@ def test_the_voice_is_told_only_what_the_schedule_holds_and_can_only_open_things
              "kinds_of_home": [{"name": "2 Bedroom", "homes": 73, "per_home": {"low": 25_715, "high": 64_730}, "scanned": True}],
              "numbers": {"views_looked_at": 60, "rooms_read": 6, "items_named": 34, "prices_confirmed": 20},
              "buildings": [{"id": "S10", "exposure_rank": 1, "brush_within_5ft_percent": 82.0, "homes_assumed": 6, "units": []},
-                           {"id": "S2", "exposure_rank": 2, "brush_within_5ft_percent": 20.0, "homes_assumed": 10, "units": [{"name": "2BR", "rooms": [{"name": "Kitchen"}, {"name": "Bathroom"}]}]}]}
+                           {"id": "S2", "exposure_rank": 2, "brush_within_5ft_percent": 20.0, "homes_assumed": 10, "units": [{"name": "2BR", "rechecks": [], "rooms": [
+                               {"name": "Kitchen", "left_out": [{"saw": "grey sofa", "why": "furniture or a tenant's own"}], "doubts": [{"id": "d1", "about": "Wall cabinet", "doubt": "There may be a fourth wall cabinet."}]},
+                               {"name": "Bathroom", "left_out": [], "doubts": []}]}]}]}
     told = voice.schedule_instructions(sched)
     assert "3.3 million to 8.3 million dollars" in told and "extrapolation" in told and "never 'when' or 'will'" in told and "Rooms of the scanned home: Kitchen, Bathroom." in told
     assert "building S10, rank 1, 82 percent of walls, 6 homes" in told and "Never estimate a price" in told
-    assert [t["name"] for t in voice.schedule_tools()] == ["open_building", "open_room", "explain_line", "show_working"]      # nothing that sends, books or changes a figure
+    assert "Kitchen: grey sofa (furniture or a tenant's own)" in told and "Kitchen: There may be a fourth wall cabinet." in told and "nothing is sent" in told
+    assert [t["name"] for t in voice.schedule_tools()] == ["open_building", "open_room", "explain_line", "show_working", "look_again", "check_cover"]      # nothing that sends or books
     assert voice._spoken({"low": None, "high": None}) == "no confirmed price" and voice._spoken({"low": 600, "high": 600}) == "600 dollars"
     body = voice.schedule_session(sched)["session"]
-    assert body["type"] == "realtime" and len(body["tools"]) == 4
+    assert body["type"] == "realtime" and len(body["tools"]) == 6
 
 
 def test_the_big_screen_follows_what_the_phone_opens():

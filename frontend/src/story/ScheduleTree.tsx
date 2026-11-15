@@ -4,6 +4,7 @@ import { api } from "../api";
 import { ConversationPanel } from "../components/ConversationPanel";
 import { conversation } from "../conversation";
 import "./story.css";
+import { ScheduleReview } from "./ScheduleReview";
 
 /**
  * The schedule as a tree. The property's total at the top; under it the buildings, ranked by how much fuel stands
@@ -13,10 +14,14 @@ import "./story.css";
 interface Money { low: number | null; high: number | null; lines?: number; lines_priced?: number }
 interface Line { what: string; quantity: number; unit: string; from: string; price_low: number | null; price_high: number | null; low: number | null; high: number | null;
                  source_url: string | null; seen: string | null; at: { standpoint: string; direction: string } | null }
-interface Room { name: string; area_sqft: number | null; read: boolean; items: Line[]; total: Money }
-interface Unit { scan_id: string; name: string; scan_date: string | null; rooms: Room[]; total: Money; multiplied_by: number; statement: string | null }
+interface Room { name: string; area_sqft: number | null; read: boolean; room_id: string | null; items: Line[]; total: Money;
+                 doubts: { id: string; about: string | null; doubt: string }[]; left_out: { saw: string; why: string }[] }
+interface Unit { scan_id: string; name: string; scan_date: string | null; rooms: Room[]; total: Money; multiplied_by: number; statement: string | null;
+                 decisions: { left_out: number; merged: number; doubts: number }; rechecks: { room_name: string; changed: string[] }[] }
+interface Cover { check: { cover: number; verdict: string; say: string; example: { loss: number; low: number; high: number } }; note: string }
+interface Again { room: string; state: "looking" | "done" | "failed"; changed: string[]; statement: string | null; before?: Money; after?: Money }
 interface Building { id: string; exposure_rank: number; brush_within_5ft_percent: number | null; tree_cover_over_roof_percent: number | null; fire_zone: string | null; in_fire_zone: boolean | null; homes_assumed: number; polygon: [number, number][]; total: Money; units: Unit[] }
-interface Schedule {
+export interface Schedule {
   property: { id: number; name: string; address: string | null; homes: number; homes_on_record: number; scenario: string; scan_date: string | null; bounds: [number, number, number, number]; aerial: { width: number; height: number } };
   total: Money; home: { name: string; total: Money; multiplied_by: number };
   kinds_of_home: { name: string; homes: number; per_home: Money; low: number | null; high: number | null; basis: string; scanned: boolean }[];
@@ -29,7 +34,8 @@ const short = (n: number) => (n >= 1e6 ? `$${(n / 1e6).toFixed(1)}M` : n >= 1e4 
 const range = (m: { low: number | null; high: number | null }) => (m.low == null || m.high == null ? "no price confirmed" : m.low === m.high ? short(m.low) : `${short(m.low)} to ${short(m.high)}`);
 const each = (l: Line) => (l.price_low == null ? "" : l.price_high && l.price_high !== l.price_low ? `$${l.price_low.toLocaleString("en-US")} to $${l.price_high.toLocaleString("en-US")}` : `$${l.price_low.toLocaleString("en-US")}`);
 
-export function ScheduleTree({ site, controller = false }: { site: number; controller?: boolean }) {
+export function ScheduleTree({ site, controller = false, inline = false }: { site: number; controller?: boolean; inline?: boolean }) {
+  const [review, setReview] = useState<{ data: Schedule; captured: string } | null>(null);
   const [data, setData] = useState<Schedule | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);        // the building that is open
@@ -41,6 +47,37 @@ export function ScheduleTree({ site, controller = false }: { site: number; contr
   const seen = useRef(0);
   const latest = useRef<Schedule | null>(null);
   latest.current = data;
+  const [cover, setCover] = useState<Cover | null>(null);         // the owner's cover checked against the schedule
+  const [asking, setAsking] = useState(false);                    // the cover field is open
+  const [amount, setAmount] = useState("");
+  const [again, setAgain] = useState<Again | null>(null);         // a second look at one room: under way, or what it found
+  const [version, setVersion] = useState(0);                      // goes up when the schedule is rebuilt, so the voice is told again
+
+  const load = () => fetch(`/api/schedule/${site}`).then(async (r) => { if (!r.ok) throw new Error((await r.json().catch(() => null))?.detail || "no schedule for this property"); return r.json() as Promise<Schedule>; });
+  // The two things the owner can ask the agent to do. Both go to the server; neither sends anything to anyone.
+  const checkCover = async (dollars: number): Promise<Cover | null> => {
+    const r = await fetch(`/api/schedule/${site}/cover?amount=${encodeURIComponent(dollars)}`, { method: "POST" });
+    if (!r.ok) return null;
+    const got = (await r.json()) as Cover;
+    setCover(got); setAsking(false); setHow(false);
+    return got;
+  };
+  const lookAgain = (roomName: string) => {
+    if (again?.state === "looking") return;
+    setAgain({ room: roomName, state: "looking", changed: [], statement: null });
+    fetch(`/api/schedule/${site}/recheck?room=${encodeURIComponent(roomName)}`, { method: "POST" })
+      .then(async (r) => { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
+      .then(async (got: { stop: string; changed: string[]; statement: string | null; home_before: Money; home_after: Money }) => {
+        const ok = got.stop === "finished";
+        setAgain({ room: roomName, state: ok ? "done" : "failed", changed: got.changed, statement: got.statement, before: got.home_before, after: got.home_after });
+        if (ok) { setData(await load()); setVersion((v) => v + 1); }
+        conversation.cue("finding", ok ? `The second look at the ${roomName} is back. ${got.changed.length ? got.changed.join(". ") : "Nothing changed"}. The scanned home is now ${range(got.home_after)}.`
+                                       : `The second look at the ${roomName} could not be finished. Nothing was changed.`);
+      })
+      .catch(() => setAgain({ room: roomName, state: "failed", changed: [], statement: null }));
+  };
+  const act = useRef({ checkCover, lookAgain });
+  act.current = { checkCover, lookAgain };
 
   useEffect(() => { api.config().then((c) => setVoiceReady(c.voice_ready)).catch(() => setVoiceReady(false)); }, []);
   // The schedule can be talked to. What the voice may do here: open a building, open a room, point at a line, show the working.
@@ -80,12 +117,25 @@ export function ScheduleTree({ site, controller = false }: { site: number; contr
         setHow(true);
         return { ok: true, how_it_is_worked_out: d.assumptions, not_counted: d.not_counted };
       }
+      if (name === "look_again") {
+        const r = findRoom(String(args.room ?? ""));
+        if (!scanned || !r || !r.room_id) return { ok: false, say: "The camera did not stand in that room, so it cannot be read again." };
+        setHow(false); setOpen(scanned.id); setRoom(r.name); setPointed(null);
+        act.current.lookAgain(r.name);
+        return { ok: true, started: true, room: r.name, doubts: r.doubts.map((x) => x.doubt), say: "The agent is reading that room again. It takes about a minute. Say so, and that you will tell them what changed." };
+      }
+      if (name === "check_cover") {
+        const dollars = Number(args.amount);
+        if (!Number.isFinite(dollars) || dollars <= 0) return { ok: false, say: "Ask the owner how much cover they carry for the fit-out, in dollars." };
+        return act.current.checkCover(dollars).then((got) => (got ? { ok: true, verdict: got.check.verdict, say: got.check.say, on_a_loss_of: got.check.example.loss,
+          paid_at_the_low_end: got.check.example.low, paid_at_the_high_end: got.check.example.high, note: "A note to the broker has been drafted on the screen. Nothing is sent." } : { ok: false, say: "The cover could not be checked." }));
+      }
       return { ok: false, say: "That cannot be done on this screen." };
     };
-    conversation.setStage({ key: `schedule:${site}`, sessionUrl: `/api/schedule/${site}/voice`, notesUrl: `/api/schedule/${site}/voice/notes`,
+    conversation.setStage({ key: `schedule:${site}:${version}`, sessionUrl: `/api/schedule/${site}/voice`, notesUrl: `/api/schedule/${site}/voice/notes`,
                             greeting: "Greet the owner in one short sentence and give the property's figure, saying it is an extrapolation from one scanned home.", run });
-    return () => { conversation.setStage(null); conversation.stop(); };
-  }, [site]);
+  }, [site, version]);
+  useEffect(() => () => { conversation.setStage(null); conversation.stop(); }, []);
 
   // Two devices, one schedule. The phone tells the server what it has opened; the big screen follows.
   useEffect(() => {
@@ -114,19 +164,20 @@ export function ScheduleTree({ site, controller = false }: { site: number; contr
 
   useEffect(() => { document.documentElement.classList.add("st-on"); return () => document.documentElement.classList.remove("st-on"); }, []);
   useEffect(() => {
-    fetch(`/api/schedule/${site}`).then(async (r) => { if (!r.ok) throw new Error((await r.json().catch(() => null))?.detail || "no schedule for this property"); return r.json(); })
-      .then((d: Schedule) => { setData(d); setOpen(d.buildings.find((b) => b.units.length)?.id ?? null); }).catch((e) => setError(e.message));
+    load().then((d) => { setData(d); setOpen(d.buildings.find((b) => b.units.length)?.id ?? null); }).catch((e) => setError(e.message));
   }, [site]);
   useEffect(() => {
-    const key = (e: KeyboardEvent) => { if (e.key === "Escape") { if (how) setHow(false); else if (room) setRoom(null); else window.location.hash = "#/"; } };
+    const key = (e: KeyboardEvent) => { if (review) return; if (e.key === "Escape") { if (how) setHow(false); else if (room) setRoom(null); else if (!inline) window.location.hash = "#/"; } };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
-  }, [how, room]);
+  }, [how, room, inline, review]);
 
   // Whatever was opened, by a click or by the voice, is brought into view.
   useEffect(() => {
     const el = document.querySelector(room ? ".sc-home-rows > div.is-open" : ".sc-list > li.is-open");
-    el?.scrollIntoView({ block: room ? "start" : "nearest", behavior: "smooth" });
+    // Inside its own list only: at the foot of the home page the page itself must not be dragged to it.
+    const box = el?.closest(".sc-list");
+    if (el && box) box.scrollTo({ top: (el as HTMLElement).offsetTop - (box as HTMLElement).offsetTop - (room ? 0 : 40), behavior: "smooth" });
   }, [open, room]);
 
   const shapes = useMemo(() => {
@@ -137,7 +188,7 @@ export function ScheduleTree({ site, controller = false }: { site: number; contr
   }, [data]);
 
   if (error) return <div className="fatal" role="alert">{error}</div>;
-  if (!data) return <div className="st-wait" />;
+  if (!data) return <div className={inline ? "sc is-inline" : "st-wait"} />;
   const p = data.property, n = data.numbers, count = data.buildings.length;
   const partial = (data.total.lines_priced ?? 0) < (data.total.lines ?? 0);
 
@@ -155,7 +206,8 @@ export function ScheduleTree({ site, controller = false }: { site: number; contr
   }
 
   return (
-    <div className="st sc">
+    <div className={`st sc${inline ? " is-inline" : ""}`}>
+      {review && <ScheduleReview data={review.data} captured={review.captured} onClose={() => setReview(null)} />}
       <div className="sc-map">
         <svg viewBox={`0 0 ${p.aerial.width} ${p.aerial.height}`} preserveAspectRatio="xMidYMid slice" aria-hidden="true">
           <image href={`/api/buildings/${site}/aerial.jpg`} width={p.aerial.width} height={p.aerial.height} />
@@ -168,7 +220,7 @@ export function ScheduleTree({ site, controller = false }: { site: number; contr
       </div>
 
       <div className="sc-tree">
-        <a className="st-home sc-home" href="#/">Brace</a>
+        {!inline && <a className="st-home sc-home" href="#/">Brace</a>}
         <ConversationPanel ready={voiceReady} compact />
         <header>
           <h1>{p.name}</h1>
@@ -179,6 +231,7 @@ export function ScheduleTree({ site, controller = false }: { site: number; contr
           <span>to put back what the owner owns inside{data.lost_rent_per_month ? `, and ${short(data.lost_rent_per_month.low)} to ${short(data.lost_rent_per_month.high)} of rent for each month empty` : ""}</span>
           {partial && <em>{data.total.lines_priced} of {data.total.lines} lines have a confirmed price.</em>}
         </div>
+        <button className="sr-open" onClick={() => setReview({ data: structuredClone(data), captured: new Date().toISOString() })}>Review &amp; export the evidence</button>
         <table className="sc-kinds"><tbody>
           {data.kinds_of_home.map((k) => (
             <tr key={k.name} title={k.basis}>
@@ -203,7 +256,7 @@ export function ScheduleTree({ site, controller = false }: { site: number; contr
                     {unit.rooms.map((r) => (
                       <div key={r.name} className={r.name === room ? "is-open" : ""}>
                         <button type="button" onClick={() => { setRoom(r.name === room ? null : r.name); setPointed(null); }}>
-                          <span>{r.name}{!r.read && <small>not seen by the camera: measured only</small>}</span><span>{r.items.length} lines</span><strong>{range(r.total)}</strong>
+                          <span>{r.name}{!r.read && <small>not seen by the camera: measured only</small>}{r.doubts.length > 0 && <small className="sc-unsure">unsure of {r.doubts.length}</small>}</span><span>{r.items.length} lines</span><strong>{range(r.total)}</strong>
                         </button>
                         {r.name === room && (
                           <table><tbody>
@@ -218,6 +271,16 @@ export function ScheduleTree({ site, controller = false }: { site: number; contr
                             ))}
                           </tbody></table>
                         )}
+                        {r.name === room && (r.doubts.length > 0 || r.left_out.length > 0 || r.room_id) && (
+                          <div className="sc-decided">
+                            {r.doubts.map((x) => <p key={x.id} className="is-doubt"><b>Unsure</b>{x.doubt}</p>)}
+                            {r.left_out.length > 0 && <p><b>Left out</b>{r.left_out.map((x) => `${x.saw} (${x.why})`).join("; ")}</p>}
+                            {again?.room === r.name && again.state === "done" && <p className="is-new"><b>Looked again</b>{again.changed.length ? again.changed.join(". ") : "Nothing changed"}.{again.before && again.after ? ` The home: ${range(again.before)} before, ${range(again.after)} now.` : ""}</p>}
+                            {again?.room !== r.name && (() => { const c = [...unit.rechecks].reverse().find((x) => x.room_name === r.name); return c ? <p className="is-new"><b>Looked again</b>{c.changed.length ? c.changed.join(". ") : "Nothing changed"}.</p> : null; })()}
+                            {again?.room === r.name && again.state === "failed" && <p><b>Looked again</b>The second look could not be finished. Nothing was changed.</p>}
+                            {r.room_id && <button type="button" disabled={again?.state === "looking"} onClick={() => lookAgain(r.name)}>{again?.room === r.name && again.state === "looking" ? "Reading the room again" : "Look again"}</button>}
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -230,9 +293,25 @@ export function ScheduleTree({ site, controller = false }: { site: number; contr
 
         <footer>
           <button type="button" className="ft-how sc-how" onClick={() => setHow(!how)}>How this is worked out</button>
+          <button type="button" className="ft-how sc-how" onClick={() => { setAsking(!asking); setCover(null); }}>Check my cover</button>
           <button type="button" className="ft-how sc-how" onClick={() => void showPhone()}>Phone</button>
           <span>{n.scans_read} scan, {n.rooms_read} rooms, {n.views_looked_at} views, {n.items_named} items named, {n.prices_confirmed} prices confirmed{n.minutes ? `, ${n.minutes} minutes` : ""}</span>
         </footer>
+        {asking && (
+          <form className="ft-panel sc-panel sc-cover" onSubmit={(e) => { e.preventDefault(); const n = Number(amount.replace(/[^0-9.]/g, "")); if (n > 0) void checkCover(n); }}>
+            <label htmlFor="sc-amount">Cover you carry for the fit-out, in dollars</label>
+            <div><input id="sc-amount" inputMode="numeric" autoFocus value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="4,000,000" /><button type="submit">Check</button></div>
+          </form>
+        )}
+        {cover && (
+          <aside className="ft-panel sc-panel sc-cover">
+            <strong>{cover.check.verdict}</strong>
+            <p>{cover.check.say}</p>
+            <p>On a loss of {short(cover.check.example.loss)}: {short(cover.check.example.low)} paid at the low end of the range, {short(cover.check.example.high)} at the high end.</p>
+            <pre>{cover.note}</pre>
+            <button type="button" onClick={() => setCover(null)}>Close</button>
+          </aside>
+        )}
         {phone && <aside className="sc-phone"><img src={phone.qr} alt="" /><span>{phone.url}</span></aside>}
         {how && (
           <aside className="ft-panel sc-panel">
