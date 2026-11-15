@@ -12,7 +12,11 @@ import "./story.css";
  */
 interface Money { low: number | null; high: number | null; lines?: number; lines_priced?: number }
 interface Line { what: string; quantity: number; unit: string; from: string; price_low: number | null; price_high: number | null; low: number | null; high: number | null;
-                 source_url: string | null; seen: string | null; at: { standpoint: string; direction: string } | null }
+                 source_url: string | null; seen: string | null; at: { standpoint: string; direction: string } | null;
+                 key?: string | null; match?: Match | null; guide_low?: number | null; guide_high?: number | null }
+/** The products one item most likely is: found by looking at it in the scan, each price confirmed on its page. Never an identification. */
+interface Match { label: string; make: string; model: string | null; name: string; low: number; high: number; seen: string[]; brand_read: string | null;
+                  candidates: { make: string; model: string | null; name: string; price: number; url: string; store: string; why: string }[] }
 interface Room { name: string; area_sqft: number | null; read: boolean; room_id: string | null; items: Line[]; total: Money;
                  doubts: { id: string; about: string | null; doubt: string }[]; left_out: { saw: string; why: string }[] }
 interface Unit { scan_id: string; name: string; scan_date: string | null; rooms: Room[]; total: Money; multiplied_by: number; statement: string | null;
@@ -31,6 +35,7 @@ interface Schedule {
 
 const short = (n: number) => (n >= 1e6 ? `$${(n / 1e6).toFixed(1)}M` : n >= 1e4 ? `$${Math.round(n / 1e3)}K` : `$${Math.round(n).toLocaleString("en-US")}`);
 const range = (m: { low: number | null; high: number | null }) => (m.low == null || m.high == null ? "no price confirmed" : m.low === m.high ? short(m.low) : `${short(m.low)} to ${short(m.high)}`);
+const dollars = (m: { low: number | null; high: number | null }) => (m.low == null || m.high == null ? "no price confirmed" : m.low === m.high ? `$${Math.round(m.low).toLocaleString("en-US")}` : `$${Math.round(m.low).toLocaleString("en-US")} to $${Math.round(m.high).toLocaleString("en-US")}`);
 const each = (l: Line) => (l.price_low == null ? "" : l.price_high && l.price_high !== l.price_low ? `$${l.price_low.toLocaleString("en-US")} to $${l.price_high.toLocaleString("en-US")}` : `$${l.price_low.toLocaleString("en-US")}`);
 
 export function ScheduleTree({ site, controller = false, inline = false }: { site: number; controller?: boolean; inline?: boolean }) {
@@ -50,6 +55,8 @@ export function ScheduleTree({ site, controller = false, inline = false }: { sit
   const [amount, setAmount] = useState("");
   const [again, setAgain] = useState<Again | null>(null);         // a second look at one room: under way, or what it found
   const [version, setVersion] = useState(0);                      // goes up when the schedule is rebuilt, so the voice is told again
+  const [card, setCard] = useState<{ room: string; what: string } | null>(null);     // the line whose likely make and model is shown
+  const [finding, setFinding] = useState<{ key: string; state: "looking" | "none" | "failed" } | null>(null);
 
   const load = () => fetch(`/api/schedule/${site}`).then(async (r) => { if (!r.ok) throw new Error((await r.json().catch(() => null))?.detail || "no schedule for this property"); return r.json() as Promise<Schedule>; });
   // The two things the owner can ask the agent to do. Both go to the server; neither sends anything to anyone.
@@ -74,8 +81,24 @@ export function ScheduleTree({ site, controller = false, inline = false }: { sit
       })
       .catch(() => setAgain({ room: roomName, state: "failed", changed: [], statement: null }));
   };
-  const act = useRef({ checkCover, lookAgain });
-  act.current = { checkCover, lookAgain };
+  // Look at one item in the scan and find the products it most likely is. A real agent run of about a minute.
+  const findModel = (roomName: string, what: string) => {
+    const key = `${roomName}:${what}`;
+    if (finding?.state === "looking") return;
+    setFinding({ key, state: "looking" });
+    fetch(`/api/schedule/${site}/match?room=${encodeURIComponent(roomName)}&item=${encodeURIComponent(what)}`, { method: "POST" })
+      .then(async (r) => { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
+      .then(async (got: { match: Match | null }) => {
+        setFinding(got.match ? null : { key, state: "none" });
+        if (got.match) { setData(await load()); setVersion((v) => v + 1); }
+        conversation.cue("finding", got.match
+          ? `The search for the ${what} in the ${roomName} is back. ${got.match.label}: ${got.match.make} ${got.match.model ?? got.match.name}, ${dollars(got.match)}, from ${got.match.candidates.length} product ${got.match.candidates.length === 1 ? "page" : "pages"}. It is a match by appearance, not an identification.`
+          : `The search for the ${what} in the ${roomName} found no product whose price could be confirmed. The line keeps its cost guide price.`);
+      })
+      .catch(() => setFinding({ key, state: "failed" }));
+  };
+  const act = useRef({ checkCover, lookAgain, findModel });
+  act.current = { checkCover, lookAgain, findModel };
 
   useEffect(() => { api.config().then((c) => setVoiceReady(c.voice_ready)).catch(() => setVoiceReady(false)); }, []);
   // The schedule can be talked to. What the voice may do here: open a building, open a room, point at a line, show the working.
@@ -83,6 +106,8 @@ export function ScheduleTree({ site, controller = false, inline = false }: { sit
   useEffect(() => {
     const like = (a: string, b: string) => a.toLowerCase().replace(/[^a-z0-9]/g, "").includes(b.toLowerCase().replace(/[^a-z0-9]/g, ""));
     const money = (m: { low: number | null; high: number | null }) => range(m);      // rounded as on the screen, so what is said matches what is shown
+    const told = (m: Match) => ({ label: m.label, make: m.make, model: m.model, name: m.name, price_each: dollars(m), product_pages: m.candidates.map((c) => c.store),
+                                  seen_in_the_scan: m.seen, note: "A match by appearance, not an identification, unless a brand was read in the scan." });
     const run = (name: string, args: Record<string, unknown>) => {
       const d = latest.current;
       if (!d) return { ok: false, say: "The schedule is still loading." };
@@ -107,13 +132,24 @@ export function ScheduleTree({ site, controller = false, inline = false }: { sit
         const l = r.items.find((x) => like(x.what, String(args.item ?? ""))) ?? r.items.find((x) => like(String(args.item ?? ""), x.what.split(" ")[0]));
         if (!l) return { ok: false, say: "That line is not in this room." };
         setPointed(`${r.name}:${l.what}`);
-        return { ok: true, room: r.name, line: l.what, quantity: l.quantity, unit: l.unit, quantity_from: l.from, what_the_agent_saw: l.seen,
+        setCard(l.key ? { room: r.name, what: l.what } : null);
+        return { ok: true, room: r.name, line: l.what, closest_match: l.match ? told(l.match) : "not looked for yet; find_model can look", quantity: l.quantity, unit: l.unit, quantity_from: l.from, what_the_agent_saw: l.seen,
                  price_each: l.price_low == null ? "no confirmed price" : money({ low: l.price_low, high: l.price_high }), amount: money(l),
                  price_from: l.source_url ? `a page on ${new URL(l.source_url).hostname.replace(/^www\./, "")}, fetched and found to state this price` : "no page" };
       }
       if (name === "show_working") {
         setHow(true);
         return { ok: true, how_it_is_worked_out: d.assumptions, not_counted: d.not_counted };
+      }
+      if (name === "find_model") {
+        const r = findRoom(String(args.room ?? ""));
+        const l = r?.items.find((x) => like(x.what, String(args.item ?? ""))) ?? r?.items.find((x) => like(String(args.item ?? ""), x.what.split(" ")[0]));
+        if (!scanned || !r || !l || !l.key) return { ok: false, say: "That is not something the camera saw in that room, so it cannot be looked at." };
+        setHow(false); setOpen(scanned.id); setRoom(r.name); setPointed(`${r.name}:${l.what}`); setCard({ room: r.name, what: l.what });
+        if (l.match) return { ok: true, already_found: true, ...told(l.match) };
+        act.current.findModel(r.name, l.what);
+        return { ok: true, started: true, line: l.what, room: r.name, price_now: money({ low: l.price_low, high: l.price_high }),
+                 say: "The agent is looking at it in the scan and searching for products that match. It takes about a minute. Say so, and that you will tell them what it finds." };
       }
       if (name === "look_again") {
         const r = findRoom(String(args.room ?? ""));
@@ -165,10 +201,10 @@ export function ScheduleTree({ site, controller = false, inline = false }: { sit
     load().then((d) => { setData(d); setOpen(d.buildings.find((b) => b.units.length)?.id ?? null); }).catch((e) => setError(e.message));
   }, [site]);
   useEffect(() => {
-    const key = (e: KeyboardEvent) => { if (e.key === "Escape") { if (how) setHow(false); else if (room) setRoom(null); else if (!inline) window.location.hash = "#/"; } };
+    const key = (e: KeyboardEvent) => { if (e.key === "Escape") { if (card) setCard(null); else if (how) setHow(false); else if (room) setRoom(null); else if (!inline) window.location.hash = "#/"; } };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
-  }, [how, room, inline]);
+  }, [how, room, inline, card]);
 
   // Whatever was opened, by a click or by the voice, is brought into view.
   useEffect(() => {
@@ -189,6 +225,8 @@ export function ScheduleTree({ site, controller = false, inline = false }: { sit
   if (!data) return <div className={inline ? "sc is-inline" : "st-wait"} />;
   const p = data.property, n = data.numbers, count = data.buildings.length;
   const partial = (data.total.lines_priced ?? 0) < (data.total.lines ?? 0);
+  const carded = card ? data.buildings.flatMap((b) => b.units).flatMap((u) => u.rooms).find((r) => r.name === card.room)?.items.find((l) => l.what === card.what) ?? null : null;
+  const looking = !!card && finding?.key === `${card.room}:${card.what}` ? finding.state : null;
 
   // On the phone there is no list to read: the name, the figure, the voice, and what the big screen is showing.
   if (controller) {
@@ -214,6 +252,32 @@ export function ScheduleTree({ site, controller = false, inline = false }: { sit
           ))}
         </svg>
         <p className="sc-key"><i />More fuel at the walls<small>Vexcel</small></p>
+        {card && carded && (
+          <aside className="sc-card" aria-label={`${carded.what}: likely make and model`}>
+            <button type="button" className="sc-card-x" aria-label="Close" onClick={() => setCard(null)}>×</button>
+            <img src={`/api/schedule/${site}/view.jpg?room=${encodeURIComponent(card.room)}&item=${encodeURIComponent(card.what)}`} alt="" onError={(e) => { e.currentTarget.style.display = "none"; }} />
+            <span>{carded.what}, {card.room}</span>
+            {carded.match ? (<>
+              <strong>{dollars(carded.match)}</strong>
+              <p className="sc-card-name"><em>{carded.match.label}</em>{carded.match.make} {carded.match.model ?? carded.match.name}</p>
+              <ul>
+                {carded.match.candidates.map((c) => (
+                  <li key={c.url}><a href={c.url} target="_blank" rel="noreferrer" title={c.why}>
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" /></svg>
+                    <b>{c.make} {c.model ?? c.name}</b><i>${Math.round(c.price).toLocaleString("en-US")}</i><small>{c.store}</small>
+                  </a></li>
+                ))}
+              </ul>
+              <small>{carded.guide_low != null && carded.guide_high != null ? `Was ${dollars({ low: carded.guide_low, high: carded.guide_high })} for any ${carded.what.toLowerCase()}. ` : ""}Matched by how it looks in the scan{carded.match.seen.length ? `: ${carded.match.seen.slice(0, 4).join(", ")}` : ""}. Not an identification.</small>
+            </>) : (<>
+              <strong className="is-wide">{dollars({ low: carded.price_low, high: carded.price_high })}</strong>
+              <p className="sc-card-name"><em>Any {carded.what.toLowerCase()}</em>from a cost guide</p>
+              {looking === "none" && <small>No product's price could be confirmed on its page, so the line keeps this price.</small>}
+              {looking === "failed" && <small>The search could not be finished. Nothing was changed.</small>}
+              <button type="button" disabled={finding?.state === "looking"} onClick={() => findModel(card.room, card.what)}>{looking === "looking" ? "Looking at it in the scan" : "Find the make and model"}</button>
+            </>)}
+          </aside>
+        )}
       </div>
 
       <div className="sc-tree">
@@ -257,11 +321,12 @@ export function ScheduleTree({ site, controller = false, inline = false }: { sit
                         {r.name === room && (
                           <table><tbody>
                             {r.items.map((l, i) => (
-                              <tr key={l.what + i} title={l.seen ?? undefined} className={pointed === `${r.name}:${l.what}` ? "is-pointed" : ""}
+                              <tr key={l.what + i} title={l.seen ?? undefined} className={`${pointed === `${r.name}:${l.what}` ? "is-pointed" : ""}${l.key ? " is-seen" : ""}`}
+                                  onClick={l.key ? (e) => { if ((e.target as HTMLElement).closest("a")) return; setPointed(`${r.name}:${l.what}`); setCard({ room: r.name, what: l.what }); } : undefined}
                                   ref={pointed === `${r.name}:${l.what}` ? (el) => el?.scrollIntoView({ block: "center", behavior: "smooth" }) : undefined}>
-                                <th>{l.what}{l.seen && <small>{l.seen}</small>}</th>
+                                <th>{l.what}{l.match ? <small className="sc-matched">{l.match.make} {l.match.model ?? ""}</small> : l.seen && <small>{l.seen}</small>}</th>
                                 <td>{l.quantity.toLocaleString("en-US")} {l.unit}<small>{l.from.replace(" from the scan", "")}</small></td>
-                                <td>{l.source_url ? <a href={l.source_url} target="_blank" rel="noreferrer">{each(l)}</a> : ""}</td>
+                                <td>{l.match?.candidates[0] ? <a href={l.match.candidates[0].url} target="_blank" rel="noreferrer">{each(l)}</a> : l.source_url ? <a href={l.source_url} target="_blank" rel="noreferrer">{each(l)}</a> : ""}</td>
                                 <td className={l.low == null ? "is-none" : ""}>{range(l)}</td>
                               </tr>
                             ))}
