@@ -474,3 +474,13 @@ html.st-on, html.st-on body, html.st-on #root { height: auto; min-height: 100%; 
 .lp-chosen { margin-top: 18px; max-width: 30rem; display: grid; gap: 8px; padding: 14px 16px; border-radius: 12px; background: rgba(11, 11, 12, 0.85); text-shadow: none; font: 400 14px/1.45 var(--sans); }
 .lp-chosen b { font: 500 11px/1 var(--sans); letter-spacing: 0.18em; text-transform: uppercase; color: var(--champagne); }
 .lp-chosen button { justify-self: start; padding: 9px 16px; border: 0; border-radius: 999px; background: var(--amber); color: #14110f; font: 600 12.5px/1 var(--sans); cursor: pointer; }
+
+.lp-fire-label { position:absolute; left:6vw; top:8vh; z-index:4; pointer-events:none; color:#fff; text-shadow:0 2px 24px #000; visibility:hidden; }
+.lp-fire-label h2 { font:400 clamp(36px,5vw,70px)/1.05 var(--heading); margin:0 0 12px; }
+.lp-fire-label p { font:500 11px/1.5 var(--sans); letter-spacing:.08em; }
+.sc-map polygon[role=button]:focus-visible { outline:none; stroke:#fff; stroke-width:4; }
+
+.lp-wildfire-label { position:absolute; left:6vw; top:8vh; z-index:6; color:#fff; text-shadow:0 2px 20px #000; visibility:hidden; pointer-events:none; }
+.lp-wildfire-label h2 { max-width:660px; font:400 clamp(32px,4.5vw,66px)/1.05 var(--heading); margin:0 0 14px; }
+.lp-wildfire-label p { font:500 11px/1.5 var(--sans); letter-spacing:.1em; }
+.lp-fire-pick { z-index:8; visibility:hidden; }

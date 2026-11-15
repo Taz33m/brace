@@ -105,13 +105,15 @@ function AfterStory() {
 /** The home page: the cabin, and the scenarios to choose from. */
 export function HomePage() {
   useSmoothScroll();
+  const [fireReplay, setFireReplay] = useState(() => sessionStorage.getItem("brace:fire-replay") === "1" ? 1 : 0);
+  useEffect(() => { sessionStorage.removeItem("brace:fire-replay"); }, []);
   return (
     <div className="st" data-story="home">
       <Sky whisper="" />
       <QuietHero />
       <QuietCloud />
-      <LoopGround />
-      <ScheduleTree site={9519837} inline />
+      <LoopGround replay={fireReplay} onAftermath={() => setFireReplay(n => n + 1)} />
+      <ScheduleTree site={9519837} inline aftermath={fireReplay > 0} onReplayHome={() => setFireReplay(n => n + 1)} />
     </div>
   );
 }

@@ -31,6 +31,8 @@
   .sr-document h2,.sr-document h3,.sr-document h4 { break-after:avoid; }
 }
 
-.sr-next { text-align:center; padding:16px 0; }
-.sr-next p { color:#526174; font-size:13px; }
-@media print { .sr-next { display:none !important; } }
+
+.sr-aftermath-views { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+.sr-aftermath-views figure { margin:0; break-inside:avoid; }
+.sr-aftermath-views img { display:block; width:100%; }
+.sr-aftermath-views figcaption { font-size:12px; padding:6px 0; }
