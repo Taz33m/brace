@@ -4,6 +4,7 @@ import { api } from "../api";
 import { ConversationPanel } from "../components/ConversationPanel";
 import { conversation } from "../conversation";
 import "./story.css";
+import { ScheduleReview } from "./ScheduleReview";
 
 /**
  * The schedule as a tree. The property's total at the top; under it the buildings, ranked by how much fuel stands
@@ -20,7 +21,7 @@ interface Unit { scan_id: string; name: string; scan_date: string | null; rooms:
 interface Cover { check: { cover: number; verdict: string; say: string; example: { loss: number; low: number; high: number } }; note: string }
 interface Again { room: string; state: "looking" | "done" | "failed"; changed: string[]; statement: string | null; before?: Money; after?: Money }
 interface Building { id: string; exposure_rank: number; brush_within_5ft_percent: number | null; in_fire_zone: boolean | null; homes_assumed: number; polygon: [number, number][]; total: Money; units: Unit[] }
-interface Schedule {
+export interface Schedule {
   property: { id: number; name: string; address: string | null; homes: number; homes_on_record: number; scenario: string; scan_date: string | null; bounds: [number, number, number, number]; aerial: { width: number; height: number } };
   total: Money; home: { name: string; total: Money; multiplied_by: number };
   kinds_of_home: { name: string; homes: number; per_home: Money; low: number | null; high: number | null; basis: string; scanned: boolean }[];
@@ -34,6 +35,7 @@ const range = (m: { low: number | null; high: number | null }) => (m.low == null
 const each = (l: Line) => (l.price_low == null ? "" : l.price_high && l.price_high !== l.price_low ? `$${l.price_low.toLocaleString("en-US")} to $${l.price_high.toLocaleString("en-US")}` : `$${l.price_low.toLocaleString("en-US")}`);
 
 export function ScheduleTree({ site, controller = false, inline = false }: { site: number; controller?: boolean; inline?: boolean }) {
+  const [review, setReview] = useState<{ data: Schedule; captured: string } | null>(null);
   const [data, setData] = useState<Schedule | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);        // the building that is open
@@ -165,10 +167,10 @@ export function ScheduleTree({ site, controller = false, inline = false }: { sit
     load().then((d) => { setData(d); setOpen(d.buildings.find((b) => b.units.length)?.id ?? null); }).catch((e) => setError(e.message));
   }, [site]);
   useEffect(() => {
-    const key = (e: KeyboardEvent) => { if (e.key === "Escape") { if (how) setHow(false); else if (room) setRoom(null); else if (!inline) window.location.hash = "#/"; } };
+    const key = (e: KeyboardEvent) => { if (review) return; if (e.key === "Escape") { if (how) setHow(false); else if (room) setRoom(null); else if (!inline) window.location.hash = "#/"; } };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
-  }, [how, room, inline]);
+  }, [how, room, inline, review]);
 
   // Whatever was opened, by a click or by the voice, is brought into view.
   useEffect(() => {
@@ -205,6 +207,7 @@ export function ScheduleTree({ site, controller = false, inline = false }: { sit
 
   return (
     <div className={`st sc${inline ? " is-inline" : ""}`}>
+      {review && <ScheduleReview data={review.data} captured={review.captured} onClose={() => setReview(null)} />}
       <div className="sc-map">
         <svg viewBox={`0 0 ${p.aerial.width} ${p.aerial.height}`} preserveAspectRatio="xMidYMid slice" aria-hidden="true">
           <image href={`/api/buildings/${site}/aerial.jpg`} width={p.aerial.width} height={p.aerial.height} />
@@ -228,6 +231,7 @@ export function ScheduleTree({ site, controller = false, inline = false }: { sit
           <span>to put back what the owner owns inside{data.lost_rent_per_month ? `, and ${short(data.lost_rent_per_month.low)} to ${short(data.lost_rent_per_month.high)} of rent for each month empty` : ""}</span>
           {partial && <em>{data.total.lines_priced} of {data.total.lines} lines have a confirmed price.</em>}
         </div>
+        <button className="sr-open" onClick={() => setReview({ data: structuredClone(data), captured: new Date().toISOString() })}>Review &amp; export the evidence</button>
         <table className="sc-kinds"><tbody>
           {data.kinds_of_home.map((k) => (
             <tr key={k.name} title={k.basis}>
