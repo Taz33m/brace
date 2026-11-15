@@ -135,7 +135,7 @@ judgement is saved with the run and shown under each room on `#/schedule` and be
 | These two records are the same thing seen from two rooms: keep one | `merge` (lead) | 2 merged |
 | This count may be wrong, and here is why | `flag_doubt` (lead) | 11 doubts |
 
-Two things the owner can ask for, by a button or by voice:
+Three things the owner can ask for, by a button or by voice:
 
 - **Look again** (`POST /api/schedule/{id}/recheck?room=`, `inventory_agent.recheck`). The agent reads one room a
   second time with its own doubts in front of it. That room's lines are replaced by what it finds, the schedule is
@@ -145,6 +145,15 @@ Two things the owner can ask for, by a button or by voice:
   for the fit-out is compared with the schedule under the usual coinsurance clause at 80%, with a worked example
   of what a claim would pay, and a note to the broker is drafted on the screen. Nothing is sent. It is arithmetic,
   not advice, and it compares fit-out with fit-out: a figure for the whole building would flatter the owner.
+- **Find the model** (`POST /api/schedule/{id}/match?room=&item=`, `backend/product_match.py`). A prototype. One
+  model run is shown the picture an item was recorded in, a close-up round it and the room from one other
+  standpoint, says what is visible, and searches for up to three products sold today that look like it. The rules
+  are in code: a product is kept only when a fetch of its page holds its price and model number
+  (`flood_agent.confirm`); the line's range becomes the lowest to the highest kept price; with none kept the line
+  keeps its cost-guide price; the label is "Brand read from the scan" only when the model read a brand in the
+  picture and a kept product is that brand, otherwise "Closest match". It is never an identification. Matches are
+  saved in `data/cache/inventory/<scan>.matches.json` under `<room_id>:<kind>`, and
+  `GET /api/schedule/{id}/view.jpg?room=&item=` serves the close-up.
 
 ## The schedule
 
@@ -193,18 +202,18 @@ flowchart LR
   PHONE["Phone: #/ctl<br/>microphone, the voice"] -- "what it opened" --> LIVE[("POST /api/schedule/{id}/live")]
   LIVE -- "polled every 0.6 s" --> SCREEN["Big screen: #/schedule<br/>the tree"]
   PHONE <-- "speech, tool calls" --> RT[Realtime voice session]
-  SERVER["POST /api/schedule/{id}/voice<br/>short-lived key, the brief, six tools"] --> PHONE
+  SERVER["POST /api/schedule/{id}/voice<br/>short-lived key, the brief, seven tools"] --> PHONE
 ```
 
 - The voice layer already existed for the preparation product (`frontend/src/voice.ts`, `conversation.ts`,
-  `backend/voice.py`). The schedule registers itself with it as a stage: a brief and six tools.
+  `backend/voice.py`). The schedule registers itself with it as a stage: a brief and seven tools.
 - The brief (`voice.schedule_instructions`) is built from the schedule and nothing else: the total, how it was
   multiplied, the ranking, the rooms, what the agent left out and what it is unsure of. The voice is told to say
   only that and what a tool returns.
 - The tools run in the browser against the schedule already loaded: `open_building`, `open_room`,
-  `explain_line`, `show_working`. Each moves the screen and returns the figures it is now showing. Two more ask
-  the server to act: `look_again` (the second look at a room, the only thing that can change a figure) and
-  `check_cover`. None sends anything or books anything.
+  `explain_line`, `show_working`. Each moves the screen and returns the figures it is now showing. Three more ask
+  the server to act: `look_again` (the second look at a room), `find_model` (a product matched to one item; with
+  `look_again`, the only things that can change a figure) and `check_cover`. None sends anything or books anything.
 - `#/ctl` is the same schedule on a phone. It shows the name, the figure and the conversation; whatever a tool
   opens is posted to the server, and `#/schedule` on the big screen follows. The "Phone" button on the big screen
   shows a QR code for it. The phone needs the HTTPS server on the local network for its microphone.
@@ -219,6 +228,7 @@ backend/
   exposure.py          each building's three facts and the order they put it in         (new, 14 Nov)
   run_cost.py          what the saved runs cost, from their own token counts            (new, 14 Nov)
   cover.py             the owner's cover against the schedule; the draft note           (new, 14 Nov)
+  product_match.py     a likely make and model for one item, with a tighter price       (new, 14 Nov, prototype)
   flood_agent.py       price research with web search and page fetch; confirm()
   insurer_file.py      quantities from a scan; the one-home schedule under a flood depth
   openings.py          Matterport's wall and opening measurements
@@ -237,7 +247,7 @@ frontend/src/story/
   InsurerFile.tsx      #/file: one home's schedule under a flood depth
   InsidePov.tsx        #/inside, #/inside/vr: the room from where a person stands
 tests/
-  test_inventory_schedule.py, test_inventory_decisions.py, test_cover.py, test_insurer_file.py, test_flood_agent.py,
+  test_inventory_schedule.py, test_inventory_decisions.py, test_product_match.py, test_cover.py, test_insurer_file.py, test_flood_agent.py,
   test_exposure.py, test_schedule_portfolio.py, test_run_cost.py
 ```
 
