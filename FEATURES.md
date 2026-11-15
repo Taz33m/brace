@@ -25,7 +25,8 @@
 | Cleanup | “Clean up” removes contents but retains damage; “more” restores empty surfaces. |
 | Instant furniture | Chair, sofa, table, lamp, plant, bed or toilet; colors/gold/chrome/wood; place, move, resize, remove and undo. Tap a floor spot, then say “there.” |
 | Room voice | Separate companion executes cleanup/furnishing; “look left/right/up/down” turns the view; “take me there” faces the object in its room. |
-| Phone controls | Drag, optional orientation permission and split-screen headset view. Microphone/motion need browser permission; physical handset verification remains. |
+| Phone controls | Drag, or turn the phone once motion is allowed. A phone signs in once with the owner password before the room voice will open. |
+| Headset view | One tap asks for motion, keeps the screen awake, starts the room voice and fits the two pictures to the viewer's lenses (remembered on the phone). Inside: the head is the camera, each eye has its own picture so furniture has depth, the room's words ride at the foot of the view, a tap cleans up one step, “there” is where the eyes rest on the floor, and a tap near the top edge comes out. Checked in a headless browser at phone size; a real phone in a real viewer is still to be tried. |
 
 ## Two terms clarified
 

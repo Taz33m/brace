@@ -16,3 +16,17 @@
 .restore-loading { position:absolute; top:40%; width:100%; text-align:center; }
 @media(max-width:600px) { .restore-top { padding:18px; gap:15px; }.restore-top strong { font-size:20px; }.restore-top small { max-width:95px; text-align:right; }.restore-controls { padding:12px; }.restore-controls button { padding:9px; } }
 @media(max-height:500px) { .restore-controls { left:auto; right:12px; bottom:12px; transform:none; width:340px; }.restore-top { padding:16px; }.restore-controls small { display:none; }.restore-controls p { font-size:12px; max-height:48px; margin:7px 0; } }
+
+/* ---- in the viewer: nothing on the glass but the two pictures; the room's words are drawn in the scene ---- */
+.restore-room.is-headset .restore-top, .restore-room.is-headset .restore-controls, .restore-room.is-headset .restore-loading { display:none; }
+.restore-signin { margin:0 0 12px; display:grid; gap:7px; }
+.restore-signin label { font-size:12px; line-height:1.35; color:#f8d376; }
+.restore-signin div { display:flex; gap:8px; }
+.restore-signin small { color:#ffb4a2; }
+.restore-fit { position:absolute; inset:0; z-index:5; background:#05080c; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; gap:12px; padding:0 20px max(18px,env(safe-area-inset-bottom)); box-sizing:border-box; text-align:center; }
+.restore-fit i { position:absolute; top:42%; width:46px; height:46px; margin:-23px 0 0 -23px; background:linear-gradient(#fff,#fff) center/2px 100% no-repeat, linear-gradient(#fff,#fff) center/100% 2px no-repeat; }
+.restore-fit p { margin:0; max-width:34rem; font-size:15px; line-height:1.4; }
+.restore-fit div { display:flex; gap:10px; }
+.restore-fit button { border:1px solid #ffffff40; border-radius:10px; padding:12px 18px; background:#ffffff12; color:#fff; font:600 15px Arial,sans-serif; }
+.restore-fit button.restore-primary { background:#efd08a; color:#1a1a1a; border-color:#efd08a; }
+.restore-fit small { max-width:34rem; font-size:11px; line-height:1.4; color:#c4c8cc; }

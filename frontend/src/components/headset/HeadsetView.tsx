@@ -12,6 +12,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { buildTour, direction, label, range, type Schedule, type Stop } from "./lib/tour";
 import { askForMotion, createOrientationReader, motionSupport, yawOf, type MotionState } from "./lib/motion";
+import { EYES_M, eyeViewports, readSpacing, saveSpacing } from "./lib/lens";
+
+export { eyeViewports };
 import "./headset.css";
 
 const DWELL_S = 9;         // time at each standpoint before moving on
@@ -21,33 +24,6 @@ const LOAD_WAIT_S = 2.5;   // hold on black at most this long for a standpoint's
 const UNPRICED_DIM = 0.55; // a line with no confirmed price is shown, but quieter than a priced one
 const FACE_M = 40;         // the panorama box; far enough that the two eyes see it alike
 const TAG_M = 4.5;         // tags float this far away
-const EYES_M = 0.064;
-/**
- * Fitting the picture to the viewer's lenses. Each eye's picture must sit under its lens, or the eyes cannot
- * merge the two into one scene. Phones and viewers differ, so the spacing is set by eye on a fit screen and
- * remembered on the phone. iPhones show about 6.3 CSS pixels per millimetre (roughly 160 per inch).
- */
-const PX_PER_MM = 6.3;
-const SPACING_DEFAULT_MM = 60;
-const SPACING_KEY = "brace.headset.spacingMm";
-const readSpacing = (): number => {
-  try {
-    const v = Number(window.localStorage.getItem(SPACING_KEY));
-    return v >= 40 && v <= 80 ? v : SPACING_DEFAULT_MM;
-  } catch {
-    return SPACING_DEFAULT_MM;
-  }
-};
-const saveSpacing = (mm: number) => {
-  try { window.localStorage.setItem(SPACING_KEY, String(mm)); } catch { /* private mode: keep it for this visit only */ }
-};
-
-/** Where each eye's picture goes: centred under its lens, as wide as fits without crossing the middle. */
-export function eyeViewports(W: number, H: number, spacingMm: number): { x: number; w: number }[] {
-  const sep = Math.min(W * 0.95, spacingMm * PX_PER_MM);
-  const w = Math.max(1, Math.min(sep, W - sep, H * 1.15));
-  return [-1, 1].map((side) => ({ x: Math.round(W / 2 + (side * sep) / 2 - w / 2), w: Math.round(w) }));
-}
 
 const rad = (d: number) => (d * Math.PI) / 180;
 const clamp = (x: number) => Math.min(1, Math.max(0, x));
