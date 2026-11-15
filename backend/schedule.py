@@ -20,7 +20,7 @@ import json
 import math
 import re
 
-from . import flood, insurer_file, inventory_agent, matterport, openings, portfolio, product_match
+from . import exposure, flood, insurer_file, inventory_agent, matterport, openings, portfolio, product_match, run_cost
 from .config import CACHE_DIR
 
 PRICES = CACHE_DIR / "inventory" / "prices.json"
@@ -199,12 +199,22 @@ def schedule(property_id: int, scan_id: str | None = None) -> dict:
     total = {"low": sum(k["low"] for k in priced) if priced else None, "high": sum(k["high"] for k in priced) if priced else None}
     each = {"low": total["low"] / homes if total["low"] is not None and homes else None, "high": total["high"] / homes if total["high"] is not None and homes else None}
     sizes = {st["id"]: st.get("footprint_sqft") or 0 for st in bundle["structures"]}
-    rows = sorted(s["buildings"], key=lambda b: -(b.get("trees_within_5ft_percent") or 0))
+    here = {b["id"]: b for b in s["buildings"]}
+    try:
+        ranked = exposure.exposure(property_id)
+        facts = {r["id"]: r for r in ranked["buildings"]}
+        rows = [here[r["id"]] for r in ranked["buildings"] if r["id"] in here]
+        ranking = {"how": ranked["how"], "sources": ranked["sources"]}
+    except exposure.ExposureError:      # no saved building file to read the facts from: the order rests on vegetation at the walls alone
+        facts, rows = {}, sorted(s["buildings"], key=lambda b: -(b.get("trees_within_5ft_percent") or 0))
+        ranking = {"how": "Buildings are ranked by the share of their walls with vegetation within 5 ft, from Vexcel. It is a ranking, not a chance of fire.", "sources": {"vegetation": "Vexcel"}}
     shares = dict(zip([b["id"] for b in rows], _share([sizes.get(b["id"], 0) for b in rows], homes)))
     buildings = []
     for rank, b in enumerate(rows, 1):
         n = shares[b["id"]]
-        buildings.append({"id": b["id"], "exposure_rank": rank, "brush_within_5ft_percent": b.get("trees_within_5ft_percent"), "in_fire_zone": None, "homes_assumed": n,
+        f = facts.get(b["id"]) or {}
+        buildings.append({"id": b["id"], "exposure_rank": rank, "brush_within_5ft_percent": f.get("brush_within_5ft_percent", b.get("trees_within_5ft_percent")),
+                          "tree_cover_over_roof_percent": f.get("tree_cover_over_roof_percent"), "fire_zone": f.get("fire_zone"), "in_fire_zone": f.get("in_fire_zone"), "homes_assumed": n,
                           "polygon": b["polygon"], "total": {"low": round(each["low"] * n) if each["low"] is not None else None, "high": round(each["high"] * n) if each["high"] is not None else None},
                           "units": [{**unit, "multiplied_by": next((k["homes"] for k in kinds if k["scanned"]), n), "extrapolated": True}] if b["id"] == unit["under_roof"] else []})
     rented = [k for k in kinds if k["rent_low"] and k["rent_high"]]
@@ -212,6 +222,11 @@ def schedule(property_id: int, scan_id: str | None = None) -> dict:
         price_run = json.loads(PRICES.read_text())
     except (OSError, ValueError):
         price_run = {}
+    try:
+        work_run = json.loads(insurer_file.PRICES.read_text())
+    except (OSError, ValueError):
+        work_run = {}
+    cost = run_cost.total([inventory_agent.saved(scan_id), price_run, work_run])       # the reading of the scan, and the two price runs
     used = {l["what"] for room in unit["rooms"] for l in room["items"] if l["low"] is not None}
     confirmed = len(used)      # the kinds of line on this schedule that carry a confirmed price
     seconds = (unit.get("seconds") or 0) + (price_run.get("seconds") or 0)
@@ -226,8 +241,9 @@ def schedule(property_id: int, scan_id: str | None = None) -> dict:
                                  "how": "; ".join(f"{k['homes']} x ${k['rent_low']:,.0f}" + (f" to ${k['rent_high']:,.0f}" if k["rent_high"] != k["rent_low"] else "") for k in rented) + " a month, asking rents"}
                                 if rented else None),
         "numbers": {"scans_read": 1, "rooms_read": unit["numbers"]["rooms_read"], "views_looked_at": unit["numbers"]["views_looked_at"], "items_named": unit["numbers"]["items_named"],
-                    "prices_confirmed": confirmed, "minutes": round(seconds / 60, 1) if seconds else None, "model_cost_usd": None},
+                    "prices_confirmed": confirmed, "minutes": round(seconds / 60, 1) if seconds else None, "model_cost_usd": cost, "cost_how": run_cost.HOW},
         "buildings": buildings,
+        "exposure": ranking,
         "assumptions": [
             "The scenario is stated, not forecast: fire reaches the community and the fit-out of its homes is a total loss.",
             (f"The kinds of home and how many of each are from the community's Apartments.com listing: {homes:,} homes. The kind that was scanned takes the scanned home's figure; a kind that was not is scaled by floor area. Both are extrapolations."
@@ -239,7 +255,38 @@ def schedule(property_id: int, scan_id: str | None = None) -> dict:
             "Floor, wall and door quantities are Matterport's measurements of the scan. Doorways are taken out of the walls. Ceilings are not counted.",
             "A line is priced only when a fetch of the page confirmed the price. Where a page gives a range, both ends are carried through.",
             "Where a product was matched to an item in the scan by its appearance, the line uses that product's listed price, which leaves out delivery and fitting.",
-            "Buildings are ranked by the share of their walls with vegetation within 5 ft, from Vexcel. It is a ranking, not a chance of fire.",
+            ranking["how"],
         ],
         "not_counted": ["Furniture and anything a tenant owns", "The structure itself: frame, roof, wiring, plumbing", "Ceilings", "Common areas and anything outside the homes"],
     }
+
+
+def communities(city: str = "Los Angeles") -> dict:
+    """The scanned apartment communities in a city that stand inside a mapped fire hazard severity zone, ranked.
+
+    A community whose scan has been read comes first, by what the fire would cost to put back. The rest follow by
+    the asking rent they would stop collecting each month, the one figure in dollars the listing gives for a community
+    nobody has read yet. A community with no listing has no homes and no rent to show: null, and it comes last.
+    """
+    scanned = [b for b in portfolio.buildings() if b.get("type") == "Multifamily" and b.get("model_ids") and (b.get("city") or "").lower() == city.lower()]
+    rows = []
+    for b in scanned:
+        zone = exposure.zone_at(b["lat"], b["lon"])[0] if b.get("lat") is not None and b.get("lon") is not None else None
+        if not zone:
+            continue
+        plans = portfolio.floor_plans(b["id"])
+        rented = [p for p in plans if p.get("rent_low") and p.get("rent_high")]
+        try:
+            total = schedule(b["id"])["total"]
+            total = {"low": total["low"], "high": total["high"]} if total["low"] is not None else None
+        except Exception:       # not read yet, or its saved files are broken: listed without a figure, and the list still loads
+            total = None
+        rows.append({"id": b["id"], "name": b.get("name"), "address": b.get("address"), "fire_zone": zone, "scans": len(b["model_ids"]),
+                     "homes": sum(p["homes"] for p in plans) if plans else None,
+                     "rent_per_month": {"low": round(sum(p["homes"] * p["rent_low"] for p in rented)), "high": round(sum(p["homes"] * p["rent_high"] for p in rented))} if rented else None,
+                     "total": total})
+    rows.sort(key=lambda r: (r["total"] is None, -(r["total"] or {}).get("high", 0), r["rent_per_month"] is None, -(r["rent_per_month"] or {}).get("high", 0), r["id"]))
+    return {"city": city, "communities": [{**r, "rank": i} for i, r in enumerate(rows, 1)], "counted": {"scanned": len(scanned), "in_zone": len(rows)},
+            "how": ("Apartment communities in the kit with a Matterport scan, at an address inside a CAL FIRE fire hazard severity zone. A community whose scan has been read ranks first, "
+                    "by what it would cost to put back; the rest rank by the asking rent they would stop collecting each month, from their Apartments.com listing. "
+                    "It is an ordering, not a chance of fire.")}

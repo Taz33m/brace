@@ -7,3 +7,6 @@ dist/
 data/
 docs/vexcel/
 .DS_Store
+.env.local
+docs/sponsor/
+costar-hackathon-kit/
