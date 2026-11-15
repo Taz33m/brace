@@ -14,9 +14,11 @@ import { buildTour, direction, label, range, type Schedule, type Stop } from "./
 import { askForMotion, createOrientationReader, motionSupport, yawOf, type MotionState } from "./lib/motion";
 import "./headset.css";
 
-const DWELL_S = 16;        // time at each standpoint before moving on
-const FADE_S = 1.4;        // fade out and in between standpoints, slow for comfort
-const TAG_STAGGER_S = 0.7; // tags appear one after another on arrival
+const DWELL_S = 9;         // time at each standpoint before moving on
+const FADE_S = 0.7;        // fade out and in between standpoints: quick, but a fade rather than a cut, for comfort
+const TAG_STAGGER_S = 0.3; // tags appear one after another on arrival
+const LOAD_WAIT_S = 2.5;   // hold on black at most this long for a standpoint's pictures before fading in anyway
+const UNPRICED_DIM = 0.55; // a line with no confirmed price is shown, but quieter than a priced one
 const FACE_M = 40;         // the panorama box; far enough that the two eyes see it alike
 const TAG_M = 4.5;         // tags float this far away
 const EYES_M = 0.064;
@@ -247,13 +249,29 @@ export function HeadsetView({ site, scan }: { site: number; scan: string }) {
     const loader = new THREE.TextureLoader();
     const reader = createOrientationReader();
 
-    type Built = { group: THREE.Group; mats: THREE.Material[]; tags: THREE.Sprite[]; textures: THREE.Texture[] };
+    // Pictures are cached by URL so the next standpoint can be fetched while this one is on screen.
+    const cache = new Map<string, { tex: THREE.Texture; ready: boolean }>();
+    const urlFor = (st: Stop, f: number) => `/api/buildings/${site}/pano/${scan}/${st.sweepId}/${f}.jpg?size=${faceSize}`;
+    const urlsFor = (st: Stop) => [0, 1, 2, 3, 4, 5].map((f) => urlFor(st, f));
+    const getTex = (url: string) => {
+      let e = cache.get(url);
+      if (!e) {
+        const entry = { tex: null as unknown as THREE.Texture, ready: false };
+        const done = () => { entry.ready = true; };
+        entry.tex = loader.load(url, done, undefined, done);
+        entry.tex.colorSpace = THREE.SRGBColorSpace;
+        cache.set(url, entry);
+        e = entry;
+      }
+      return e.tex;
+    };
+    const preload = (st: Stop) => urlsFor(st).forEach(getTex);
+
+    type Built = { group: THREE.Group; mats: THREE.Material[]; tags: THREE.Sprite[]; urls: string[]; shown: boolean; builtAt: number };
     const build = (st: Stop): Built => {
-      const group = new THREE.Group(), mats: THREE.Material[] = [], textures: THREE.Texture[] = [], side = FACE_M * 2.002;
+      const group = new THREE.Group(), mats: THREE.Material[] = [], side = FACE_M * 2.002;
       const face = (f: number) => {
-        const tex = loader.load(`/api/buildings/${site}/pano/${scan}/${st.sweepId}/${f}.jpg?size=${faceSize}`);
-        tex.colorSpace = THREE.SRGBColorSpace;
-        textures.push(tex);
+        const tex = getTex(urlFor(st, f));
         const mat = new THREE.MeshBasicMaterial({ map: tex, depthTest: false, depthWrite: false, transparent: true, opacity: 0 });
         mats.push(mat);
         const m = new THREE.Mesh(new THREE.PlaneGeometry(side, side), mat);
@@ -277,21 +295,28 @@ export function HeadsetView({ site, scan }: { site: number; scan: string }) {
       caps.rotation.y = -rad(st.heading);
       group.add(caps);
       const tags = st.tags.map((t) => {
-        const s = tagSprite(label(t), range(t.low, t.high), t.low != null && t.high != null);
+        const priced = t.low != null && t.high != null;
+        const s = tagSprite(label(t), range(t.low, t.high), priced);
         const [x, y, z] = direction(t.yaw, t.pitch);
         // The sprite's dot is at its bottom centre; anchor there so the dot lands on the thing.
         s.center.set(0.5, 0.04);
         s.position.set(x * TAG_M, y * TAG_M, z * TAG_M);
+        s.userData.dim = priced ? 1 : UNPRICED_DIM;
         group.add(s);
         mats.push(s.material);
         return s;
       });
-      return { group, mats, tags, textures };
+      return { group, mats, tags, urls: urlsFor(st), shown: false, builtAt: performance.now() };
     };
-    const dispose = (b: Built) => {
+    /** Remove a standpoint; its pictures are freed unless the one on screen or the next one uses them. */
+    const dispose = (b: Built, keep: Set<string> = new Set()) => {
       world.remove(b.group);
-      b.textures.forEach((t) => t.dispose());
-      b.mats.forEach((m) => { (m as THREE.SpriteMaterial).map?.dispose?.(); m.dispose(); });
+      for (const url of b.urls) {
+        if (keep.has(url)) continue;
+        cache.get(url)?.tex.dispose();
+        cache.delete(url);
+      }
+      b.mats.forEach((m) => { if (m instanceof THREE.SpriteMaterial) m.map?.dispose(); m.dispose(); });
       b.group.traverse((o) => (o as THREE.Mesh).geometry?.dispose?.());
     };
 
@@ -308,11 +333,13 @@ export function HeadsetView({ site, scan }: { site: number; scan: string }) {
     const devQ = new THREE.Quaternion();
 
     const go = (i: number) => {
-      if (current) dispose(current);
-      index = ((i % stops.length) + stops.length) % stops.length;
-      const st = stops[index];
+      const nextIndex = ((i % stops.length) + stops.length) % stops.length;
+      const st = stops[nextIndex], after = stops[(nextIndex + 1) % stops.length];
+      if (current) dispose(current, new Set([...urlsFor(st), ...urlsFor(after)]));
+      index = nextIndex;
       current = build(st);
       world.add(current.group);
+      preload(after); // fetch the next standpoint now, so moving on is quick
       setHud(st);
       // Face the middle of what there is to see: with motion, turn the room to the head; without, the head to the room.
       if (reader.read(devQ)) world.rotation.y = rad(st.facing) + yawOf(devQ);
@@ -344,7 +371,15 @@ export function HeadsetView({ site, scan }: { site: number; scan: string }) {
     let raf = 0;
     const frame = () => {
       raf = requestAnimationFrame(frame);
-      const now = performance.now(), here = (now - arrived) / 1000;
+      const now = performance.now();
+      // Hold on black until this standpoint's pictures have arrived (or a short wait has passed), so it never
+      // fades in half-drawn; the clock for this standpoint starts when it is shown.
+      if (current && !current.shown) {
+        const loaded = current.urls.every((u) => cache.get(u)?.ready);
+        if (loaded || (now - current.builtAt) / 1000 > LOAD_WAIT_S) current.shown = true;
+        arrived = now;
+      }
+      const here = (now - arrived) / 1000;
       // Next standpoint: by time, or on a tap / key.
       if (live.current.next !== seenNext && !fadeOutFrom) { seenNext = live.current.next; fadeOutFrom = now; }
       if (!fadeOutFrom && here > DWELL_S) fadeOutFrom = now;
@@ -356,7 +391,7 @@ export function HeadsetView({ site, scan }: { site: number; scan: string }) {
         current.mats.forEach((m, i) => {
           const tagIdx = i - first;
           (m as THREE.Material & { opacity: number }).opacity =
-            tagIdx < 0 ? inn : inn * smooth(clamp((here - FADE_S - tagIdx * TAG_STAGGER_S) / 0.8));
+            tagIdx < 0 ? inn : inn * (current!.tags[tagIdx].userData.dim as number) * smooth(clamp((here - FADE_S - tagIdx * TAG_STAGGER_S) / 0.5));
         });
       }
 
@@ -413,6 +448,8 @@ export function HeadsetView({ site, scan }: { site: number; scan: string }) {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", upH);
       if (current) dispose(current);
+      cache.forEach((e) => e.tex.dispose()); // anything preloaded but not yet shown
+      cache.clear();
       renderer.dispose();
       el.removeChild(renderer.domElement);
     };
