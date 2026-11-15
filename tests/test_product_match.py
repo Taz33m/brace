@@ -6,6 +6,13 @@ from PIL import Image
 
 from backend import flood, insurer_file, inventory_agent, product_match, schedule
 
+
+@pytest.fixture(autouse=True)
+def _one_product_prices_a_line(monkeypatch):
+    """These tests are about the arithmetic and use a single product. The rule that a line needs two is tested in test_match_needs_two.py."""
+    from backend import tighten as _t
+    monkeypatch.setattr(_t, "MIN_TO_PRICE", 1)
+
 SCAN = {"id": "u1", "name": "2BR", "structure": "A", "model_created_at": "2026-11-10T00:00:00Z",
         "rooms": [{"id": "rk", "type": "Kitchen", "area_sqft": 70.0, "height_m": 2.4384}, {"id": "rc", "type": "Closet", "area_sqft": 20.0, "height_m": 2.4384}],
         "sweeps": [{"id": "s1", "room_id": "rk", "heading": 90.0, "model_position": [0, 0, 0]}, {"id": "s2", "room_id": "rk", "heading": 0.0, "model_position": [1, 0, 0]}]}

@@ -20,7 +20,7 @@ import json
 import math
 import re
 
-from . import flood, insurer_file, inventory_agent, matterport, openings, portfolio, product_match
+from . import flood, insurer_file, inventory_agent, matterport, openings, portfolio, product_match, tighten
 from .config import CACHE_DIR
 
 PRICES = CACHE_DIR / "inventory" / "prices.json"
@@ -58,16 +58,15 @@ def _prices() -> dict[str, dict]:
     return by
 
 
-def _line(price_id: str, what: str, quantity: float, unit: str, how: str, prices: dict, key: str | None = None, match: dict | None = None, **more) -> dict:
-    """One line: a quantity times a price for one. The price is the cost guide's, unless a product was matched to the item in the scan:
-    then it is the range of that product's listed prices. The guide's price is carried either way."""
-    row, quantity = prices.get(price_id), round(quantity)
-    guide_low, guide_high = (row["price"], row.get("price_high") or row["price"]) if row else (None, None)
-    each_low, each_high = (match["low"], match["high"]) if match else (guide_low, guide_high)
-    return {"what": what, "quantity": quantity, "unit": unit, "from": how, "price_low": each_low, "price_high": each_high,
-            "low": round(quantity * each_low) if each_low is not None else None, "high": round(quantity * each_high) if each_high is not None else None,
-            "source_url": row["source"]["url"] if row else None, "source_title": row["source"]["title"] if row else None,
-            "key": key, "match": match, "guide_low": guide_low, "guide_high": guide_high, **more}
+def _line(price_id: str, what: str, quantity: float, unit: str, how: str, prices: dict, key: str | None = None, match: dict | None = None,
+          fitting: dict | None = None, specific: dict | None = None, **more) -> dict:
+    """One line: a quantity times a price for one. Which price, and what it rests on (`price_basis`), is `tighten.price_of`'s rule: a product matched to
+    the item in the scan, with the labour to fit it when a page gave one; else a page's price for what was seen; else the cost guide for the kind.
+    The guide's price is carried whichever is used."""
+    quantity, each = round(quantity), tighten.price_of(prices.get(price_id), match, fitting, specific)
+    return {"what": what, "quantity": quantity, "unit": unit, "from": how,
+            "low": round(quantity * each["price_low"]) if each["price_low"] is not None else None, "high": round(quantity * each["price_high"]) if each["price_high"] is not None else None,
+            "key": key, "match": match, "finish": None, **each, **more}
 
 
 def _sum(lines: list[dict]) -> dict:
@@ -137,6 +136,7 @@ def home(property_id: int, scan_id: str) -> dict:
         raise ScheduleError("this scan's rooms have not been measured")
     prices = _prices()
     matches = product_match.saved(scan_id)      # a product matched to one item in the scan, under '<room_id>:<kind>'
+    tight = tighten.Tight(scan_id)              # confirmed prices for fitting a product, for built work as it was seen, and for the finishes read from the scan
     walls = {r["id"]: sum(math.dist(a, b) for a, b in r["walls"]) * M_TO_FT for r in plan["rooms"]}
     net = measured["wall_less_doorways_ft"] / measured["wall_ft"] if measured["wall_ft"] else 1.0      # doorways come out of every room alike
     names = inventory_agent.InventoryRun(property_id, scan_id).rooms       # the agent's room ids against Matterport's
@@ -163,16 +163,16 @@ def home(property_id: int, scan_id: str) -> dict:
         count[kind] = count.get(kind, 0) + 1
         ceiling, wall = r["height_m"] * M_TO_FT, walls.get(r["id"], 0.0) * net
         lines = [_line(f"fit:{i['kind']}", inventory_agent.KINDS.get(i["kind"], i["what"]), i["quantity"], "each", "read from the scan", prices, seen=i["seen"], at=i["at"],
-                       key=product_match.key_of(i["room"], i["kind"]), match=product_match.for_schedule(matches.get(product_match.key_of(i["room"], i["kind"]))))
+                       key=product_match.key_of(i["room"], i["kind"]), match=product_match.for_schedule(matches.get(product_match.key_of(i["room"], i["kind"]))), **tight.fit(i))
                  for i in by_room.get(read_as.get(r["id"], ""), [])]
-        lines += [_line("flooring", "Flooring", r["area_sqft"], "sq ft", "measured from the scan", prices, seen=None, at=None),
-                  _line("drywall", "Drywall", wall * ceiling, "sq ft", "measured from the scan", prices, seen=None, at=None),
-                  _line("paint", "Painting", wall * ceiling, "sq ft", "measured from the scan", prices, seen=None, at=None),
-                  _line("baseboard", "Baseboard", wall, "ft", "measured from the scan", prices, seen=None, at=None)]
+        lines += [_line("flooring", "Flooring", r["area_sqft"], "sq ft", "measured from the scan", prices, seen=None, at=None, **tight.built("flooring", read_as.get(r["id"]))),
+                  _line("drywall", "Drywall", wall * ceiling, "sq ft", "measured from the scan", prices, seen=None, at=None, **tight.built("drywall")),
+                  _line("paint", "Painting", wall * ceiling, "sq ft", "measured from the scan", prices, seen=None, at=None, **tight.built("paint")),
+                  _line("baseboard", "Baseboard", wall, "ft", "measured from the scan", prices, seen=None, at=None, **tight.built("baseboard"))]
         rooms.append({"name": kind if sum(1 for x in scan["rooms"] if x.get("type") == kind and x.get("area_sqft") and x.get("height_m")) == 1 else f"{kind} {count[kind]}",
                       "area_sqft": r["area_sqft"], "read": r["id"] in read_as, "room_id": read_as.get(r["id"]), "items": lines, "total": _sum(lines),
                       "doubts": doubts.get(read_as.get(r["id"], ""), []), "left_out": left.get(read_as.get(r["id"], ""), [])})
-    doors = [_line("door", "Interior doors", measured["inner_doors"], "each", "measured from the scan", prices, seen=None, at=None)]
+    doors = [_line("door", "Interior doors", measured["inner_doors"], "each", "measured from the scan", prices, seen=None, at=None, **tight.built("door"))]
     rooms.append({"name": "Throughout the home", "area_sqft": None, "read": True, "room_id": None, "items": doors, "total": _sum(doors), "doubts": [], "left_out": []})
     every = [l for room in rooms for l in room["items"]]
     return {"scan_id": scan_id, "name": measured["name"], "under_roof": measured["under_roof"], "scan_date": measured["model_made"], "floor_sqft": measured["floor_sqft"],
@@ -238,7 +238,8 @@ def schedule(property_id: int, scan_id: str | None = None) -> dict:
             "Fit-out was named and counted by an agent looking at the scan's own pictures. Each line says where it was seen.",
             "Floor, wall and door quantities are Matterport's measurements of the scan. Doorways are taken out of the walls. Ceilings are not counted.",
             "A line is priced only when a fetch of the page confirmed the price. Where a page gives a range, both ends are carried through.",
-            "Where a product was matched to an item in the scan by its appearance, the line uses that product's listed price, which leaves out delivery and fitting.",
+            "Where a product was matched to an item in the scan by its appearance, the line is that product's listed price plus a page's labour-only price to fit one of that kind, low with low and high with high. A matched line with no confirmed fitting price says so and leaves out delivery and fitting.",
+            "Where a line says it is priced for what was seen, the price is a page's for that thing as the scan showed it (the tub as the reader described it, the floor finish read from the pictures), not for the kind in general. It can be wider than the general price. Each line says which it rests on.",
             "Buildings are ranked by the share of their walls with vegetation within 5 ft, from Vexcel. It is a ranking, not a chance of fire.",
         ],
         "not_counted": ["Furniture and anything a tenant owns", "The structure itself: frame, roof, wiring, plumbing", "Ceilings", "Common areas and anything outside the homes"],
